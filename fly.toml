@@ -1,12 +1,10 @@
 app = "anniexboda"
 primary_region = "iad"
 
-# 1️⃣ قسم التشغيل: هنا بنحدد الأمر اللي يشغل البوت
 [processes]
-  app = "python3 main.py"  # ⚠️ هام: غير كلمة main.py لاسم ملف البوت بتاعك
+  app = "python3 -m AnnieXMedia"
 
-# 2️⃣ مواصفات السيرفر
 [[vm]]
   cpu_kind = "shared"
   cpus = 1
-  memory_mb = 1024  # خليناها MB بس عشان تكون أوضح وأدق
+  memory_mb = 1024
