@@ -83,9 +83,9 @@ STRING5 = getenv("STRING_SESSION5")
 # ── Media assets ───────────────────────────────────────────────────────────────
 # فيديوهات الستارت (زي ما هي)
 START_VIDS = [
-    "https://files.catbox.moe/exvq3d.jpg",
-    "https://files.catbox.moe/kmn0a6.jpg",
-    "https://files.catbox.moe/zs9g3f.jpg",
+    "https://files.catbox.moe/b6533n.jpg",
+    "https://files.catbox.moe/wqipfn.jpg",
+    "https://files.catbox.moe/efzuds.jpg",
 ]
 
 # الاستيكرات (الجديدة)
