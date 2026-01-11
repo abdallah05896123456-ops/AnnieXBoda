@@ -1,12 +1,10 @@
 # Authored By Certified Coders © 2025
 import re
-import asyncio
 from typing import List, Union, Optional
 
 import aiohttp
 from bs4 import BeautifulSoup
-# التغيير هنا: استدعاء المكتبة العادية بدلاً من aio
-from youtubesearchpython import VideosSearch
+from youtubesearchpython.aio import VideosSearch
 
 
 class AppleAPI:
@@ -37,16 +35,8 @@ class AppleAPI:
         if not title_query:
             return False
 
-        # --- بداية التعديل عشان يشتغل مع مكتبتك ---
-        def perform_search():
-            # البحث بالطريقة العادية
-            search = VideosSearch(title_query, limit=1)
-            return search.result()
-
-        # تشغيل البحث في خلفية النظام عشان البوت ميهنجش
-        data = await asyncio.to_thread(perform_search)
-        # --- نهاية التعديل ---
-
+        results = VideosSearch(title_query, limit=1)
+        data = await results.next()
         if not data.get("result"):
             return False
 
