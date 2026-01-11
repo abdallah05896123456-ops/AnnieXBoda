@@ -1,15 +1,12 @@
 # Authored By Certified Coders © 2025
 import os
 import re
-import asyncio
 import aiofiles
 import aiohttp
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
-# التعديل 1: استيراد المكتبة العادية بدل aio
-from youtubesearchpython import VideosSearch
+from youtubesearchpython.aio import VideosSearch
 from config import YOUTUBE_IMG_URL
 from AnnieXMedia.core.dir import CACHE_DIR 
-
 
 PANEL_W, PANEL_H = 763, 545
 PANEL_X = (1280 - PANEL_W) // 2
@@ -51,14 +48,9 @@ async def get_thumb(videoid: str) -> str:
         return cache_path
 
     # YouTube video data fetch
+    results = VideosSearch(f"https://www.youtube.com/watch?v={videoid}", limit=1)
     try:
-        # التعديل 2: تشغيل البحث في Thread منفصل عشان ميعطلش البوت
-        def _fetch_data():
-            search = VideosSearch(f"https://www.youtube.com/watch?v={videoid}", limit=1)
-            return search.result()
-
-        results_data = await asyncio.to_thread(_fetch_data)
-        
+        results_data = await results.next()
         result_items = results_data.get("result", [])
         if not result_items:
             raise ValueError("No results found.")
@@ -87,19 +79,30 @@ async def get_thumb(videoid: str) -> str:
     # Create base image
     base = Image.open(thumb_path).resize((1280, 720)).convert("RGBA")
     
-    # التعديل 3: تقليل التشويش من 10 إلى 3
+    # === التعديل الأول: الخلفية واضحة (Blur 3) ===
     bg = ImageEnhance.Brightness(base.filter(ImageFilter.BoxBlur(3))).enhance(0.6)
 
-    # Frosted glass panel
-    panel_area = bg.crop((PANEL_X, PANEL_Y, PANEL_X + PANEL_W, PANEL_Y + PANEL_H))
+    # === التعديل الثاني: مستطيل زجاجي ايفون ===
+    # 1. قص المنطقة
+    panel_crop = bg.crop((PANEL_X, PANEL_Y, PANEL_X + PANEL_W, PANEL_Y + PANEL_H))
+    # 2. تعتيم المنطقة دي جامد (Frosted Glass Effect)
+    panel_crop = panel_crop.filter(ImageFilter.GaussianBlur(20))
+    
+    # 3. إضافة الطبقة البيضاء
     overlay = Image.new("RGBA", (PANEL_W, PANEL_H), (255, 255, 255, TRANSPARENCY))
-    frosted = Image.alpha_composite(panel_area, overlay)
+    frosted = Image.alpha_composite(panel_crop, overlay)
+    
+    # 4. الماسك واللصق
     mask = Image.new("L", (PANEL_W, PANEL_H), 0)
     ImageDraw.Draw(mask).rounded_rectangle((0, 0, PANEL_W, PANEL_H), 50, fill=255)
     bg.paste(frosted, (PANEL_X, PANEL_Y), mask)
 
     # Draw details
     draw = ImageDraw.Draw(bg)
+    
+    # 5. إضافة إطار أبيض (Stroke) عشان يكمل شكل الايفون
+    draw.rounded_rectangle((PANEL_X, PANEL_Y, PANEL_X + PANEL_W, PANEL_Y + PANEL_H), radius=50, outline=(255, 255, 255, 100), width=2)
+
     try:
         title_font = ImageFont.truetype("AnnieXMedia/assets/thumb/font2.ttf", 32)
         regular_font = ImageFont.truetype("AnnieXMedia/assets/thumb/font.ttf", 18)
