@@ -1,4 +1,4 @@
-﻿# Authored By Certified Coders © 2025
+# Authored By Certified Coders © 2025
 import os
 from random import randint
 from typing import Union
@@ -85,7 +85,14 @@ async def stream(
                         vidid, mystic, video=is_video, videoid=vidid
                     )
                 except Exception:
-                    raise AssistantErr(_["play_14"])
+                    # محاولة لتجنب خطأ الفورمات
+                    try:
+                        file_path, direct = await YouTube.download(
+                            vidid, mystic, video=is_video, videoid=vidid
+                        )
+                    except:
+                        raise AssistantErr(_["play_14"])
+                
                 if not file_path:
                     raise AssistantErr(_["play_14"])
 
