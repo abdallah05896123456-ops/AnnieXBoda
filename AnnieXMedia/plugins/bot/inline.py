@@ -1,10 +1,12 @@
-﻿# Authored By Certified Coders © 2025
+# Authored By Certified Coders © 2025
+import asyncio
 from pyrogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     InlineQueryResultPhoto,
 )
-from youtubesearchpython.aio import VideosSearch
+# التعديل: استيراد المكتبة العادية
+from youtubesearchpython import VideosSearch
 
 from AnnieXMedia.utils.inlinequery import answer
 from config import BANNED_USERS
@@ -21,9 +23,18 @@ async def inline_query_handler(client, query):
         except:
             return
     else:
-        a = VideosSearch(text, limit=20)
-        result = (await a.next()).get("result")
-        for x in range(15):
+        # التعديل: البحث في Thread منفصل
+        def _search():
+            return VideosSearch(text, limit=20).result()
+
+        try:
+            data = await asyncio.to_thread(_search)
+            result = data.get("result", [])
+        except Exception:
+            return
+
+        # حلقة تكرار آمنة لتجنب الأخطاء إذا كانت النتائج أقل من 15
+        for x in range(min(15, len(result))):
             title = (result[x]["title"]).title()
             duration = result[x]["duration"]
             views = result[x]["viewCount"]["short"]
