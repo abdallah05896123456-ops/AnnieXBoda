@@ -1,10 +1,12 @@
-﻿# Authored By Certified Coders © 2025
+# Authored By Certified Coders © 2025
 import os
 import re
+import asyncio
 import aiofiles
 import aiohttp
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
-from youtubesearchpython.aio import VideosSearch
+# التعديل 1: استيراد المكتبة العادية بدل aio
+from youtubesearchpython import VideosSearch
 from config import YOUTUBE_IMG_URL
 from AnnieXMedia.core.dir import CACHE_DIR 
 
@@ -49,9 +51,14 @@ async def get_thumb(videoid: str) -> str:
         return cache_path
 
     # YouTube video data fetch
-    results = VideosSearch(f"https://www.youtube.com/watch?v={videoid}", limit=1)
     try:
-        results_data = await results.next()
+        # التعديل 2: تشغيل البحث في Thread منفصل عشان ميعطلش البوت
+        def _fetch_data():
+            search = VideosSearch(f"https://www.youtube.com/watch?v={videoid}", limit=1)
+            return search.result()
+
+        results_data = await asyncio.to_thread(_fetch_data)
+        
         result_items = results_data.get("result", [])
         if not result_items:
             raise ValueError("No results found.")
@@ -79,7 +86,9 @@ async def get_thumb(videoid: str) -> str:
 
     # Create base image
     base = Image.open(thumb_path).resize((1280, 720)).convert("RGBA")
-    bg = ImageEnhance.Brightness(base.filter(ImageFilter.BoxBlur(10))).enhance(0.6)
+    
+    # التعديل 3: تقليل التشويش من 10 إلى 3
+    bg = ImageEnhance.Brightness(base.filter(ImageFilter.BoxBlur(3))).enhance(0.6)
 
     # Frosted glass panel
     panel_area = bg.crop((PANEL_X, PANEL_Y, PANEL_X + PANEL_W, PANEL_Y + PANEL_H))
