@@ -1,9 +1,11 @@
-﻿# Authored By Certified Coders © 2025
+# Authored By Certified Coders © 2025
 import re
+import asyncio
 
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
-from youtubesearchpython.aio import VideosSearch
+# التعديل: استيراد المكتبة العادية
+from youtubesearchpython import VideosSearch
 
 import config
 
@@ -29,14 +31,22 @@ class SpotifyAPI:
     async def track(self, link: str):
         if not self.spotify:
             raise RuntimeError("Spotify credentials not configured")
-        track = self.spotify.track(link)
+        
+        # تشغيل طلب سبوتيفاي في Thread عشان ميهنجش البوت
+        track = await asyncio.to_thread(self.spotify.track, link)
+        
         info = track["name"]
         for artist in track["artists"]:
             fetched = f' {artist["name"]}'
             if "Various Artists" not in fetched:
                 info += fetched
-        results = VideosSearch(info, limit=1)
-        data = await results.next()
+        
+        # التعديل: البحث في يوتيوب في Thread منفصل
+        def _search():
+            return VideosSearch(info, limit=1).result()
+
+        data = await asyncio.to_thread(_search)
+        
         r = data["result"][0]
         track_details = {
             "title": r["title"],
@@ -50,7 +60,8 @@ class SpotifyAPI:
     async def playlist(self, url):
         if not self.spotify:
             raise RuntimeError("Spotify credentials not configured")
-        playlist = self.spotify.playlist(url)
+        
+        playlist = await asyncio.to_thread(self.spotify.playlist, url)
         playlist_id = playlist["id"]
         results = []
         for item in playlist["tracks"]["items"]:
@@ -66,7 +77,8 @@ class SpotifyAPI:
     async def album(self, url):
         if not self.spotify:
             raise RuntimeError("Spotify credentials not configured")
-        album = self.spotify.album(url)
+        
+        album = await asyncio.to_thread(self.spotify.album, url)
         album_id = album["id"]
         results = []
         for item in album["tracks"]["items"]:
@@ -81,10 +93,13 @@ class SpotifyAPI:
     async def artist(self, url):
         if not self.spotify:
             raise RuntimeError("Spotify credentials not configured")
-        artistinfo = self.spotify.artist(url)
+        
+        artistinfo = await asyncio.to_thread(self.spotify.artist, url)
         artist_id = artistinfo["id"]
         results = []
-        artisttoptracks = self.spotify.artist_top_tracks(url)
+        
+        artisttoptracks = await asyncio.to_thread(self.spotify.artist_top_tracks, url)
+        
         for item in artisttoptracks["tracks"]:
             info = item["name"]
             for artist in item["artists"]:
