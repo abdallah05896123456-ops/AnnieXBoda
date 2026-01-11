@@ -26,7 +26,8 @@ from config import BANNED_USERS
 from strings import get_string
 
 # استخدام getattr لتجنب الأخطاء لو المتغير مش موجود
-START_IMG_URL = getattr(config, "START_IMG_URL", "https://telegra.ph/file/25f0a6d0d5885f8128362.jpg")
+START_IMG_URL = getattr(config, "START_IMG_URL", "https://files.catbox.moe/exvq3d.jpg")
+LOGGER_ID = getattr(config, "LOGGER_ID", config.OWNER_ID) # Fallback to Owner ID if Logger ID is 0
 
 @app.on_message(filters.command(["start"]) & filters.private & ~BANNED_USERS)
 @LanguageStart
@@ -53,10 +54,11 @@ async def start_pm(client, message: Message, _):
         if name[0:3] == "sud":
             await sudoers_list(client=client, message=message, _=_)
             if await is_on_off(2):
-                return await app.send_message(
-                    chat_id=config.LOGGER_ID,
-                    text=f"{message.from_user.mention} قــام بـبـدء الـبـوت لـمـعـرفـة <b>قـائـمـة الـمـطـوريـن</b>.\n\n<b>آيــدي الـشـخـص :</b> <code>{message.from_user.id}</code>\n<b>الـيـوزر :</b> @{message.from_user.username}",
-                )
+                if LOGGER_ID != 0:
+                    return await app.send_message(
+                        chat_id=LOGGER_ID,
+                        text=f"{message.from_user.mention} قــام بـبـدء الـبـوت لـمـعـرفـة <b>قـائـمـة الـمـطـوريـن</b>.\n\n<b>آيــدي الـشـخـص :</b> <code>{message.from_user.id}</code>\n<b>الـيـوزر :</b> @{message.from_user.username}",
+                    )
             return
         if name[0:3] == "inf":
             m = await message.reply_text("🔎")
@@ -98,15 +100,15 @@ async def start_pm(client, message: Message, _):
                     reply_markup=key,
                 )
                 if await is_on_off(2):
-                    return await app.send_message(
-                        chat_id=config.LOGGER_ID,
-                        text=f"{message.from_user.mention} قــام بـبـدء الـبـوت لـمـعـرفـة <b>مـعـلـومـات الأغـنـيـة</b>.\n\n<b>آيــدي الـشـخـص :</b> <code>{message.from_user.id}</code>\n<b>الـيـوزر :</b> @{message.from_user.username}",
-                    )
+                    if LOGGER_ID != 0:
+                        return await app.send_message(
+                            chat_id=LOGGER_ID,
+                            text=f"{message.from_user.mention} قــام بـبـدء الـبـوت لـمـعـرفـة <b>مـعـلـومـات الأغـنـيـة</b>.\n\n<b>آيــدي الـشـخـص :</b> <code>{message.from_user.id}</code>\n<b>الـيـوزر :</b> @{message.from_user.username}",
+                        )
             except Exception as e:
                 await m.edit_text(f"Error: {e}")
                 return
     else:
-        # تجهيز الكيبورد مقدماً لضمان ظهوره
         out = private_panel(_)
         
         # --- 1. الصلاة على النبي ---
@@ -117,7 +119,7 @@ async def start_pm(client, message: Message, _):
         except:
             pass
 
-        # --- 2. الترحيب المتحرك (نورت يا غالي) ---
+        # --- 2. الترحيب المتحرك ---
         lol = await message.reply_text("نــورت يـا غــالـي ꨄ︎ {}.. 🤍".format(message.from_user.mention))
         await asyncio.sleep(0.1)
         await lol.edit_text("نــورت يـا غــالـي ꨄ︎ {}.. ☔".format(message.from_user.mention))
@@ -135,7 +137,7 @@ async def start_pm(client, message: Message, _):
         except:
             pass
         
-        # --- 3. جاري التشغيل (بالقلب الأبيض) ---
+        # --- 3. جاري التشغيل ---
         lols = await message.reply_text("🤍 جـ")
         await asyncio.sleep(0.1)
         await lols.edit_text("🤍 جــ")        
@@ -169,7 +171,7 @@ async def start_pm(client, message: Message, _):
         except:
             pass
         
-        # --- 5. أولوية الصورة (بوت > مستخدم > كونفج) ---
+        # --- 5. أولوية الصورة ---
         if client.me.photo:
             chat_photo = client.me.photo.big_file_id
         elif message.from_user.photo:
@@ -178,7 +180,6 @@ async def start_pm(client, message: Message, _):
             chat_photo = START_IMG_URL
         
         # --- 6. التنظيف والارسال النهائي ---
-        # مسح رسائل التحميل والاستيكر قبل اظهار الصورة
         if lols:
             try:
                 await lols.delete()
@@ -190,7 +191,6 @@ async def start_pm(client, message: Message, _):
             except:
                 pass
         
-        # الارسال (يظهر الكيبورد هنا)
         try:
             await message.reply_photo(
                 photo=chat_photo,
@@ -198,23 +198,24 @@ async def start_pm(client, message: Message, _):
                 reply_markup=InlineKeyboardMarkup(out),
             )
         except Exception as e:
-            # لو فشل بسبب الصورة، يبعت الصورة الافتراضية
             await message.reply_photo(
                 photo=START_IMG_URL,
                 caption=_["start_2"].format(message.from_user.mention, app.mention),
                 reply_markup=InlineKeyboardMarkup(out),
             )
 
-        if await is_on_off(config.LOG):
-            sender_id = message.from_user.id
-            sender_name = message.from_user.first_name
-            try:
-                await app.send_message(
-                    config.LOG_GROUP_ID,
-                    f"{message.from_user.mention} قــام بـبـدء الـبـوت .. ⚡\n\n**آيــدي الـشـخـص :** {sender_id}\n**الاســم:** {sender_name}",
-                )
-            except:
-                pass
+        # اللوج (معدل ليتوافق مع الكونفج بتاعك)
+        if getattr(config, "LOG", True): 
+            if LOGGER_ID != 0:
+                sender_id = message.from_user.id
+                sender_name = message.from_user.first_name
+                try:
+                    await app.send_message(
+                        LOGGER_ID,
+                        f"{message.from_user.mention} قــام بـبـدء الـبـوت .. ⚡\n\n**آيــدي الـشـخـص :** {sender_id}\n**الاســم:** {sender_name}",
+                    )
+                except:
+                    pass
 
 @app.on_message(filters.command(["start"]) & filters.group & ~BANNED_USERS)
 @LanguageStart
