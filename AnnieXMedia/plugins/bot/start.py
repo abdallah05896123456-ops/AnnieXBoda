@@ -1,170 +1,224 @@
-﻿# Authored By Certified Coders © 2025
-import asyncio
-import random
+# Authored By Certified Coders © 2025
 import time
+import asyncio
 from pyrogram import filters
 from pyrogram.enums import ChatType
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
-from youtubesearchpython.aio import VideosSearch
+from youtubesearchpython import VideosSearch
 
 import config
 from AnnieXMedia import app
 from AnnieXMedia.misc import _boot_
 from AnnieXMedia.plugins.sudo.sudoers import sudoers_list
-from AnnieXMedia.utils import bot_sys_stats
 from AnnieXMedia.utils.database import (
     add_served_chat,
     add_served_user,
     blacklisted_chats,
     get_lang,
-    get_served_chats,
-    get_served_users,
     is_banned_user,
     is_on_off,
 )
 from AnnieXMedia.utils.decorators.language import LanguageStart
 from AnnieXMedia.utils.formatters import get_readable_time
+from AnnieXMedia.utils.inline.help import first_page as help_pannel
 from AnnieXMedia.utils.inline.start import private_panel, start_panel
-from AnnieXMedia.utils.inline.help import first_page
-from config import BANNED_USERS, AYUV, HELP_IMG_URL, START_VIDS, STICKERS
+from config import BANNED_USERS
 from strings import get_string
-
-
-async def delete_sticker_after_delay(message: Message, delay: int) -> None:
-    await asyncio.sleep(delay)
-    try:
-        await message.delete()
-    except Exception:
-        pass
-
 
 @app.on_message(filters.command(["start"]) & filters.private & ~BANNED_USERS)
 @LanguageStart
 async def start_pm(client, message: Message, _):
+    await add_served_user(message.from_user.id)
     try:
-        await add_served_user(message.from_user.id)
-    except Exception:
+        await message.react("❤")
+    except:
         pass
-
+        
     if len(message.text.split()) > 1:
         name = message.text.split(None, 1)[1]
-
-        if name.startswith("help"):
-            keyboard = first_page(_)
+        if name[0:4] == "help":
+            keyboard = help_pannel(_)
+            try:
+                await message.reply_sticker("CAACAgUAAyEFAATXFFgrAAIDymlfzq3ZMbEh_bgdkjEhg2QMBib-AAILFQAC-vEZVMBmWHCQ-sJuHgQ")
+            except:
+                pass
             return await message.reply_photo(
-                photo=HELP_IMG_URL,
+                photo=config.START_IMG_URL,
                 caption=_["help_1"].format(config.SUPPORT_CHAT),
                 reply_markup=keyboard,
             )
-
-        if name.startswith("sud"):
+        if name[0:3] == "sud":
             await sudoers_list(client=client, message=message, _=_)
             if await is_on_off(2):
-                username = f"@{message.from_user.username}" if message.from_user.username else "(none)"
-                await app.send_message(
+                return await app.send_message(
                     chat_id=config.LOGGER_ID,
-                    text=(
-                        f"{message.from_user.mention} ᴊᴜsᴛ sᴛᴀʀᴛᴇᴅ ᴛʜᴇ ʙᴏᴛ ᴛᴏ ᴄʜᴇᴄᴋ <b>sᴜᴅᴏʟɪsᴛ</b>.\n\n"
-                        f"<b>ᴜsᴇʀ ɪᴅ :</b> <code>{message.from_user.id}</code>\n"
-                        f"<b>ᴜsᴇʀɴᴀᴍᴇ :</b> {username}"
-                    ),
+                    text=f"{message.from_user.mention} قــام بـبـدء الـبـوت لـمـعـرفـة <b>قـائـمـة الـمـطـوريـن</b>.\n\n<b>آيــدي الـشـخـص :</b> <code>{message.from_user.id}</code>\n<b>الـيـوزر :</b> @{message.from_user.username}",
                 )
             return
-
-        if name.startswith("inf"):
+        if name[0:3] == "inf":
             m = await message.reply_text("🔎")
+            query = (str(name)).replace("info_", "", 1)
+            query = f"https://www.youtube.com/watch?v={query}"
+            
+            def _search():
+                return VideosSearch(query, limit=1).result()
+
             try:
-                vid_id = str(name).replace("info_", "", 1)
-                query = f"https://www.youtube.com/watch?v={vid_id}"
-                results = VideosSearch(query, limit=1)
-                data = await results.next()
-                result = (data.get("result") or [None])[0]
-                if not result:
-                    await m.edit_text("No results found.")
-                    return
-
-                title = result.get("title") or "Unknown"
-                duration = result.get("duration") or "Unknown"
-                views = (result.get("viewCount") or {}).get("short") or "Unknown"
-                thumbnail = ((result.get("thumbnails") or [{}])[0].get("url") or "").split("?")[0]
-                channellink = (result.get("channel") or {}).get("link") or "https://youtube.com"
-                channel = (result.get("channel") or {}).get("name") or "Unknown"
-                link = result.get("link") or query
-                published = result.get("publishedTime") or "Unknown"
-
-                searched_text = _["start_6"].format(title, duration, views, published, channellink, channel, app.mention)
-                key = InlineKeyboardMarkup(
-                    [[InlineKeyboardButton(text=_["S_B_6"], url=link),
-                      InlineKeyboardButton(text=_["S_B_4"], url=config.SUPPORT_CHAT)]]
+                results = await asyncio.to_thread(_search)
+                result = results["result"][0]
+                
+                title = result["title"]
+                duration = result["duration"]
+                views = result["viewCount"]["short"]
+                thumbnail = result["thumbnails"][0]["url"].split("?")[0]
+                channellink = result["channel"]["link"]
+                channel = result["channel"]["name"]
+                link = result["link"]
+                published = result["publishedTime"]
+                
+                searched_text = _["start_6"].format(
+                    title, duration, views, published, channellink, channel, app.mention
                 )
-
+                key = InlineKeyboardMarkup(
+                    [
+                        [
+                            InlineKeyboardButton(text=_["S_B_8"], url=link),
+                            InlineKeyboardButton(text=_["S_B_9"], url=config.SUPPORT_CHAT),
+                        ],
+                    ]
+                )
                 await m.delete()
-
                 await app.send_photo(
                     chat_id=message.chat.id,
-                    photo=thumbnail or HELP_IMG_URL,
+                    photo=thumbnail,
                     caption=searched_text,
                     reply_markup=key,
                 )
-
                 if await is_on_off(2):
-                    username = f"@{message.from_user.username}" if message.from_user.username else "(none)"
-                    await app.send_message(
+                    return await app.send_message(
                         chat_id=config.LOGGER_ID,
-                        text=(
-                            f"{message.from_user.mention} ᴊᴜsᴛ sᴛᴀʀᴛᴇᴅ ᴛʜᴇ ʙᴏᴛ ᴛᴏ ᴄʜᴇᴄᴋ <b>ᴛʀᴀᴄᴋ ɪɴғᴏʀᴍᴀᴛɪᴏɴ</b>.\n\n"
-                            f"<b>ᴜsᴇʀ ɪᴅ :</b> <code>{message.from_user.id}</code>\n"
-                            f"<b>ᴜsᴇʀɴᴀᴍᴇ :</b> {username}"
-                        ),
+                        text=f"{message.from_user.mention} قــام بـبـدء الـبـوت لـمـعـرفـة <b>مـعـلـومـات الأغـنـيـة</b>.\n\n<b>آيــدي الـشـخـص :</b> <code>{message.from_user.id}</code>\n<b>الـيـوزر :</b> @{message.from_user.username}",
                     )
             except Exception as e:
                 await m.edit_text(f"Error: {e}")
-            return
+                return
+    else:
 
-    out = private_panel(_)
-    sticker_message = await message.reply_sticker(sticker=random.choice(STICKERS))
-    asyncio.create_task(delete_sticker_after_delay(sticker_message, 2))
+        try:
+            out = private_panel(_)
+            
+            # --- الترحيب المتحرك ---
+            lol = await message.reply_text("نــورت يـا غــالـي ꨄ︎ {}.. 🤍".format(message.from_user.mention))
+            await asyncio.sleep(0.1)
+            await lol.edit_text("نــورت يـا غــالـي ꨄ︎ {}.. ☔".format(message.from_user.mention))
+            await asyncio.sleep(0.1)
+            await lol.edit_text("نــورت يـا غــالـي ꨄ︎ {}.. 🧚".format(message.from_user.mention))
+            await asyncio.sleep(0.1)
+            await lol.edit_text("نــورت يـا غــالـي ꨄ︎ {}.. 💞".format(message.from_user.mention))
+            await asyncio.sleep(0.1)
+            await lol.edit_text("نــورت يـا غــالـي ꨄ︎ {}.. 💕".format(message.from_user.mention))
+            await asyncio.sleep(0.1)
+            await lol.edit_text("نــورت يـا غــالـي ꨄ︎ {}.. 💜".format(message.from_user.mention))
+               
+            await lol.delete()
+            
+            # --- جاري التشغيل ---
+            lols = await message.reply_text("🤍 جـ")
+            await asyncio.sleep(0.1)
+            await lols.edit_text("🤍 جــ")        
+            await asyncio.sleep(0.1)
+            await lols.edit_text("🤍 جــا")
+            await asyncio.sleep(0.1)
+            await lols.edit_text("🤍 جــار")
+            await asyncio.sleep(0.1)
+            await lols.edit_text("🤍 جــاري")
+            await asyncio.sleep(0.1)
+            await lols.edit_text("🤍 جــاري الـ")
+            await asyncio.sleep(0.1)
+            await lols.edit_text("🤍 جــاري التـ")
+            await asyncio.sleep(0.1)
+            await lols.edit_text("🤍 جــاري التشـ")
+            await asyncio.sleep(0.1)
+            await lols.edit_text("🤍 جــاري التشغيـ")
+            await asyncio.sleep(0.1)
+            await lols.edit_text("🤍 جــاري التشغيل")
+            await asyncio.sleep(0.1)
+            await lols.edit_text("🤍 جــاري التشغيل .")
+            await asyncio.sleep(0.1)
+            await lols.edit_text("🤍 جــاري التشغيل . .")
+            await asyncio.sleep(0.1)
+            await lols.edit_text("🤍 جــاري التشغيل . . .")
 
-    served_chats_coro = get_served_chats()
-    served_users_coro = get_served_users()
-    stats_coro = bot_sys_stats()
-    served_chats, served_users, (UP, CPU, RAM, DISK) = await asyncio.gather(
-        served_chats_coro, served_users_coro, stats_coro
-    )
+            try:
+                m = await message.reply_sticker("CAACAgUAAyEFAATXFFgrAAIDymlfzq3ZMbEh_bgdkjEhg2QMBib-AAILFQAC-vEZVMBmWHCQ-sJuHgQ")
+            except:
+                m = None
+            
+            # --- نظام الأولوية للصور ---
+            # 1. صورة البوت
+            # 2. صورة المستخدم
+            # 3. صورة الكونفج (رابط)
+            
+            chat_photo = config.START_IMG_URL # الافتراضي
+            
+            if client.me.photo:
+                chat_photo = client.me.photo.big_file_id
+            elif message.from_user.photo:
+                chat_photo = message.from_user.photo.big_file_id
+            
+            # -----------------------------------
 
-    await message.reply_video(
-        random.choice(START_VIDS),
-        caption=random.choice(AYUV).format(
-            message.from_user.mention, app.mention, UP, DISK, CPU, RAM, len(served_users), len(served_chats)
-        ),
-        reply_markup=InlineKeyboardMarkup(out),
-    )
+        except Exception:
+            chat_photo = config.START_IMG_URL
+            lols = None
+            m = None
+        
+        if lols:
+            try:
+                await lols.delete()
+            except:
+                pass
+        if m:
+            try:
+                await m.delete()
+            except:
+                pass
+        
+        try:
+            await message.reply_photo(
+                photo=chat_photo,
+                caption=_["start_2"].format(message.from_user.mention, app.mention),
+                reply_markup=InlineKeyboardMarkup(out),
+            )
+        except:
+            # لو فشل في ارسال الـ ID يرجع يستخدم الرابط الافتراضي
+            await message.reply_photo(
+                photo=config.START_IMG_URL,
+                caption=_["start_2"].format(message.from_user.mention, app.mention),
+                reply_markup=InlineKeyboardMarkup(out),
+            )
 
-    if await is_on_off(2):
-        username = f"@{message.from_user.username}" if message.from_user.username else "(none)"
-        await app.send_message(
-            chat_id=config.LOGGER_ID,
-            text=(
-                f"{message.from_user.mention} ᴊᴜsᴛ sᴛᴀʀᴛᴇᴅ ᴛʜᴇ ʙᴏᴛ.\n\n"
-                f"<b>ᴜsᴇʀ ɪᴅ :</b> <code>{message.from_user.id}</code>\n"
-                f"<b>ᴜsᴇʀɴᴀᴍᴇ :</b> {username}"
-            ),
-        )
-
+        if await is_on_off(config.LOG):
+            sender_id = message.from_user.id
+            sender_name = message.from_user.first_name
+            try:
+                await app.send_message(
+                    config.LOG_GROUP_ID,
+                    f"{message.from_user.mention} قــام بـبـدء الـبـوت .. ⚡\n\n**آيــدي الـشـخـص :** {sender_id}\n**الاســم:** {sender_name}",
+                )
+            except:
+                pass
 
 @app.on_message(filters.command(["start"]) & filters.group & ~BANNED_USERS)
 @LanguageStart
 async def start_gp(client, message: Message, _):
     out = start_panel(_)
     uptime = int(time.time() - _boot_)
-    try:
-        await message.reply_video(
-            random.choice(START_VIDS),
-            caption=_["start_1"].format(app.mention, get_readable_time(uptime)),
-            reply_markup=InlineKeyboardMarkup(out),
-        )
-    except:
-        pass
+    await message.reply_photo(
+        photo=config.START_IMG_URL,
+        caption=_["start_1"].format(app.mention, get_readable_time(uptime)),
+        reply_markup=InlineKeyboardMarkup(out),
+    )
     return await add_served_chat(message.chat.id)
 
 
@@ -174,18 +228,15 @@ async def welcome(client, message: Message):
         try:
             language = await get_lang(message.chat.id)
             _ = get_string(language)
-
             if await is_banned_user(member.id):
                 try:
                     await message.chat.ban_member(member.id)
-                except Exception:
+                except:
                     pass
-
             if member.id == app.id:
                 if message.chat.type != ChatType.SUPERGROUP:
                     await message.reply_text(_["start_4"])
                     return await app.leave_chat(message.chat.id)
-
                 if message.chat.id in await blacklisted_chats():
                     await message.reply_text(
                         _["start_5"].format(
@@ -198,10 +249,10 @@ async def welcome(client, message: Message):
                     return await app.leave_chat(message.chat.id)
 
                 out = start_panel(_)
-                await message.reply_video(
-                    random.choice(START_VIDS),
+                await message.reply_photo(
+                    photo=config.START_IMG_URL,
                     caption=_["start_3"].format(
-                        message.from_user.mention,
+                        message.from_user.first_name,
                         app.mention,
                         message.chat.title,
                         app.mention,
@@ -210,6 +261,5 @@ async def welcome(client, message: Message):
                 )
                 await add_served_chat(message.chat.id)
                 await message.stop_propagation()
-
         except Exception as ex:
             print(ex)
