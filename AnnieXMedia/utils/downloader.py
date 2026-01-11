@@ -1,6 +1,4 @@
 # Authored By Certified Coders © 2025
-# Modified to Fix Blocking (Force IPv4)
-
 import asyncio
 import contextlib
 import glob
@@ -50,11 +48,8 @@ def extract_video_id(link: str) -> str:
 
 def get_cookie_file() -> Optional[str]:
     try:
-        # البحث عن الكوكيز في المسار المحدد أو في المجلد الرئيسي
         if _COOKIES_FILE and os.path.exists(_COOKIES_FILE) and os.path.getsize(_COOKIES_FILE) > 0:
             return _COOKIES_FILE
-        if os.path.exists("cookies.txt"):
-            return "cookies.txt"
     except Exception:
         pass
     return None
@@ -71,7 +66,6 @@ def find_cached_file(video_id: str) -> Optional[str]:
 
 
 def get_ytdlp_base_opts() -> Dict[str, object]:
-    # === التعديل الجوهري هنا ===
     opts = {
         "outtmpl": f"{DOWNLOAD_DIR}/%(id)s.%(ext)s",
         "quiet": True,
@@ -80,18 +74,14 @@ def get_ytdlp_base_opts() -> Dict[str, object]:
         "overwrites": False,
         "continuedl": True,
         "noprogress": True,
-        # تقليل العدد لتفادي الضغط، وزيادة الثبات
-        "concurrent_fragment_downloads": 5, 
+        "concurrent_fragment_downloads": 16,
         "http_chunk_size": 1 << 20,
-        "socket_timeout": 30, # زيادة المهلة
-        "retries": 3,
-        "fragment_retries": 3,
+        "socket_timeout": 15,
+        "retries": 1,
+        "fragment_retries": 1,
         "cachedir": str(CACHE_DIR),
         "ignoreerrors": True,
-        # === الإضافات المهمة لفك الحظر ===
-        "source_address": "0.0.0.0", # إجبار IPv4 (الحل السحري)
-        "geo_bypass": True,
-        "nocheckcertificate": True,
+        "merge_output_format": "mp4"
     }
     if cookiefile := get_cookie_file():
         opts["cookiefile"] = cookiefile
@@ -283,14 +273,13 @@ async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str
             LOGGER.info(f"Track '{title}' - Served from cache")
         return cached
 
-    # تم تبسيط صيغ التحميل لتكون أكثر مرونة
     if type == "audio":
         key = f"audio:{link}"
 
         async def run():
             ytdlp_task = asyncio.create_task(
                 run_with_semaphore(
-                    loop.run_in_executor(None, download_with_ytdlp_sync, link, "bestaudio/best")
+                    loop.run_in_executor(None, download_with_ytdlp_sync, link, "bestaudio[ext=webm][acodec=opus]")
                 )
             )
             api_task = asyncio.create_task(api_download_audio(link)) if USE_AUDIO_API else None
@@ -309,7 +298,7 @@ async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str
         async def run():
             ytdlp_task = asyncio.create_task(
                 run_with_semaphore(
-                    loop.run_in_executor(None, download_with_ytdlp_sync, link, "bestvideo+bestaudio/best")
+                    loop.run_in_executor(None, download_with_ytdlp_sync, link, "(bestvideo[height<=?720][width<=?1280][ext=mp4])+(bestaudio)")
                 )
             )
             api_task = asyncio.create_task(api_download_video(link)) if USE_VIDEO_API else None
