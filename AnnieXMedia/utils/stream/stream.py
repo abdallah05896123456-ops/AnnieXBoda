@@ -17,7 +17,7 @@ from AnnieXMedia.utils.stream.queue import put_queue, put_queue_index
 from AnnieXMedia.utils.thumbnails import get_thumb
 from AnnieXMedia.utils.errors import capture_internal_err
 
-# استيراد yt_dlp للطوارئ
+# --- إضافة مكتبة التحميل المباشر ---
 import yt_dlp
 
 @capture_internal_err
@@ -83,41 +83,47 @@ async def stream(
                 if not forceplay:
                     db[chat_id] = []
                 
-                # --- بداية كود الإصلاح الذكي ---
+                # ==========================================
+                # بداية كود الإصلاح (Playlist)
+                # ==========================================
                 file_path = None
                 direct = False
+                
+                # المحاولة الأولى: الطريقة العادية
                 try:
                     file_path, direct = await YouTube.download(
                         vidid, mystic, video=is_video, videoid=vidid
                     )
                 except Exception:
                     pass
-                
-                # نظام الطوارئ: لو التحميل العادي فشل، نحمل يدوياً
+
+                # المحاولة الثانية: طريقة الطوارئ باستخدام الكوكيز
                 if not file_path:
                     try:
                         link = f"https://www.youtube.com/watch?v={vidid}"
-                        # إعدادات تقبل أي جودة صوت
                         opts = {
                             'format': 'bestaudio[ext=m4a]/bestaudio/best',
                             'outtmpl': f"downloads/{vidid}.%(ext)s",
                             'geo_bypass': True,
                             'nocheckcertificate': True,
                             'quiet': True,
+                            'cookiefile': 'cookies.txt', # استخدام الكوكيز إجباري
                         }
                         if is_video:
                             opts['format'] = 'bestvideo+bestaudio/best'
-                            
-                        # استخدام yt_dlp مباشرة
+                        
                         with yt_dlp.YoutubeDL(opts) as ydl:
                             info = ydl.extract_info(link, download=False)
                             ydl.download([link])
                             ext = info.get('ext', 'm4a')
                             file_path = f"downloads/{vidid}.{ext}"
                             direct = True
-                    except Exception as e:
+                    except Exception:
                         raise AssistantErr(_["play_14"])
-                # --- نهاية كود الإصلاح الذكي ---
+                # ==========================================
+
+                if not file_path:
+                    raise AssistantErr(_["play_14"])
 
                 await StreamController.join_call(
                     chat_id,
@@ -182,40 +188,47 @@ async def stream(
         duration_min = result["duration_min"]
         thumbnail = result["thumb"]
 
-        # --- بداية كود الإصلاح الذكي (للأغاني الفردية) ---
+        # ==========================================
+        # بداية كود الإصلاح (YouTube Track)
+        # ==========================================
         file_path = None
         direct = False
+
+        # المحاولة الأولى
         try:
             file_path, direct = await YouTube.download(
                 vidid, mystic, video=is_video, videoid=vidid
             )
         except Exception:
             pass
-            
+
+        # المحاولة الثانية (الطوارئ)
         if not file_path:
             try:
-                # محاولة التحميل اليدوي في حالة فشل النظام الأساسي
-                dl_link = f"https://www.youtube.com/watch?v={vidid}"
+                link = f"https://www.youtube.com/watch?v={vidid}"
                 opts = {
                     'format': 'bestaudio[ext=m4a]/bestaudio/best',
                     'outtmpl': f"downloads/{vidid}.%(ext)s",
                     'geo_bypass': True,
                     'nocheckcertificate': True,
                     'quiet': True,
+                    'cookiefile': 'cookies.txt', # استخدام الكوكيز إجباري
                 }
                 if is_video:
                     opts['format'] = 'bestvideo+bestaudio/best'
-
+                
                 with yt_dlp.YoutubeDL(opts) as ydl:
-                    info = ydl.extract_info(dl_link, download=False)
-                    ydl.download([dl_link])
+                    info = ydl.extract_info(link, download=False)
+                    ydl.download([link])
                     ext = info.get('ext', 'm4a')
                     file_path = f"downloads/{vidid}.{ext}"
                     direct = True
-            except Exception as e:
-                # لو فشل حتى اليدوي، نرجع الخطأ
+            except Exception:
                 raise AssistantErr(_["play_14"])
-        # --- نهاية كود الإصلاح الذكي ---
+        
+        if not file_path:
+            raise AssistantErr(_["play_14"])
+        # ==========================================
 
         if await is_active_chat(chat_id):
             await put_queue(
