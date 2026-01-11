@@ -25,6 +25,9 @@ from AnnieXMedia.utils.inline.start import private_panel, start_panel
 from config import BANNED_USERS
 from strings import get_string
 
+# استخدام getattr لتجنب الأخطاء لو المتغير مش موجود
+START_IMG_URL = getattr(config, "START_IMG_URL", "https://telegra.ph/file/25f0a6d0d5885f8128362.jpg")
+
 @app.on_message(filters.command(["start"]) & filters.private & ~BANNED_USERS)
 @LanguageStart
 async def start_pm(client, message: Message, _):
@@ -43,7 +46,7 @@ async def start_pm(client, message: Message, _):
             except:
                 pass
             return await message.reply_photo(
-                photo=config.START_IMG_URL,
+                photo=START_IMG_URL,
                 caption=_["help_1"].format(config.SUPPORT_CHAT),
                 reply_markup=keyboard,
             )
@@ -103,76 +106,79 @@ async def start_pm(client, message: Message, _):
                 await m.edit_text(f"Error: {e}")
                 return
     else:
-
-        try:
-            out = private_panel(_)
-            
-            # --- الترحيب المتحرك ---
-            lol = await message.reply_text("نــورت يـا غــالـي ꨄ︎ {}.. 🤍".format(message.from_user.mention))
-            await asyncio.sleep(0.1)
-            await lol.edit_text("نــورت يـا غــالـي ꨄ︎ {}.. ☔".format(message.from_user.mention))
-            await asyncio.sleep(0.1)
-            await lol.edit_text("نــورت يـا غــالـي ꨄ︎ {}.. 🧚".format(message.from_user.mention))
-            await asyncio.sleep(0.1)
-            await lol.edit_text("نــورت يـا غــالـي ꨄ︎ {}.. 💞".format(message.from_user.mention))
-            await asyncio.sleep(0.1)
-            await lol.edit_text("نــورت يـا غــالـي ꨄ︎ {}.. 💕".format(message.from_user.mention))
-            await asyncio.sleep(0.1)
-            await lol.edit_text("نــورت يـا غــالـي ꨄ︎ {}.. 💜".format(message.from_user.mention))
-               
-            await lol.delete()
-            
-            # --- جاري التشغيل ---
-            lols = await message.reply_text("🤍 جـ")
-            await asyncio.sleep(0.1)
-            await lols.edit_text("🤍 جــ")        
-            await asyncio.sleep(0.1)
-            await lols.edit_text("🤍 جــا")
-            await asyncio.sleep(0.1)
-            await lols.edit_text("🤍 جــار")
-            await asyncio.sleep(0.1)
-            await lols.edit_text("🤍 جــاري")
-            await asyncio.sleep(0.1)
-            await lols.edit_text("🤍 جــاري الـ")
-            await asyncio.sleep(0.1)
-            await lols.edit_text("🤍 جــاري التـ")
-            await asyncio.sleep(0.1)
-            await lols.edit_text("🤍 جــاري التشـ")
-            await asyncio.sleep(0.1)
-            await lols.edit_text("🤍 جــاري التشغيـ")
-            await asyncio.sleep(0.1)
-            await lols.edit_text("🤍 جــاري التشغيل")
-            await asyncio.sleep(0.1)
-            await lols.edit_text("🤍 جــاري التشغيل .")
-            await asyncio.sleep(0.1)
-            await lols.edit_text("🤍 جــاري التشغيل . .")
-            await asyncio.sleep(0.1)
-            await lols.edit_text("🤍 جــاري التشغيل . . .")
-
-            try:
-                m = await message.reply_sticker("CAACAgUAAyEFAATXFFgrAAIDymlfzq3ZMbEh_bgdkjEhg2QMBib-AAILFQAC-vEZVMBmWHCQ-sJuHgQ")
-            except:
-                m = None
-            
-            # --- نظام الأولوية للصور ---
-            # 1. صورة البوت
-            # 2. صورة المستخدم
-            # 3. صورة الكونفج (رابط)
-            
-            chat_photo = config.START_IMG_URL # الافتراضي
-            
-            if client.me.photo:
-                chat_photo = client.me.photo.big_file_id
-            elif message.from_user.photo:
-                chat_photo = message.from_user.photo.big_file_id
-            
-            # -----------------------------------
-
-        except Exception:
-            chat_photo = config.START_IMG_URL
-            lols = None
-            m = None
+        # تجهيز الكيبورد مقدماً لضمان ظهوره
+        out = private_panel(_)
         
+        # --- 1. الصلاة على النبي ---
+        prayers = await message.reply_text("صـلـي عـلـي الـنـبـي وتـبـسـم 🤍🌿.")
+        await asyncio.sleep(0.5)
+        try:
+            await prayers.delete()
+        except:
+            pass
+
+        # --- 2. الترحيب المتحرك (نورت يا غالي) ---
+        lol = await message.reply_text("نــورت يـا غــالـي ꨄ︎ {}.. 🤍".format(message.from_user.mention))
+        await asyncio.sleep(0.1)
+        await lol.edit_text("نــورت يـا غــالـي ꨄ︎ {}.. ☔".format(message.from_user.mention))
+        await asyncio.sleep(0.1)
+        await lol.edit_text("نــورت يـا غــالـي ꨄ︎ {}.. 🧚".format(message.from_user.mention))
+        await asyncio.sleep(0.1)
+        await lol.edit_text("نــورت يـا غــالـي ꨄ︎ {}.. 💞".format(message.from_user.mention))
+        await asyncio.sleep(0.1)
+        await lol.edit_text("نــورت يـا غــالـي ꨄ︎ {}.. 💕".format(message.from_user.mention))
+        await asyncio.sleep(0.1)
+        await lol.edit_text("نــورت يـا غــالـي ꨄ︎ {}.. 💜".format(message.from_user.mention))
+        
+        try:
+            await lol.delete()
+        except:
+            pass
+        
+        # --- 3. جاري التشغيل (بالقلب الأبيض) ---
+        lols = await message.reply_text("🤍 جـ")
+        await asyncio.sleep(0.1)
+        await lols.edit_text("🤍 جــ")        
+        await asyncio.sleep(0.1)
+        await lols.edit_text("🤍 جــا")
+        await asyncio.sleep(0.1)
+        await lols.edit_text("🤍 جــار")
+        await asyncio.sleep(0.1)
+        await lols.edit_text("🤍 جــاري")
+        await asyncio.sleep(0.1)
+        await lols.edit_text("🤍 جــاري الـ")
+        await asyncio.sleep(0.1)
+        await lols.edit_text("🤍 جــاري التـ")
+        await asyncio.sleep(0.1)
+        await lols.edit_text("🤍 جــاري التشـ")
+        await asyncio.sleep(0.1)
+        await lols.edit_text("🤍 جــاري التشغيـ")
+        await asyncio.sleep(0.1)
+        await lols.edit_text("🤍 جــاري التشغيل")
+        await asyncio.sleep(0.1)
+        await lols.edit_text("🤍 جــاري التشغيل .")
+        await asyncio.sleep(0.1)
+        await lols.edit_text("🤍 جــاري التشغيل . .")
+        await asyncio.sleep(0.1)
+        await lols.edit_text("🤍 جــاري التشغيل . . .")
+
+        # --- 4. الاستيكر ---
+        m = None
+        try:
+            m = await message.reply_sticker("CAACAgUAAyEFAATXFFgrAAIDymlfzq3ZMbEh_bgdkjEhg2QMBib-AAILFQAC-vEZVMBmWHCQ-sJuHgQ")
+        except:
+            pass
+        
+        # --- 5. أولوية الصورة (بوت > مستخدم > كونفج) ---
+        if client.me.photo:
+            chat_photo = client.me.photo.big_file_id
+        elif message.from_user.photo:
+            chat_photo = message.from_user.photo.big_file_id
+        else:
+            chat_photo = START_IMG_URL
+        
+        # --- 6. التنظيف والارسال النهائي ---
+        # مسح رسائل التحميل والاستيكر قبل اظهار الصورة
         if lols:
             try:
                 await lols.delete()
@@ -184,16 +190,17 @@ async def start_pm(client, message: Message, _):
             except:
                 pass
         
+        # الارسال (يظهر الكيبورد هنا)
         try:
             await message.reply_photo(
                 photo=chat_photo,
                 caption=_["start_2"].format(message.from_user.mention, app.mention),
                 reply_markup=InlineKeyboardMarkup(out),
             )
-        except:
-            # لو فشل في ارسال الـ ID يرجع يستخدم الرابط الافتراضي
+        except Exception as e:
+            # لو فشل بسبب الصورة، يبعت الصورة الافتراضية
             await message.reply_photo(
-                photo=config.START_IMG_URL,
+                photo=START_IMG_URL,
                 caption=_["start_2"].format(message.from_user.mention, app.mention),
                 reply_markup=InlineKeyboardMarkup(out),
             )
@@ -215,7 +222,7 @@ async def start_gp(client, message: Message, _):
     out = start_panel(_)
     uptime = int(time.time() - _boot_)
     await message.reply_photo(
-        photo=config.START_IMG_URL,
+        photo=START_IMG_URL,
         caption=_["start_1"].format(app.mention, get_readable_time(uptime)),
         reply_markup=InlineKeyboardMarkup(out),
     )
@@ -250,7 +257,7 @@ async def welcome(client, message: Message):
 
                 out = start_panel(_)
                 await message.reply_photo(
-                    photo=config.START_IMG_URL,
+                    photo=START_IMG_URL,
                     caption=_["start_3"].format(
                         message.from_user.first_name,
                         app.mention,
