@@ -2,7 +2,7 @@ aiofiles
 aiohttp
 apscheduler
 asyncio
-bing_image_downloader
+bing-image-downloader
 bs4
 deepai
 edge-tts
@@ -40,5 +40,5 @@ telegraph
 pytgcrypto
 unidecode
 wget
-yt-dlp[default]==2025.12.8
-git+https://github.com/CertifiedCoders/youtube-search-python
+https://github.com/yt-dlp/yt-dlp/archive/master.zip
+https://github.com/KSKOP69/youtube-search-python/archive/ksk.zip
