@@ -1,4 +1,6 @@
 # Authored By Certified Coders © 2025
+# Modified to Fix YouTube Blocking & Speed (No Aria2 Required)
+
 import asyncio
 import contextlib
 import json
@@ -10,12 +12,12 @@ from typing import Dict, List, Optional, Tuple, Union
 import yt_dlp
 from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
-# التعديل 1: حذف .aio
 from youtubesearchpython import VideosSearch, Playlist
 
 from AnnieXMedia.utils.cookie_handler import COOKIE_PATH
 from AnnieXMedia.utils.database import is_on_off
-from AnnieXMedia.utils.downloader import yt_dlp_download
+# تم تعطيل هذا الاستيراد لأنه سيتم استخدام دالة داخلية أقوى
+# from AnnieXMedia.utils.downloader import yt_dlp_download 
 from AnnieXMedia.utils.errors import capture_internal_err
 from AnnieXMedia.utils.formatters import time_to_seconds
 from AnnieXMedia.utils.tuning import YTDLP_TIMEOUT, YOUTUBE_META_MAX, YOUTUBE_META_TTL
@@ -34,12 +36,12 @@ YOUTUBE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 
 # === Helpers ===
 def _cookiefile_path() -> Optional[str]:
+    # محاولة ذكية للعثور على الكوكيز
     path = str(COOKIE_PATH)
-    try:
-        if path and os.path.exists(path) and os.path.getsize(path) > 0:
-            return path
-    except Exception:
-        pass
+    if path and os.path.exists(path) and os.path.getsize(path) > 0:
+        return path
+    if os.path.exists("cookies.txt"):
+        return "cookies.txt"
     return None
 
 
@@ -49,8 +51,15 @@ def _cookies_args() -> List[str]:
 
 
 async def _exec_proc(*args: str) -> Tuple[bytes, bytes]:
+    # إضافة Forced IPv4 للأوامر الخارجية
+    cmd_args = list(args)
+    if "yt-dlp" in cmd_args:
+        # حقن إعداد المصدر 0.0.0.0 لفك الحظر
+        cmd_args.insert(1, "--source-address")
+        cmd_args.insert(2, "0.0.0.0")
+        
     proc = await asyncio.create_subprocess_exec(
-        *args,
+        *cmd_args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -77,7 +86,6 @@ async def cached_youtube_search(query: str) -> List[Dict]:
             _cache.clear()
 
     try:
-        # التعديل 2: تشغيل البحث العادي في خيط منفصل
         def _search():
             return VideosSearch(query, limit=1).result()
         
@@ -149,7 +157,6 @@ class YouTubeAPI:
             res = await cached_youtube_search(q)
             return res[0] if res else None
         
-        # التعديل 3: استخدام to_thread للبحث المباشر
         def _search():
             return VideosSearch(q, limit=1).result()
 
@@ -160,6 +167,7 @@ class YouTubeAPI:
     @capture_internal_err
     async def is_live(self, link: str) -> bool:
         prepared = self._prepare_link(link)
+        # تم تعديل _exec_proc ليستخدم IPv4 تلقائياً
         stdout, _ = await _exec_proc("yt-dlp", *(_cookies_args()), "--dump-json", prepared)
         if not stdout:
             return False
@@ -178,7 +186,7 @@ class YouTubeAPI:
         try:
             info = await self._fetch_video_info(prepared_link)
             if not info:
-                raise ValueError("No results from youtubesearchpython (VideosSearch)")
+                raise ValueError("No results from youtubesearchpython")
         except Exception as search_err:
             raise ValueError("Video not found", {"cause": str(search_err)}) from search_err
 
@@ -216,34 +224,18 @@ class YouTubeAPI:
         try:
             info = await self._fetch_video_info(prepared_link)
             if not info:
-                raise ValueError(
-                    f"No results from youtubesearchpython (VideosSearch) "
-                    f"for query/URL: '{prepared_link}'"
-                )
-        except Exception as search_err:
+                raise ValueError(f"No results for query/URL: '{prepared_link}'")
+        except Exception:
+            # Fallback to yt-dlp dump-json with IPv4 fix
             stdout, stderr = await _exec_proc(
                 "yt-dlp", *(_cookies_args()), "--dump-json", "--no-warnings", prepared_link
             )
-
-            def _both_failed(details: str) -> ValueError:
-                return ValueError(
-                    f"Both methods failed for '{prepared_link}':\n"
-                    f"  1. youtubesearchpython error: {search_err}\n"
-                    f"{details}"
-                )
-
             if not stdout:
-                stderr_msg = stderr.decode().strip() if stderr else "Empty response"
-                raise _both_failed(f"  2. yt-dlp error: {stderr_msg}")
-
+                raise ValueError("Failed to fetch track details")
             try:
                 info = json.loads(stdout.decode())
-            except json.JSONDecodeError as json_err:
-                raw = stdout.decode()[:400]
-                raise _both_failed(
-                    f"  2. yt-dlp JSON error: {json_err}\n"
-                    f"     Raw: {raw}..."
-                ) from json_err
+            except:
+                raise ValueError("Failed to decode track details")
 
         thumb = (
             info.get("thumbnail")
@@ -267,6 +259,7 @@ class YouTubeAPI:
     @capture_internal_err
     async def video(self, link: str, videoid: Union[str, bool, None] = None) -> Tuple[int, str]:
         link = self._prepare_link(link, videoid)
+        # استخدام _exec_proc المعدل الذي يضيف --source-address 0.0.0.0 تلقائياً
         stdout, stderr = await _exec_proc(
             "yt-dlp",
             *(_cookies_args()),
@@ -286,12 +279,10 @@ class YouTubeAPI:
         link = self._prepare_link(link).split("&")[0]
 
         try:
-            # التعديل 4: استخدام to_thread لقائمة التشغيل
             def _get_plist():
                 try:
                     return Playlist.get(link)
                 except:
-                    # محاولة بديلة لو دالة get مش موجودة
                     return Playlist(link).info
 
             plist = await asyncio.to_thread(_get_plist)
@@ -328,7 +319,12 @@ class YouTubeAPI:
             if cached and now - cached[0] < YOUTUBE_META_TTL:
                 return cached[1], cached[2]
 
-        opts = {"quiet": True}
+        # إعدادات منع الحظر لعملية جلب الصيغ
+        opts = {
+            "quiet": True,
+            "source_address": "0.0.0.0", # Forced IPv4
+            "nocheckcertificate": True,
+        }
         if cf := _cookiefile_path():
             opts["cookiefile"] = cf
 
@@ -340,8 +336,6 @@ class YouTubeAPI:
                     if "dash" in str(fmt.get("format", "")).lower():
                         continue
                     if not any(k in fmt for k in ("filesize", "filesize_approx")):
-                        continue
-                    if not all(k in fmt for k in ("format", "format_id", "ext", "format_note")):
                         continue
                     size = fmt.get("filesize") or fmt.get("filesize_approx")
                     if not size:
@@ -370,7 +364,6 @@ class YouTubeAPI:
     async def slider(
         self, link: str, query_type: int, videoid: Union[str, bool, None] = None
     ) -> Tuple[str, Optional[str], str, str]:
-        # التعديل 5: استخدام to_thread للسلايدر
         def _search():
             return VideosSearch(self._prepare_link(link, videoid), limit=10).result()
 
@@ -388,6 +381,7 @@ class YouTubeAPI:
             r.get("id", ""),
         )
 
+    # === دالة التحميل المعدلة جذرياً ===
     @capture_internal_err
     async def download(
         self,
@@ -397,30 +391,46 @@ class YouTubeAPI:
         video: Union[bool, str, None] = None,
         videoid: Union[str, bool, None] = None,
     ) -> Union[Tuple[str, Optional[bool]], Tuple[None, None]]:
+        
         link = self._prepare_link(link, videoid)
-
-        if video:
-            if await self.is_live(link):
-                status, stream_url = await self.video(link)
-                if status == 1:
-                    return stream_url, None
-                return None, None
-
-            if await is_on_off(1):
-                p = await yt_dlp_download(link, type="video", title=await self.title(link))
-                return (p, True) if p else (None, None)
-
-            stdout, _ = await _exec_proc(
-                "yt-dlp",
-                *(_cookies_args()),
-                "-g",
-                "-f",
-                "best[height<=?720][width<=?1280]",
-                link,
-            )
-            if stdout:
-                return stdout.decode().split("\n")[0], None
+        
+        # 1. التعامل مع البث المباشر
+        if video and await self.is_live(link):
+            status, stream_url = await self.video(link)
+            if status == 1:
+                return stream_url, None
             return None, None
 
-        p = await yt_dlp_download(link, type="audio", title=await self.title(link))
-        return (p, True) if p else (None, None)
+        # 2. إعداد خيارات التحميل القوية (بدون Aria2 ولكن سريعة)
+        ydl_opts = {
+            'cookiefile': _cookiefile_path(),
+            'source_address': '0.0.0.0',  # الإجبار على IPv4 لفك الحظر
+            'concurrent_fragment_downloads': 5, # بديل Aria2: تحميل متعدد الأجزاء
+            'nocheckcertificate': True,
+            'quiet': True,
+            'no_warnings': True,
+            'geo_bypass': True,
+            'outtmpl': f"downloads/%(id)s.%(ext)s",
+        }
+
+        if video:
+            ydl_opts['format'] = 'bestvideo+bestaudio/best'
+        else:
+            ydl_opts['format'] = 'bestaudio[ext=m4a]/bestaudio/best'
+
+        # 3. تشغيل التحميل في Thread منفصل لعدم تجميد البوت
+        def _perform_download():
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(link, download=True)
+                    filename = ydl.prepare_filename(info)
+                    return filename
+            except Exception as e:
+                return None
+
+        filepath = await asyncio.to_thread(_perform_download)
+        
+        if filepath and os.path.exists(filepath):
+            return filepath, True
+        
+        return None, None
