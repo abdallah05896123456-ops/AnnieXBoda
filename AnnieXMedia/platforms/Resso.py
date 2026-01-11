@@ -1,10 +1,12 @@
-﻿# Authored By Certified Coders © 2025
+# Authored By Certified Coders © 2025
 import re
+import asyncio
 from typing import Union
 
 import aiohttp
 from bs4 import BeautifulSoup
-from youtubesearchpython.aio import VideosSearch
+# التعديل: استيراد المكتبة العادية
+from youtubesearchpython import VideosSearch
 
 
 class RessoAPI:
@@ -27,6 +29,8 @@ class RessoAPI:
                     return False
                 html = await response.text()
         soup = BeautifulSoup(html, "html.parser")
+        title = None
+        des = ""
         for tag in soup.find_all("meta"):
             if tag.get("property", None) == "og:title":
                 title = tag.get("content", None)
@@ -36,15 +40,26 @@ class RessoAPI:
                     des = des.split("·")[0]
                 except:
                     pass
-        if des == "":
+        
+        if not title:
             return
-        results = VideosSearch(title, limit=1)
-        for result in (await results.next())["result"]:
+
+        # التعديل: البحث في Thread منفصل
+        def _search():
+            return VideosSearch(title, limit=1).result()
+
+        data = await asyncio.to_thread(_search)
+
+        if not data or not data.get("result"):
+            return
+
+        for result in data["result"]:
             title = result["title"]
             ytlink = result["link"]
             vidid = result["id"]
             duration_min = result["duration"]
             thumbnail = result["thumbnails"][0]["url"].split("?")[0]
+        
         track_details = {
             "title": title,
             "link": ytlink,
