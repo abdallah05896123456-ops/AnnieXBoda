@@ -1,4 +1,4 @@
-# Recommended: Python 3.11 for py-tgcalls 2.2.8 compatibility
+# Recommended: Python 3.12 for pytgcalls local setup
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -32,7 +32,13 @@ RUN pip install --upgrade pip setuptools wheel && \
 COPY . /app
 
 # Verify that the local pytgcalls is used
-RUN python - <<'PY'\nimport pytgcalls, sys\nprint('PYTGCALLS_FROM=', getattr(pytgcalls,'__file__','<not found>'))\nPY
+RUN python - <<'PY'
+import pytgcalls, sys
+print('PYTGCALLS_FROM=', getattr(pytgcalls,'__file__','<not found>'))
+PY
 
-# Keep same entrypoint you had
+# Clean old data if exists (optional, ensures clean build on fly.io)
+RUN rm -rf /app/__pycache__ /app/*.pyc /app/*.pyo
+
+# Keep same entrypoint
 CMD ["python3", "-m", "AnnieXMedia"]
