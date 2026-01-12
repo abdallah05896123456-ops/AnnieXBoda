@@ -11,8 +11,15 @@ RUN apt-get update && \
         make \
         build-essential \
         pkg-config \
+        cmake \
+        ninja-build \
         libffi-dev \
         libssl-dev \
+        libopus-dev \
+        libx11-6 \
+        libx11-dev \
+        libgl1 \
+        libgl1-mesa-dev \
     && rm -rf /var/lib/apt/lists/* \
     && curl -fsSL https://deno.land/install.sh | sh \
     && ln -s /root/.deno/bin/deno /usr/local/bin/deno
@@ -24,5 +31,4 @@ RUN pip install --no-cache-dir -U pip && \
     pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-
 CMD ["python3", "-m", "AnnieXMedia"]
