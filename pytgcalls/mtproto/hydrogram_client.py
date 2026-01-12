@@ -1,5 +1,4 @@
 import json
-import logging  # Added for logging
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -51,7 +50,6 @@ from hydrogram.raw.types import MessageActionChatDeleteUser
 from hydrogram.raw.types import MessageActionInviteToGroupCall
 from hydrogram.raw.types import MessageService
 from hydrogram.raw.types import PeerChat
-from hydrogram.raw.types import PeerChannel
 from hydrogram.raw.types import PhoneCall
 from hydrogram.raw.types import PhoneCallAccepted
 from hydrogram.raw.types import PhoneCallDiscarded
@@ -98,9 +96,6 @@ class HydrogramClient(BridgedClient):
             cache_duration,
             self,
         )
-        
-        # --- LOG MESSAGE: FILE CONNECTED ---
-        logging.info("[HydrogramClient] Module initialized successfully and connected.")
 
         @self._app.on_raw_update(group=-9999)
         async def on_update(_, update, __, chats):
@@ -210,50 +205,34 @@ class HydrogramClient(BridgedClient):
                         )
                         if result is not None:
                             await self._propagate(p_update)
-
-            # ==================================================================
-            # FIX: Robust Chat ID Retrieval & Stale Cache Prevention
-            # ==================================================================
-            if isinstance(update, UpdateGroupCall):
-                chat_id = None
-                # Method 1: Try direct access safely
-                if hasattr(update, 'chat_id'):
-                    try:
-                        chat_id = self.chat_id(chats[update.chat_id])
-                    except (KeyError, AttributeError):
-                        pass
-                
-                # Method 2: Fallback to first available chat in context
-                if chat_id is None and chats:
-                    try:
-                        first_chat = next(iter(chats.values()))
-                        chat_id = self.chat_id(first_chat)
-                    except Exception:
-                        pass
-
-                if chat_id is not None:
-                    if isinstance(update.call, GroupCall):
-                        if update.call.schedule_date is None:
-                            # Force update cache to avoid old IDs
-                            self._cache.set_cache(
-                                chat_id,
-                                InputGroupCall(
-                                    access_hash=update.call.access_hash,
-                                    id=update.call.id,
-                                ),
-                            )
-                    
-                    if isinstance(update.call, GroupCallDiscarded):
-                        # CRITICAL: Drop cache immediately when call is discarded
-                        self._cache.drop_cache(chat_id)
-                        await self._propagate(
-                            ChatUpdate(
-                                chat_id,
-                                ChatUpdate.Status.CLOSED_VOICE_CHAT,
+            if isinstance(
+                update,
+                UpdateGroupCall,
+            ):
+                chat_id = self.chat_id(chats[update.chat_id])
+                if isinstance(
+                    update.call,
+                    GroupCall,
+                ):
+                    if update.call.schedule_date is None:
+                        self._cache.set_cache(
+                            chat_id,
+                            InputGroupCall(
+                                access_hash=update.call.access_hash,
+                                id=update.call.id,
                             ),
                         )
-            # ==================================================================
-
+                if isinstance(
+                    update.call,
+                    GroupCallDiscarded,
+                ):
+                    self._cache.drop_cache(chat_id)
+                    await self._propagate(
+                        ChatUpdate(
+                            chat_id,
+                            ChatUpdate.Status.CLOSED_VOICE_CHAT,
+                        ),
+                    )
             if isinstance(
                 update,
                 (
@@ -483,7 +462,6 @@ class HydrogramClient(BridgedClient):
                     if isinstance(update, UpdateGroupCallConnection):
                         return update.params.data
         except GroupcallForbidden:
-            # Drop cache immediately on forbidden error to prevent stuck loops
             self._cache.drop_cache(chat_id)
             return await self.join_group_call(
                 chat_id,
@@ -651,7 +629,6 @@ class HydrogramClient(BridgedClient):
                     call=chat_call,
                 ),
             )
-            # Force Drop Cache
             self._cache.drop_cache(chat_id)
 
     async def discard_call(
