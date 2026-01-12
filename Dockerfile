@@ -1,34 +1,71 @@
-FROM python:3.12-slim
+# ---------- STAGE 1: Builder (build wheels) ----------
+FROM python:3.12-slim AS builder
 
+ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /build
+
+# أدوات البناء و system deps اللي ntgcalls/wrtc/mesa بحاجة ليها
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        git \
-        ffmpeg \
-        curl \
-        unzip \
-        gcc \
-        g++ \
-        make \
-        build-essential \
-        pkg-config \
-        cmake \
-        ninja-build \
-        libffi-dev \
-        libssl-dev \
-        libopus-dev \
-        libx11-6 \
-        libx11-dev \
-        libgl1 \
-        libgl1-mesa-dev \
-    && rm -rf /var/lib/apt/lists/* \
-    && curl -fsSL https://deno.land/install.sh | sh \
-    && ln -s /root/.deno/bin/deno /usr/local/bin/deno
+      build-essential \
+      gcc \
+      g++ \
+      make \
+      cmake \
+      ninja-build \
+      pkg-config \
+      git \
+      curl \
+      unzip \
+      ca-certificates \
+      libffi-dev \
+      libssl-dev \
+      libopus-dev \
+      libx11-dev \
+      libgl1-mesa-dev \
+      ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# ننسخ requirements فقط علشان نستفيد من Docker cache
+COPY requirements.txt /build/requirements.txt
+
+# نجهز pip ونبني wheels لكل الحزم (يشمل git deps)
+RUN python -m pip install --upgrade pip setuptools wheel && \
+    python -m pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
+
+# ---------- STAGE 2: Runtime (final smaller image) ----------
+FROM python:3.12-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
-COPY requirements.txt .
 
-RUN pip install --no-cache-dir -U pip && \
-    pip install --no-cache-dir -r requirements.txt
+# حزم runtime اللازمة (أبقيت ffmpeg هنا لأن المشروع يحتاجه وقت التشغيل)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      libffi-dev \
+      libssl-dev \
+      libopus0 \
+      libx11-6 \
+      libgl1 \
+      ffmpeg \
+      ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY . .
+# انسخ wheels من الـ builder وثبتهم (أسرع وأكثر موثوقية)
+COPY --from=builder /wheels /wheels
+COPY requirements.txt /app/requirements.txt
+
+RUN python -m pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt
+
+# انسخ المشروع
+COPY . /app
+
+# لو بتحب تشغّل كمستخدم غير root (أمَن)، نشّئ مستخدم بسيط:
+RUN useradd -m appuser && chown -R appuser:appuser /app
+USER appuser
+
 CMD ["python3", "-m", "AnnieXMedia"]
