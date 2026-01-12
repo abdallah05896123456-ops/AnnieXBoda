@@ -1,4 +1,4 @@
-﻿# Authored By Certified Coders © 2025
+# Authored By Certified Coders © 2025
 import asyncio
 import os
 from datetime import datetime, timedelta
@@ -497,10 +497,14 @@ class Call:
             pings.append(self.five.ping)
         return str(round(sum(pings) / len(pings), 3)) if pings else "0.0"
 
+    # =========================================================================
+    # تم التعديل هنا: دمج الهاندلر الخاص بـ Update Status
+    # =========================================================================
     @capture_internal_err
     async def decorators(self) -> None:
         assistants = list(filter(None, [self.one, self.two, self.three, self.four, self.five]))
 
+        # تعريف حالات الخروج الطارئة (زي ما في السورس الأول)
         CRITICAL = (
             ChatUpdate.Status.KICKED
             | ChatUpdate.Status.LEFT_GROUP
@@ -508,16 +512,18 @@ class Call:
         )
 
         async def unified_update_handler(client, update: Update) -> None:
+            # 1. لو الأغنية خلصت (عشان يشغل اللي بعدها)
             if isinstance(update, StreamEnded):
                 if update.stream_type == StreamEnded.Type.AUDIO:
                     assistant = await group_assistant(self, update.chat_id)
                     await self.play(assistant, update.chat_id)
             
+            # 2. لو حصل تحديث في الكول (خرج، اتطرد، الكول قفل)
             elif isinstance(update, ChatUpdate):
                 status = update.status
-                if (status & ChatUpdate.Status.LEFT_CALL) or (status & CRITICAL):
+                # الكود اللي أنت طلبته: لو خرج أو حصلت حالة حرجة -> وقف البث
+                if status & ChatUpdate.Status.LEFT_CALL or status & CRITICAL:
                     await self.stop_stream(update.chat_id)
-                    return
 
         for assistant in assistants:
             assistant.on_update()(unified_update_handler)
