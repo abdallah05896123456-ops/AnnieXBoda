@@ -9,7 +9,7 @@ from pyrogram import Client
 from pyrogram.errors import FloodWait, ChatAdminRequired
 from pyrogram.types import InlineKeyboardMarkup
 from pytgcalls import PyTgCalls
-from pytgcalls.exceptions import NoActiveGroupCall, NoAudioSourceFound, NoVideoSourceFound
+from pytgcalls.exceptions import NoActiveGroupCall, NoAudioSourceFound, NoVideoSourceFound, AlreadyJoinedError
 from pytgcalls.types import AudioQuality, ChatUpdate, MediaStream, StreamEnded, Update, VideoQuality
 
 import config
@@ -241,6 +241,14 @@ class Call:
         _ = get_string(lang)
         stream = dynamic_media_stream(path=link, video=bool(video))
 
+        # ✅ FIX: Force leave first to prevent Ghost Call issues
+        try:
+            await assistant.leave_call(chat_id)
+            await asyncio.sleep(1)
+        except:
+            pass
+        # ====================================================
+
         try:
             await assistant.play(chat_id, stream)
         except (NoActiveGroupCall, ChatAdminRequired):
@@ -251,6 +259,14 @@ class Call:
             raise AssistantErr(_["call_12"])
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
+        except AlreadyJoinedError:
+            # If still says joined, force leave and retry
+            try:
+                await assistant.leave_call(chat_id)
+                await asyncio.sleep(2)
+                await assistant.play(chat_id, stream)
+            except Exception as e:
+                raise AssistantErr(_["call_11"])
         except Exception as e:
             raise AssistantErr(
                 f"ᴜɴᴀʙʟᴇ ᴛᴏ ᴊᴏɪɴ ᴛʜᴇ ɢʀᴏᴜᴘ ᴄᴀʟʟ.\nRᴇᴀsᴏɴ: {e}"
