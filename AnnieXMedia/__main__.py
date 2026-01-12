@@ -1,4 +1,10 @@
-﻿# Authored By Certified Coders © 2025
+# Authored By Certified Coders © 2025
+import sys
+import os
+
+# السطر ده بيجبر البوت يستخدم مجلد pytgcalls المحلي بدل اللي نازل من النت
+sys.path.insert(0, os.getcwd())
+
 import asyncio
 import importlib
 
