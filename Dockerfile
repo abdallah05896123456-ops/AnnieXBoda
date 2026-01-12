@@ -1,4 +1,4 @@
-# Recommended: Python 3.12 for pytgcalls local setup
+# Python 3.12 معتمدة على نسخة pytgcalls المحلية
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -7,38 +7,37 @@ ENV PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-# system deps + deno (keep your original tooling)
+# تنظيف أي ملفات قديمة في حالة إعادة build
+RUN rm -rf /app/*
+
+# تثبيت المتطلبات النظامية + deno
 RUN apt-get update && \
     apt-get install -y --no-install-recommends git ffmpeg curl unzip build-essential && \
     rm -rf /var/lib/apt/lists/* && \
     curl -fsSL https://deno.land/install.sh | sh && \
     ln -s /root/.deno/bin/deno /usr/local/bin/deno
 
-# Copy local pytgcalls first (this ensures Python will import local package)
-# Make sure you have the folder pytgcalls/ in the repo root.
+# نسخ مكتبة pytgcalls المحلية أولاً
 COPY pytgcalls /app/pytgcalls
 
-# Copy requirements and filter out any py-tgcalls entries so pip won't install it
+# نسخ requirements.txt مع فلترة py-tgcalls
 COPY requirements.txt /app/requirements.txt
 RUN if [ -f /app/requirements.txt ]; then \
       grep -v -i '^py-tgcalls' /app/requirements.txt > /app/filtered-requirements.txt || true; \
     fi
 
-# Install remaining deps
+# تثبيت باقي المكتبات
 RUN pip install --upgrade pip setuptools wheel && \
     if [ -f /app/filtered-requirements.txt ]; then pip install --no-cache-dir -r /app/filtered-requirements.txt; fi
 
-# Copy rest of source
+# نسخ باقي سورس AnnieXMedia
 COPY . /app
 
-# Verify that the local pytgcalls is used
+# تأكيد ان Python بيستخدم النسخة المحلية من pytgcalls
 RUN python - <<'PY'
 import pytgcalls, sys
 print('PYTGCALLS_FROM=', getattr(pytgcalls,'__file__','<not found>'))
 PY
 
-# Clean old data if exists (optional, ensures clean build on fly.io)
-RUN rm -rf /app/__pycache__ /app/*.pyc /app/*.pyo
-
-# Keep same entrypoint
+# نقطة الدخول
 CMD ["python3", "-m", "AnnieXMedia"]
