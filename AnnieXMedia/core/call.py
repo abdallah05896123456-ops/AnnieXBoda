@@ -1,16 +1,32 @@
 # Authored By Certified Coders © 2025
+# Built specifically for your Local Pytgcalls Version
 import asyncio
 import os
 from datetime import datetime, timedelta
 from typing import Union
 
+# ntgcalls imports
 from ntgcalls import TelegramServerError, ConnectionNotFound
 from pyrogram import Client
 from pyrogram.errors import FloodWait, ChatAdminRequired
 from pyrogram.types import InlineKeyboardMarkup
 from pytgcalls import PyTgCalls
-from pytgcalls.exceptions import NoActiveGroupCall, NoAudioSourceFound, NoVideoSourceFound, AlreadyJoinedError
-from pytgcalls.types import AudioQuality, ChatUpdate, MediaStream, StreamEnded, Update, VideoQuality
+
+# ✅ FIX 1: Only import exceptions that exist in your file
+from pytgcalls.exceptions import (
+    NoActiveGroupCall,
+    NoAudioSourceFound,
+    NoVideoSourceFound
+)
+
+from pytgcalls.types import (
+    AudioQuality,
+    ChatUpdate,
+    MediaStream,
+    StreamEnded,
+    Update,
+    VideoQuality
+)
 
 import config
 from strings import get_string
@@ -99,22 +115,22 @@ class Call:
     @capture_internal_err
     async def pause_stream(self, chat_id: int) -> None:
         assistant = await group_assistant(self, chat_id)
-        await assistant.pause(chat_id)
+        await assistant.pause_stream(chat_id)
 
     @capture_internal_err
     async def resume_stream(self, chat_id: int) -> None:
         assistant = await group_assistant(self, chat_id)
-        await assistant.resume(chat_id)
+        await assistant.resume_stream(chat_id)
 
     @capture_internal_err
     async def mute_stream(self, chat_id: int) -> None:
         assistant = await group_assistant(self, chat_id)
-        await assistant.mute(chat_id)
+        await assistant.mute_stream(chat_id)
 
     @capture_internal_err
     async def unmute_stream(self, chat_id: int) -> None:
         assistant = await group_assistant(self, chat_id)
-        await assistant.unmute(chat_id)
+        await assistant.unmute_stream(chat_id)
 
     @capture_internal_err
     async def stop_stream(self, chat_id: int) -> None:
@@ -241,7 +257,8 @@ class Call:
         _ = get_string(lang)
         stream = dynamic_media_stream(path=link, video=bool(video))
 
-        # ✅ FIX: Force leave first to prevent Ghost Call issues
+        # ✅ FIX 2: Force leave first to prevent Ghost Call issues
+        # This replaces the need for AlreadyJoinedError
         try:
             await assistant.leave_call(chat_id)
             await asyncio.sleep(1)
@@ -259,18 +276,16 @@ class Call:
             raise AssistantErr(_["call_12"])
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
-        except AlreadyJoinedError:
-            # If still says joined, force leave and retry
-            try:
-                await assistant.leave_call(chat_id)
-                await asyncio.sleep(2)
-                await assistant.play(chat_id, stream)
-            except Exception as e:
-                raise AssistantErr(_["call_11"])
         except Exception as e:
-            raise AssistantErr(
-                f"ᴜɴᴀʙʟᴇ ᴛᴏ ᴊᴏɪɴ ᴛʜᴇ ɢʀᴏᴜᴘ ᴄᴀʟʟ.\nRᴇᴀsᴏɴ: {e}"
-            )
+            # Fallback retry logic
+            try:
+                await asyncio.sleep(1)
+                await assistant.play(chat_id, stream)
+            except:
+                raise AssistantErr(
+                    f"ᴜɴᴀʙʟᴇ ᴛᴏ ᴊᴏɪɴ ᴛʜᴇ ɢʀᴏᴜᴘ ᴄᴀʟʟ.\nRᴇᴀsᴏɴ: {e}"
+                )
+        
         self.active_calls.add(chat_id)
         await add_active_chat(chat_id)
         await music_on(chat_id)
@@ -279,9 +294,12 @@ class Call:
 
         if await is_autoend():
             counter[chat_id] = {}
-            users = len(await assistant.get_participants(chat_id))
-            if users == 1:
-                autoend[chat_id] = datetime.now() + timedelta(minutes=1)
+            try:
+                users = len(await assistant.get_participants(chat_id))
+                if users == 1:
+                    autoend[chat_id] = datetime.now() + timedelta(minutes=1)
+            except:
+                pass
 
 
     @capture_internal_err
