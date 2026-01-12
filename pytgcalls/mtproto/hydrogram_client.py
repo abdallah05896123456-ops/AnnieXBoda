@@ -205,11 +205,48 @@ class HydrogramClient(BridgedClient):
                         )
                         if result is not None:
                             await self._propagate(p_update)
+
             if isinstance(
                 update,
                 UpdateGroupCall,
             ):
-                chat_id = self.chat_id(chats[update.chat_id])
+                # ----- SAFELY RESOLVE chat_id (supports newer update shapes) -----
+                chat_id: Optional[int] = None
+
+                # 1) preferred: update.chat_id (if present and resolvable via chats dict)
+                try:
+                    if hasattr(update, "chat_id") and update.chat_id and isinstance(chats, Dict) and update.chat_id in chats:
+                        chat_id = self.chat_id(chats[update.chat_id])
+                except Exception:
+                    chat_id = None
+
+                # 2) fallback: update.call.peer (newer shape — extract channel/chat id)
+                if chat_id is None and hasattr(update, "call") and hasattr(update.call, "peer"):
+                    peer = update.call.peer
+                    # peer can be InputPeerChannel-like or PeerChat-like
+                    if hasattr(peer, "channel_id"):
+                        # convert channel id to internal chat id format (supergroup negative id)
+                        try:
+                            chat_id = -1000000000000 - int(peer.channel_id)
+                        except Exception:
+                            chat_id = None
+                    elif hasattr(peer, "chat_id"):
+                        try:
+                            chat_id = int(peer.chat_id)
+                        except Exception:
+                            chat_id = None
+                    elif hasattr(peer, "user_id"):
+                        # rare case: peer is user → use user id
+                        try:
+                            chat_id = int(peer.user_id)
+                        except Exception:
+                            chat_id = None
+
+                # if still not resolved, don't crash — let other handlers run
+                if chat_id is None:
+                    raise ContinuePropagation()
+
+                # ----- handle group call details using resolved chat_id -----
                 if isinstance(
                     update.call,
                     GroupCall,
@@ -233,6 +270,7 @@ class HydrogramClient(BridgedClient):
                             ChatUpdate.Status.CLOSED_VOICE_CHAT,
                         ),
                     )
+
             if isinstance(
                 update,
                 (
