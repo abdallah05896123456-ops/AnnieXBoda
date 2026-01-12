@@ -1,10 +1,13 @@
 # ---------- STAGE 1: Builder (build wheels) ----------
-FROM python:3.12-slim AS builder
+FROM python:3.11-slim AS builder
 
-ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
 WORKDIR /build
 
-# أدوات البناء و system deps اللي ntgcalls/wrtc/mesa بحاجة ليها
+# تثبيت أدوات البناء والـ libs اللازمة لبناء الحزم (ntgcalls/wrtc/mesa...)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       build-essential \
@@ -26,15 +29,15 @@ RUN apt-get update && \
       ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# ننسخ requirements فقط علشان نستفيد من Docker cache
+# انسخ فقط requirements عشان نستفيد من Docker cache
 COPY requirements.txt /build/requirements.txt
 
-# نجهز pip ونبني wheels لكل الحزم (يشمل git deps)
+# جهّز pip وبنِيّ wheels (يشمَل git deps). الناتج في /wheels
 RUN python -m pip install --upgrade pip setuptools wheel && \
     python -m pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
 
 # ---------- STAGE 2: Runtime (final smaller image) ----------
-FROM python:3.12-slim
+FROM python:3.11-slim
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
@@ -42,7 +45,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 WORKDIR /app
 
-# حزم runtime اللازمة (أبقيت ffmpeg هنا لأن المشروع يحتاجه وقت التشغيل)
+# حزم runtime فقط (خفيفة نسبياً)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       libffi-dev \
@@ -54,18 +57,22 @@ RUN apt-get update && \
       ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# انسخ wheels من الـ builder وثبتهم (أسرع وأكثر موثوقية)
+# انسخ wheels من الـ builder وثبتهم (أسرع وأكثر موثوقية من build وقت التشغيل)
 COPY --from=builder /wheels /wheels
 COPY requirements.txt /app/requirements.txt
 
 RUN python -m pip install --upgrade pip setuptools wheel && \
     pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt
 
-# انسخ المشروع
+# انسخ الكود
 COPY . /app
 
-# لو بتحب تشغّل كمستخدم غير root (أمَن)، نشّئ مستخدم بسيط:
+# أنشئ مستخدم غير root وشغّل تحت حسابه
 RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
+# لو يحتاج exposed port: EXPOSE 8080
+# EXPOSE 8080
+
+# عدّل الأمر النهائي حسب مشروعك
 CMD ["python3", "-m", "AnnieXMedia"]
