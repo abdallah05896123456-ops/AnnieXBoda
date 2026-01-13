@@ -72,7 +72,7 @@ def get_cookie_file() -> Optional[str]:
 def find_cached_file(video_id: str) -> Optional[str]:
     if not video_id:
         return None
-    for ext in ("mp4", "mkv", "webm", "m4a", "mp3"):
+    for ext in ("mp4", "mkv", "webm", "m4a", "mp3", "opus"):
         p = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
         if os.path.exists(p):
             return p
@@ -93,7 +93,7 @@ def get_ytdlp_base_opts(verbose: bool = False) -> Dict[str, object]:
         "noprogress": True,
         "retries": 2,
         "fragment_retries": 2,
-        "concurrent_fragment_downloads": 8,
+        "concurrent_fragment_downloads": 8,   # جيد على Fly.io، يمكن رفعه إلى 12-16 حسب السرفر
         "http_chunk_size": 1 << 20,  # 1 MiB chunk
         "socket_timeout": 30,
         "cachedir": str(CACHE_DIR),
@@ -103,6 +103,7 @@ def get_ytdlp_base_opts(verbose: bool = False) -> Dict[str, object]:
     }
     if cookie := get_cookie_file():
         opts["cookiefile"] = cookie
+    # بعض بيئات Fly.io لا تسمح بمشغلات خارجية — لا نفرض external_downloader تلقائياً
     return opts
 
 
@@ -132,7 +133,7 @@ def _is_m3u8_url(url: str) -> bool:
     if not url:
         return False
     lower = url.lower()
-    return lower.endswith(".m3u8") or "manifest" in lower and "m3u8" in lower
+    return lower.endswith(".m3u8") or ("manifest" in lower and "m3u8" in lower)
 
 
 def _safe_filename(prefix: str = "tmp") -> str:
@@ -144,19 +145,51 @@ def _safe_filename(prefix: str = "tmp") -> str:
 
 def _run_ffmpeg_convert(input_src: str, out_path: str) -> bool:
     """
-    استدعي ffmpeg لتحويل مقطع (مثلاً m3u8 أو URL) إلى ملف MP4 محلي.
+    استدعي ffmpeg لتحويل مقطع (مثلاً m3u8 أو URL) إلى ملف محلي.
     نجرب copy codecs إن أمكن ثم fallback لإعادة التكويد.
     """
     try:
-        # أولًا حاول نسخة مباشرة (ممكن تفشل إن كانت الدفق يحتاج إعادة تغليف)
-        cmd_copy = f'ffmpeg -y -hide_banner -loglevel error -i {shlex.quote(input_src)} -c copy {shlex.quote(out_path)}'
+        # اعمل نسخة سريعة أولًا (ممكن تنجح على HLS إذا كان المقطع متغلف بشكل صحيح)
+        cmd_copy = (
+            f'ffmpeg -y -hide_banner -loglevel error '
+            f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
+            f'-i {shlex.quote(input_src)} -c copy {shlex.quote(out_path)}'
+        )
         res = subprocess.run(cmd_copy, shell=True)
-        if res.returncode == 0 and os.path.exists(out_path):
+        if res.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
             return True
-        # لو فشل، جرب ترميز بسيط
-        cmd_recode = f'ffmpeg -y -hide_banner -loglevel error -i {shlex.quote(input_src)} -c:v libx264 -preset veryfast -c:a aac -b:a 128k {shlex.quote(out_path)}'
+
+        # لو فشل: اعادة ترميز سريعة مع إعدادات صوت ستيريو ومعدل عينة مناسب
+        _, ext = os.path.splitext(out_path)
+        ext = ext.lower().lstrip(".")
+        if ext in ("mp4", "mkv", "webm"):
+            # فيديو + صوت
+            cmd_recode = (
+                f'ffmpeg -y -hide_banner -loglevel error '
+                f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
+                f'-i {shlex.quote(input_src)} '
+                f'-c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -ac 2 -ar 48000 '
+                f'{shlex.quote(out_path)}'
+            )
+        else:
+            # على الأغلب ملف صوتي (m4a/mp3/opus)
+            # حاول ترميز OPUS إن أمكن (جيد للـ Telegram voice/video)
+            if ext in ("opus",):
+                cmd_recode = (
+                    f'ffmpeg -y -hide_banner -loglevel error '
+                    f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
+                    f'-i {shlex.quote(input_src)} -c:a libopus -b:a 128k -ac 2 -ar 48000 {shlex.quote(out_path)}'
+                )
+            else:
+                # استخدام m4a (aac) كخيار آمن
+                cmd_recode = (
+                    f'ffmpeg -y -hide_banner -loglevel error '
+                    f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
+                    f'-i {shlex.quote(input_src)} -c:a aac -b:a 128k -ac 2 -ar 48000 {shlex.quote(out_path)}'
+                )
+
         res2 = subprocess.run(cmd_recode, shell=True)
-        return res2.returncode == 0 and os.path.exists(out_path)
+        return res2.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0
     except Exception as e:
         try:
             LOGGER.debug(f"ffmpeg conversion failed: {e}")
@@ -215,10 +248,6 @@ def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool
         for candidate in candidates:
             opts = dict(base_opts)
             opts["format"] = candidate
-            # لبعض الحالات نريد استخراج audio مباشرة (postprocessor)
-            if candidate.startswith("bestaudio"):
-                # نترك yt-dlp يتصرف لكن اذا احتجنا تحويل لاحقاً سنعالجه
-                pass
 
             try:
                 with YoutubeDL(opts) as ydl:
@@ -230,21 +259,21 @@ def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool
                         return final
 
                     # بعض الأحيان yt-dlp يعطينا url للـ m3u8 أو ملف خارجي بدل تنزيل ملف
-                    # حاول اكتشاف ذلك وتجربة تحويله عبر ffmpeg
                     url = None
                     if isinstance(info, dict):
-                        # طلب URL الصريح إن وُجد
-                        url = info.get("url") or info.get("requested_downloads", [{}])[0].get("url")
-                        # طالما يوجد playlist entries، قد يحدث لدينا info['entries']
+                        url = info.get("url") or (info.get("requested_downloads") or [{}])[0].get("url")
                         if not url and info.get("entries"):
-                            # أحاول أول إدخال
                             entry = info["entries"][0] if info["entries"] else {}
                             url = entry.get("url") if isinstance(entry, dict) else None
 
                     if url and _is_m3u8_url(url):
-                        # نحاول تحويل m3u8 إلى mp4 محلي
+                        # نحاول تحويل m3u8 إلى mp4 أو m4a محلي
                         vid = info.get("id") or _safe_filename("video")
-                        out_path = os.path.join(DOWNLOAD_DIR, f"{vid}.mp4")
+                        # اختر الامتداد المناسب اعتمادًا على المرشح الحالي
+                        target_ext = "mp4"
+                        if candidate and candidate.startswith("bestaudio"):
+                            target_ext = "m4a"
+                        out_path = os.path.join(DOWNLOAD_DIR, f"{vid}.{target_ext}")
                         ok = _run_ffmpeg_convert(url, out_path)
                         if ok:
                             return out_path
@@ -252,9 +281,9 @@ def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool
                     # بعض الأحيان yt-dlp يسمح بتحميل الوسائط كروابط منفصلة، نجرب تنزيل الرابط المباشر
                     if url and url.startswith("http"):
                         vid = info.get("id") or _safe_filename("direct")
-                        ext = url.split("?")[0].split(".")[-1][:4]
+                        # محاولة استخراج امتداد معقول
+                        ext = url.split("?")[0].split(".")[-1][:4] or "dat"
                         out_path = os.path.join(DOWNLOAD_DIR, f"{vid}.{ext}")
-                        # use requests blocking helper in executor
                         ok = _download_http_blocking(url, out_path)
                         if ok:
                             return out_path
@@ -477,7 +506,7 @@ async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str
         async def run():
             # نُجبر yt-dlp على تنزيل ملف MP4 إن أمكن (لا نُعطي م3u8 للـ player)
             # صيغة مرنة تحاول mp4 أولًا ثم fallback
-            fmt = "bestvideo[ext=mp4][height<=1080]+bestaudio/best[ext=mp4]/best[ext=mp4]/best"
+            fmt = "bestvideo[ext=mp4][height<=1080]+bestaudio/best[ext=m4a]/best[ext=mp4]/best"
             yt = asyncio.create_task(
                 run_with_semaphore(
                     loop.run_in_executor(None, download_with_ytdlp_sync, link, fmt, False)
