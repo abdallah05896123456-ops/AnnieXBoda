@@ -2,7 +2,7 @@ app = "anniexboda-ongrzg"
 primary_region = "iad"
 
 [processes]
-  app = "python3 -m AnnieXMedia"
+  app = "python3 run.py"
 
 [[vm]]
   cpu_kind = "shared"
