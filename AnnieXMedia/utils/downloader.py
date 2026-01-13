@@ -1,4 +1,3 @@
-# Authored By Certified Coders © 2025
 """
 ذكي، سريع، وعملي: downloader مدعوم بـ yt-dlp + aiohttp + ffmpeg fallback.
 مميزات هذا الملف:
@@ -9,7 +8,6 @@
  - تسجيل/تجديد TTL من كل نقاط الإرجاع
  - إصلاح dedupe key عند غياب video id (يستخدم هاش للرابط)
 """
-
 import asyncio
 import contextlib
 import glob
@@ -52,23 +50,17 @@ YOUTUBE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 # detect aria2 availability once
 ARIA2_PATH = shutil.which("aria2c")
 
-
 # ---------------- Cache Manager (8 minutes TTL) ----------------
 CACHE_TTL = 8 * 60  # seconds
 _cache_registry: Dict[str, float] = {}
 _cache_lock = asyncio.Lock()
 
-
 async def register_cache(path: str) -> None:
     """Register/extend cached file TTL (async)."""
     if not path:
         return
-    try:
-        async with _cache_lock:
-            _cache_registry[path] = time.time() + CACHE_TTL
-    except Exception:
+    async with _cache_lock:
         _cache_registry[path] = time.time() + CACHE_TTL
-
 
 def _register_cache_from_thread(path: str) -> None:
     """
@@ -85,7 +77,6 @@ def _register_cache_from_thread(path: str) -> None:
             _cache_registry[path] = time.time() + CACHE_TTL
     except Exception:
         _cache_registry[path] = time.time() + CACHE_TTL
-
 
 def _is_file_in_use(path: str) -> bool:
     """
@@ -104,7 +95,6 @@ def _is_file_in_use(path: str) -> bool:
     except Exception:
         return True
     return False
-
 
 async def _cache_cleaner_loop() -> None:
     """
@@ -136,7 +126,6 @@ async def _cache_cleaner_loop() -> None:
     except Exception as e:
         LOGGER.exception(f"cache_cleaner fatal: {e}")
 
-
 def init_cache_cleaner() -> None:
     """
     Start the background cleaner if event loop is running.
@@ -151,7 +140,6 @@ def init_cache_cleaner() -> None:
     except Exception:
         LOGGER.exception("init_cache_cleaner failed")
 
-
 # ---------------- helpers ----------------
 
 def log_download_source(title: str, source: str) -> None:
@@ -159,7 +147,6 @@ def log_download_source(title: str, source: str) -> None:
         LOGGER.info(f"Track '{title}' - Downloaded by {source}")
     except Exception:
         print(f"[log] Track '{title}' - Downloaded by {source}")
-
 
 def extract_video_id(link: str) -> str:
     if not link:
@@ -172,14 +159,12 @@ def extract_video_id(link: str) -> str:
     last = s.split("/")[-1].split("?")[0]
     return last if YOUTUBE_ID_RE.match(last) else ""
 
-
 def _make_link_id(link: str) -> str:
     """Return short deterministic id for arbitrary link (used when video id unavailable)."""
     if not link:
         return ""
     h = hashlib.sha256(link.encode()).hexdigest()
     return h[:16]
-
 
 def get_cookie_file() -> Optional[str]:
     try:
@@ -188,7 +173,6 @@ def get_cookie_file() -> Optional[str]:
     except Exception:
         pass
     return None
-
 
 def find_cached_file(video_id: str) -> Optional[str]:
     if not video_id:
@@ -199,7 +183,6 @@ def find_cached_file(video_id: str) -> Optional[str]:
             _register_cache_from_thread(p)
             return p
     return None
-
 
 # ---------------- yt-dlp options & utils ----------------
 
@@ -237,8 +220,12 @@ def get_ytdlp_base_opts(verbose: bool = False) -> Dict[str, object]:
     if cookie := get_cookie_file():
         opts["cookiefile"] = cookie
 
-    return opts
+    # Use aria2c if available for external downloads (will be disabled on HLS or Googlevideo links)
+    if ARIA2_PATH:
+        opts["external_downloader"] = "aria2c"
+        opts["external_downloader_args"] = ["-x", "4", "-k", "1M"]
 
+    return opts
 
 def _info_to_final_path(info: Dict) -> Optional[str]:
     """Find local final file path reported/created by yt-dlp"""
@@ -259,18 +246,15 @@ def _info_to_final_path(info: Dict) -> Optional[str]:
     )
     return matches[0] if matches else None
 
-
 def _is_m3u8_url(url: str) -> bool:
     if not url:
         return False
     lower = url.lower()
     return lower.endswith(".m3u8") or ("manifest" in lower and "m3u8" in lower)
 
-
 def _safe_filename(prefix: str = "tmp") -> str:
     ts = int(time.time() * 1000)
     return f"{prefix}_{ts}"
-
 
 # ---------------- blocking helpers (run in executor) ----------------
 
@@ -320,19 +304,15 @@ def _run_ffmpeg_convert(input_src: str, out_path: str) -> bool:
             return True
         return False
     except Exception as e:
-        try:
-            LOGGER.debug(f"ffmpeg conversion failed: {e}")
-        except Exception:
-            print("ffmpeg conversion failed:", e)
+        LOGGER.debug(f"ffmpeg conversion failed: {e}")
         return False
-
 
 def _download_http_blocking(url: str, out_path: str, chunk_size: int = CHUNK_SIZE) -> bool:
     """
     Blocking HTTP download helper (used in executor) for direct URLs.
     """
-    import requests
     try:
+        import requests
         with requests.get(url, stream=True, timeout=(10, 180)) as r:
             r.raise_for_status()
             with open(out_path, "wb") as fh:
@@ -344,12 +324,8 @@ def _download_http_blocking(url: str, out_path: str, chunk_size: int = CHUNK_SIZ
             return True
         return False
     except Exception as e:
-        try:
-            LOGGER.debug(f"requests download failed: {e}")
-        except Exception:
-            print("requests download failed:", e)
+        LOGGER.debug(f"requests download failed: {e}")
         return False
-
 
 # ---------------- core sync ytdlp downloader (used inside executor) ----------------
 
@@ -381,12 +357,9 @@ def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool
             opts["format"] = candidate
 
             # If the original link looks like HLS/googlevideo manifest, disable external_downloader
-            try:
-                if ARIA2_PATH and ( _is_m3u8_url(link) or "googlevideo.com" in link or "manifest.googlevideo" in link ):
-                    opts.pop("external_downloader", None)
-                    opts.pop("external_downloader_args", None)
-            except Exception:
-                pass
+            if ARIA2_PATH and (_is_m3u8_url(link) or "googlevideo.com" in link or "manifest.googlevideo" in link):
+                opts.pop("external_downloader", None)
+                opts.pop("external_downloader_args", None)
 
             try:
                 with YoutubeDL(opts) as ydl:
@@ -421,24 +394,14 @@ def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool
 
             except Exception as e:
                 last_exc = e
-                try:
-                    LOGGER.debug(f"yt-dlp attempt fmt={candidate} failed: {e}")
-                except Exception:
-                    print(f"[yt-dlp-debug] fmt={candidate} -> {e}")
+                LOGGER.debug(f"yt-dlp attempt fmt={candidate} failed: {e}")
                 continue
 
-        try:
-            LOGGER.error(f"All yt-dlp attempts failed for {link}. Last error: {last_exc}")
-        except Exception:
-            print("All yt-dlp attempts failed:", last_exc)
+        LOGGER.error(f"All yt-dlp attempts failed for {link}. Last error: {last_exc}")
         return None
     except Exception as e:
-        try:
-            LOGGER.exception("download_with_ytdlp_sync fatal")
-        except Exception:
-            print("download_with_ytdlp_sync fatal:", e)
+        LOGGER.exception("download_with_ytdlp_sync fatal")
         return None
-
 
 # ---------------- async helpers ----------------
 
@@ -454,14 +417,12 @@ async def get_http_session() -> aiohttp.ClientSession:
         _session = aiohttp.ClientSession(timeout=timeout, connector=connector)
         return _session
 
-
 async def close_http_session() -> None:
     global _session
     async with _session_lock:
         if _session and not _session.closed:
             await _session.close()
         _session = None
-
 
 async def download_file(url: str, out_path: str) -> Optional[str]:
     """
@@ -486,9 +447,6 @@ async def download_file(url: str, out_path: str) -> Optional[str]:
     except Exception as e:
         LOGGER.debug(f"download_file exception: {e}")
         return None
-
-
-# ---------------- api download wrappers ----------------
 
 async def api_download_audio(link: str) -> Optional[str]:
     if not USE_AUDIO_API:
@@ -517,7 +475,6 @@ async def api_download_audio(link: str) -> Optional[str]:
     except Exception:
         return None
 
-
 async def api_download_video(link: str) -> Optional[str]:
     if not USE_VIDEO_API:
         return None
@@ -545,13 +502,9 @@ async def api_download_video(link: str) -> Optional[str]:
     except Exception:
         return None
 
-
-# ---------------- orchestration ----------------
-
 async def run_with_semaphore(coro):
     async with SEM:
         return await coro
-
 
 async def deduplicate_download(key: str, runner):
     async with _inflight_lock:
@@ -573,9 +526,7 @@ async def deduplicate_download(key: str, runner):
         async with _inflight_lock:
             _inflight.pop(key, None)
 
-
 async def race_tasks(yt_task, api_task, title: str):
-    # race between yt-dlp and optional API; return the first successful file path
     tasks = {t for t in (yt_task, api_task) if t}
     if not tasks:
         return None
@@ -604,7 +555,6 @@ async def race_tasks(yt_task, api_task, title: str):
             pass
     return None
 
-
 # ---------------- public API ----------------
 
 async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str]:
@@ -618,12 +568,21 @@ async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str
 
     # compute a stable key id: prefer youtube id, else short hash of link
     vid = extract_video_id(link)
+    # If no clear id from link, try using yt-dlp info to determine ID
+    if not vid:
+        try:
+            info = await loop.run_in_executor(None, lambda: YoutubeDL(get_ytdlp_base_opts()).extract_info(link, download=False))
+            if isinstance(info, dict):
+                vid = info.get("id", "")
+        except Exception:
+            vid = ""
     id_key = vid if vid else _make_link_id(link)
 
     # serve from cache if present (only works for real video id files named by id)
     if vid and (cached := find_cached_file(vid)):
         if title:
             LOGGER.info(f"Track '{title}' - Served from cache")
+        await register_cache(cached)
         return cached
 
     if type == "audio":
@@ -638,7 +597,10 @@ async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str
             api = asyncio.create_task(api_download_audio(link)) if USE_AUDIO_API else None
             return await race_tasks(yt, api, title or "Unknown")
 
-        return await deduplicate_download(key, run)
+        result = await deduplicate_download(key, run)
+        if result:
+            await register_cache(result)
+        return result
 
     if type == "video":
         key = f"video:{id_key}"
@@ -653,6 +615,9 @@ async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str
             api = asyncio.create_task(api_download_video(link)) if USE_VIDEO_API else None
             return await race_tasks(yt, api, title or "Unknown")
 
-        return await deduplicate_download(key, run)
+        result = await deduplicate_download(key, run)
+        if result:
+            await register_cache(result)
+        return result
 
     return None
