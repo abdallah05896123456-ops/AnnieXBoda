@@ -1,17 +1,19 @@
 # Authored By Certified Coders © 2025
 import os
 import re
+import asyncio
 import aiofiles
 import aiohttp
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
-from youtubesearchpython.aio import VideosSearch
+from youtubesearchpython import VideosSearch
 from config import YOUTUBE_IMG_URL
 from AnnieXMedia.core.dir import CACHE_DIR 
 
 PANEL_W, PANEL_H = 763, 545
 PANEL_X = (1280 - PANEL_W) // 2
 PANEL_Y = 88
-TRANSPARENCY = 170
+# قللت الشفافية عشان يبان زجاجي (كل ما الرقم قل بقى شفاف أكتر)
+TRANSPARENCY = 50 
 INNER_OFFSET = 36
 
 THUMB_W, THUMB_H = 542, 273
@@ -43,14 +45,17 @@ def trim_to_width(text: str, font: ImageFont.FreeTypeFont, max_w: int) -> str:
     return ellipsis
 
 async def get_thumb(videoid: str) -> str:
-    cache_path = os.path.join(CACHE_DIR, f"{videoid}_v4.png")
+    cache_path = os.path.join(CACHE_DIR, f"{videoid}_v5_glass.png")
     if os.path.exists(cache_path):
         return cache_path
 
-    # YouTube video data fetch
-    results = VideosSearch(f"https://www.youtube.com/watch?v={videoid}", limit=1)
+    # دالة البحث المتزامن
+    def _search():
+        return VideosSearch(f"https://www.youtube.com/watch?v={videoid}", limit=1).result()
+
     try:
-        results_data = await results.next()
+        # تشغيل البحث في Thread منفصل عشان ما يوقفش البوت
+        results_data = await asyncio.to_thread(_search)
         result_items = results_data.get("result", [])
         if not result_items:
             raise ValueError("No results found.")
@@ -65,7 +70,7 @@ async def get_thumb(videoid: str) -> str:
     is_live = not duration or str(duration).strip().lower() in {"", "live", "live now"}
     duration_text = "Live" if is_live else duration or "Unknown Mins"
 
-    # Download thumbnail
+    # تحميل الصورة المصغرة
     thumb_path = os.path.join(CACHE_DIR, f"thumb{videoid}.png")
     try:
         async with aiohttp.ClientSession() as session:
@@ -76,48 +81,56 @@ async def get_thumb(videoid: str) -> str:
     except Exception:
         return YOUTUBE_IMG_URL
 
-    # Create base image
+    # إنشاء الصورة الأساسية
     base = Image.open(thumb_path).resize((1280, 720)).convert("RGBA")
     
-    # === التعديل الأول: الخلفية واضحة (Blur 3) ===
-    bg = ImageEnhance.Brightness(base.filter(ImageFilter.BoxBlur(3))).enhance(0.6)
+    # 1. الخلفية العامة (Blur خفيف + تغميق بسيط عشان الزجاج يبان)
+    bg = base.filter(ImageFilter.BoxBlur(3))
+    bg = ImageEnhance.Brightness(bg).enhance(0.7)
 
-    # === التعديل الثاني: مستطيل زجاجي ايفون ===
-    # 1. قص المنطقة
-    panel_crop = bg.crop((PANEL_X, PANEL_Y, PANEL_X + PANEL_W, PANEL_Y + PANEL_H))
-    # 2. تعتيم المنطقة دي جامد (Frosted Glass Effect)
-    panel_crop = panel_crop.filter(ImageFilter.GaussianBlur(20))
+    # 2. إنشاء تأثير الزجاج (Frosted Glass)
+    # نقص الجزء اللي تحت اللوحة
+    crop = bg.crop((PANEL_X, PANEL_Y, PANEL_X + PANEL_W, PANEL_Y + PANEL_H))
+    # نخليه ضبابي جداً (Gaussian Blur قوي)
+    crop = crop.filter(ImageFilter.GaussianBlur(30))
     
-    # 3. إضافة الطبقة البيضاء
-    overlay = Image.new("RGBA", (PANEL_W, PANEL_H), (255, 255, 255, TRANSPARENCY))
-    frosted = Image.alpha_composite(panel_crop, overlay)
+    # طبقة بيضاء شفافة فوق الضباب
+    tint = Image.new("RGBA", crop.size, (255, 255, 255, TRANSPARENCY))
+    glass_panel = Image.alpha_composite(crop, tint)
     
-    # 4. الماسك واللصق
+    # 3. تطبيق الزجاج بالشكل الدائري
     mask = Image.new("L", (PANEL_W, PANEL_H), 0)
-    ImageDraw.Draw(mask).rounded_rectangle((0, 0, PANEL_W, PANEL_H), 50, fill=255)
-    bg.paste(frosted, (PANEL_X, PANEL_Y), mask)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, PANEL_W, PANEL_H), radius=40, fill=255)
+    bg.paste(glass_panel, (PANEL_X, PANEL_Y), mask)
 
-    # Draw details
     draw = ImageDraw.Draw(bg)
     
-    # 5. إضافة إطار أبيض (Stroke) عشان يكمل شكل الايفون
-    draw.rounded_rectangle((PANEL_X, PANEL_Y, PANEL_X + PANEL_W, PANEL_Y + PANEL_H), radius=50, outline=(255, 255, 255, 100), width=2)
+    # 4. إطار زجاجي (Stroke) أبيض خفيف
+    draw.rounded_rectangle(
+        (PANEL_X, PANEL_Y, PANEL_X + PANEL_W, PANEL_Y + PANEL_H),
+        radius=40,
+        outline=(255, 255, 255, 120),
+        width=2
+    )
 
+    # الخطوط
     try:
         title_font = ImageFont.truetype("AnnieXMedia/assets/thumb/font2.ttf", 32)
         regular_font = ImageFont.truetype("AnnieXMedia/assets/thumb/font.ttf", 18)
     except OSError:
         title_font = regular_font = ImageFont.load_default()
 
+    # وضع صورة الفيديو الصغيرة داخل الزجاج
     thumb = base.resize((THUMB_W, THUMB_H))
     tmask = Image.new("L", thumb.size, 0)
     ImageDraw.Draw(tmask).rounded_rectangle((0, 0, THUMB_W, THUMB_H), 20, fill=255)
     bg.paste(thumb, (THUMB_X, THUMB_Y), tmask)
 
+    # النصوص
     draw.text((TITLE_X, TITLE_Y), trim_to_width(title, title_font, MAX_TITLE_WIDTH), fill="black", font=title_font)
     draw.text((META_X, META_Y), f"YouTube | {views}", fill="black", font=regular_font)
 
-    # Progress bar
+    # شريط التشغيل
     draw.line([(BAR_X, BAR_Y), (BAR_X + BAR_RED_LEN, BAR_Y)], fill="red", width=6)
     draw.line([(BAR_X + BAR_RED_LEN, BAR_Y), (BAR_X + BAR_TOTAL_LEN, BAR_Y)], fill="gray", width=5)
     draw.ellipse([(BAR_X + BAR_RED_LEN - 7, BAR_Y - 7), (BAR_X + BAR_RED_LEN + 7, BAR_Y + 7)], fill="red")
@@ -126,15 +139,16 @@ async def get_thumb(videoid: str) -> str:
     end_text = "Live" if is_live else duration_text
     draw.text((BAR_X + BAR_TOTAL_LEN - (90 if is_live else 60), BAR_Y + 15), end_text, fill="red" if is_live else "black", font=regular_font)
 
-    # Icons
+    # أيقونات التحكم (تحويلها للأسود لتبدو أفضل على الزجاج)
     icons_path = "AnnieXMedia/assets/thumb/play_icons.png"
     if os.path.isfile(icons_path):
         ic = Image.open(icons_path).resize((ICONS_W, ICONS_H)).convert("RGBA")
         r, g, b, a = ic.split()
+        # تحويل الأيقونات للون الأسود
         black_ic = Image.merge("RGBA", (r.point(lambda *_: 0), g.point(lambda *_: 0), b.point(lambda *_: 0), a))
         bg.paste(black_ic, (ICONS_X, ICONS_Y), black_ic)
 
-    # Cleanup and save
+    # التنظيف والحفظ
     try:
         os.remove(thumb_path)
     except OSError:
