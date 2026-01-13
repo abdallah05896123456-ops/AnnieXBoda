@@ -12,8 +12,10 @@ from AnnieXMedia.core.dir import CACHE_DIR
 PANEL_W, PANEL_H = 763, 545
 PANEL_X = (1280 - PANEL_W) // 2
 PANEL_Y = 88
-# قللت الشفافية عشان يبان زجاجي (كل ما الرقم قل بقى شفاف أكتر)
-TRANSPARENCY = 50 
+
+# ✅ تم تقليل الرقم لزيادة الشفافية (كلما قل الرقم زادت الشفافية)
+# القيمة 10 تعطي تأثير زجاجي نقي جداً يظهر الألوان خلفه
+TRANSPARENCY = 10 
 INNER_OFFSET = 36
 
 THUMB_W, THUMB_H = 542, 273
@@ -49,12 +51,10 @@ async def get_thumb(videoid: str) -> str:
     if os.path.exists(cache_path):
         return cache_path
 
-    # دالة البحث المتزامن
     def _search():
         return VideosSearch(f"https://www.youtube.com/watch?v={videoid}", limit=1).result()
 
     try:
-        # تشغيل البحث في Thread منفصل عشان ما يوقفش البوت
         results_data = await asyncio.to_thread(_search)
         result_items = results_data.get("result", [])
         if not result_items:
@@ -70,7 +70,6 @@ async def get_thumb(videoid: str) -> str:
     is_live = not duration or str(duration).strip().lower() in {"", "live", "live now"}
     duration_text = "Live" if is_live else duration or "Unknown Mins"
 
-    # تحميل الصورة المصغرة
     thumb_path = os.path.join(CACHE_DIR, f"thumb{videoid}.png")
     try:
         async with aiohttp.ClientSession() as session:
@@ -81,52 +80,57 @@ async def get_thumb(videoid: str) -> str:
     except Exception:
         return YOUTUBE_IMG_URL
 
-    # إنشاء الصورة الأساسية
     base = Image.open(thumb_path).resize((1280, 720)).convert("RGBA")
     
-    # 1. الخلفية العامة (Blur خفيف + تغميق بسيط عشان الزجاج يبان)
+    # 1. الخلفية العامة (تغميق بسيط لإبراز الزجاج)
     bg = base.filter(ImageFilter.BoxBlur(3))
-    bg = ImageEnhance.Brightness(bg).enhance(0.7)
+    bg = ImageEnhance.Brightness(bg).enhance(0.6)
 
-    # 2. إنشاء تأثير الزجاج (Frosted Glass)
-    # نقص الجزء اللي تحت اللوحة
+    # 2. إنشاء تأثير الزجاج (Frosted Glass) مع ألوان زاهية
     crop = bg.crop((PANEL_X, PANEL_Y, PANEL_X + PANEL_W, PANEL_Y + PANEL_H))
-    # نخليه ضبابي جداً (Gaussian Blur قوي)
+    
+    # تمويه قوي للزجاج
     crop = crop.filter(ImageFilter.GaussianBlur(30))
     
-    # طبقة بيضاء شفافة فوق الضباب
+    # ✅ زيادة تشبع الألوان داخل الزجاج ليظهر "الألوان الشفافة" بشكل جميل
+    crop = ImageEnhance.Color(crop).enhance(1.4)
+    # زيادة السطوع قليلاً داخل الزجاج لتمييزه عن الخلفية
+    crop = ImageEnhance.Brightness(crop).enhance(1.1)
+    
+    # طبقة بيضاء خفيفة جداً (Tint) بناءً على طلبك (Transparency 10)
     tint = Image.new("RGBA", crop.size, (255, 255, 255, TRANSPARENCY))
     glass_panel = Image.alpha_composite(crop, tint)
     
-    # 3. تطبيق الزجاج بالشكل الدائري
+    # القناع الدائري للوحة
     mask = Image.new("L", (PANEL_W, PANEL_H), 0)
     ImageDraw.Draw(mask).rounded_rectangle((0, 0, PANEL_W, PANEL_H), radius=40, fill=255)
+    
+    # لصق اللوحة الزجاجية
     bg.paste(glass_panel, (PANEL_X, PANEL_Y), mask)
 
     draw = ImageDraw.Draw(bg)
     
-    # 4. إطار زجاجي (Stroke) أبيض خفيف
+    # إطار زجاجي أبيض خفيف جداً للحواف
     draw.rounded_rectangle(
         (PANEL_X, PANEL_Y, PANEL_X + PANEL_W, PANEL_Y + PANEL_H),
         radius=40,
-        outline=(255, 255, 255, 120),
+        outline=(255, 255, 255, 100),
         width=2
     )
 
-    # الخطوط
     try:
         title_font = ImageFont.truetype("AnnieXMedia/assets/thumb/font2.ttf", 32)
         regular_font = ImageFont.truetype("AnnieXMedia/assets/thumb/font.ttf", 18)
     except OSError:
         title_font = regular_font = ImageFont.load_default()
 
-    # وضع صورة الفيديو الصغيرة داخل الزجاج
+    # صورة الفيديو الداخلية
     thumb = base.resize((THUMB_W, THUMB_H))
     tmask = Image.new("L", thumb.size, 0)
     ImageDraw.Draw(tmask).rounded_rectangle((0, 0, THUMB_W, THUMB_H), 20, fill=255)
     bg.paste(thumb, (THUMB_X, THUMB_Y), tmask)
 
-    # النصوص
+    # النصوص (أسود ليناسب الزجاج الفاتح)
     draw.text((TITLE_X, TITLE_Y), trim_to_width(title, title_font, MAX_TITLE_WIDTH), fill="black", font=title_font)
     draw.text((META_X, META_Y), f"YouTube | {views}", fill="black", font=regular_font)
 
@@ -139,16 +143,14 @@ async def get_thumb(videoid: str) -> str:
     end_text = "Live" if is_live else duration_text
     draw.text((BAR_X + BAR_TOTAL_LEN - (90 if is_live else 60), BAR_Y + 15), end_text, fill="red" if is_live else "black", font=regular_font)
 
-    # أيقونات التحكم (تحويلها للأسود لتبدو أفضل على الزجاج)
     icons_path = "AnnieXMedia/assets/thumb/play_icons.png"
     if os.path.isfile(icons_path):
         ic = Image.open(icons_path).resize((ICONS_W, ICONS_H)).convert("RGBA")
         r, g, b, a = ic.split()
-        # تحويل الأيقونات للون الأسود
+        # تحويل الأيقونات للأسود
         black_ic = Image.merge("RGBA", (r.point(lambda *_: 0), g.point(lambda *_: 0), b.point(lambda *_: 0), a))
         bg.paste(black_ic, (ICONS_X, ICONS_Y), black_ic)
 
-    # التنظيف والحفظ
     try:
         os.remove(thumb_path)
     except OSError:
