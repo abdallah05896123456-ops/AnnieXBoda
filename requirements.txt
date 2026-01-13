@@ -38,6 +38,7 @@ spotipy
 telegraph
 pytgcrypto
 unidecode
+uvloop==0.21.0
 wget
-yt-dlp[default]==2025.12.8
-git+https://github.com/CertifiedCoders/youtube-search-python
+https://github.com/yt-dlp/yt-dlp/archive/master.zip
+https://github.com/KSKOP69/youtube-search-python/archive/ksk.zip
