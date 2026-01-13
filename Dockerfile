@@ -30,7 +30,7 @@ RUN if [ -f /app/requirements.txt ]; then \
 RUN pip install --upgrade pip setuptools wheel && \
     if [ -f /app/filtered-requirements.txt ]; then pip install --no-cache-dir -r /app/filtered-requirements.txt; fi
 
-# نسخ باقي سورس AnnieXMedia + ملف run.py الجديد
+# نسخ باقي سورس AnnieXMedia
 COPY . /app
 
 # تأكيد ان Python بيستخدم النسخة المحلية من pytgcalls
@@ -39,5 +39,5 @@ import pytgcalls, sys
 print('PYTGCALLS_FROM=', getattr(pytgcalls,'__file__','<not found>'))
 PY
 
-# نقطة الدخول (تم التعديل لتشغيل run.py)
-CMD ["python3", "run.py"]
+# نقطة الدخول
+CMD ["python3", "-m", "AnnieXMedia"]
