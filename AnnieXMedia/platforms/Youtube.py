@@ -1,5 +1,5 @@
 # Authored By Certified Coders © 2025
-# The "Nuclear Annie" Edition: Auto-Fix Links + Smart Validation
+# The "Nuclear Annie" Edition: Auto-Fix Links + Smart Validation + Error Bypass
 import asyncio
 import contextlib
 import json
@@ -36,9 +36,7 @@ YOUTUBE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 # === Helpers & Smart Cookie Logic ===
 def _ensure_cookies() -> Optional[str]:
     """
-    دالة ذكية جداً:
-    1. تصلح الرابط لو كان رابط صفحة وليس Raw.
-    2. تحمل الكوكيز وتتأكد إنها مش HTML.
+    دالة ذكية: تصلح الروابط، تحمل الكوكيز، وتتأكد من سلامتها.
     """
     path = str(COOKIE_PATH)
     
@@ -46,7 +44,7 @@ def _ensure_cookies() -> Optional[str]:
     cookie_url = os.getenv("COOKIE_URL") or os.getenv("COOKIES_URL") or os.getenv("UPSTREAM_COOKIES")
     
     if cookie_url:
-        # 🔥 التصحيح التلقائي للروابط (Batbin & Pastebin) 🔥
+        # 🔥 التصحيح التلقائي للروابط 🔥
         if "batbin.me" in cookie_url and "/raw/" not in cookie_url:
             cookie_url = cookie_url.replace("batbin.me/", "batbin.me/raw/")
         elif "pastebin.com" in cookie_url and "/raw/" not in cookie_url:
@@ -62,12 +60,12 @@ def _ensure_cookies() -> Optional[str]:
             if response.status_code == 200:
                 content = response.text
                 
-                # فحص أخير: هل المحتوى HTML؟
+                # فحص HTML
                 if "<!DOCTYPE html>" in content or "<html" in content.lower():
-                    print(f"❌ Critical Error: Even after auto-fix, URL returned HTML: {cookie_url}")
+                    print(f"❌ Critical Error: URL returned HTML: {cookie_url}")
                     return None
                 
-                # حفظ الملف السليم
+                # حفظ الملف
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(content)
                 print(f"✅ Cookies Auto-Fixed & Loaded from: {cookie_url}")
@@ -76,7 +74,6 @@ def _ensure_cookies() -> Optional[str]:
             print(f"⚠️ Cookie Fetch Error: {e}")
             pass
             
-    # استخدام الملف المحلي كخطة بديلة
     if path and os.path.exists(path) and os.path.getsize(path) > 0:
         return path
         
@@ -391,7 +388,7 @@ class YouTubeAPI:
             r.get("id", ""),
         )
 
-    # === 🚀 Nuclear Download Engine (Final) ===
+    # === 🚀 Nuclear Download Engine (Bypass Error Fix) ===
     @capture_internal_err
     async def download(
         self,
@@ -405,7 +402,6 @@ class YouTubeAPI:
         loop = asyncio.get_running_loop()
 
         def _nuclear_runner():
-            # Check Cookies (with Auto-fix)
             cookie = _ensure_cookies()
             opts = {
                 'outtmpl': 'downloads/%(id)s.%(ext)s',
@@ -414,7 +410,6 @@ class YouTubeAPI:
                 'quiet': True,
                 'no_warnings': True,
                 'cookiefile': cookie if cookie else None,
-                # Smart Quality
                 'format': (
                     'bestvideo[height<=720]+bestaudio/best[height<=720]' 
                     if video else 
@@ -422,13 +417,26 @@ class YouTubeAPI:
                 ),
             }
             
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(link, download=False)
-                filename = ydl.prepare_filename(info)
-                if os.path.exists(filename):
-                    return filename
-                ydl.download([link])
-                return filename
+            # متغير لحفظ اسم الملف المتوقع
+            expected_filename = None
+            
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(link, download=False)
+                    expected_filename = ydl.prepare_filename(info)
+                    
+                    # لو الملف موجود من الأول، رجعه فوراً
+                    if os.path.exists(expected_filename) and os.path.getsize(expected_filename) > 0:
+                        return expected_filename
+                        
+                    ydl.download([link])
+                    return expected_filename
+            except Exception as e:
+                # 🔥 هنا السحر: لو حصل إيرور بس الملف نزل، اعتبره نجاح! 🔥
+                if expected_filename and os.path.exists(expected_filename) and os.path.getsize(expected_filename) > 0:
+                    print(f"⚠️ Error occurred but file downloaded successfully: {e}")
+                    return expected_filename
+                raise e
 
         try:
             downloaded_file = await loop.run_in_executor(None, _nuclear_runner)
@@ -436,7 +444,7 @@ class YouTubeAPI:
                 return downloaded_file, True
             return None, None
         except Exception as e:
-            # Final Fallback
+            # Fallback (Just in case)
             if video:
                  if await is_on_off(1):
                     p = await yt_dlp_download(link, type="video", title=await self.title(link))
