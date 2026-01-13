@@ -1,7 +1,11 @@
 # Authored By Certified Coders © 2025
+# The "Nuclear" Edition: Full Format Support + Dynamic Quality Logic
 import os
+import asyncio
+import yt_dlp
 from random import randint
 from typing import Union
+from functools import partial
 
 from pyrogram.types import InlineKeyboardMarkup
 
@@ -17,6 +21,57 @@ from AnnieXMedia.utils.stream.queue import put_queue, put_queue_index
 from AnnieXMedia.utils.thumbnails import get_thumb
 from AnnieXMedia.utils.errors import capture_internal_err
 
+# --- 🧠 المحرك النووي (Dynamic Quality Engine) ---
+def download_nuclear(vidid, is_video, duration_str="00:00"):
+    # 1. حساب مدة الفيديو بالثواني بدقة
+    try:
+        parts = str(duration_str).split(':')
+        if len(parts) == 2:
+            seconds = int(parts[0]) * 60 + int(parts[1])
+        elif len(parts) == 3:
+            seconds = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+        else:
+            seconds = 300 # لو الوقت مش معروف نعتبره متوسط
+    except:
+        seconds = 300
+
+    # 2. إعدادات أساسية للسرعة وفك الحظر
+    opts = {
+        'outtmpl': 'downloads/%(id)s.%(ext)s',
+        'geo_bypass': True,
+        'nocheckcertificate': True,
+        'quiet': True,
+        'no_warnings': True,
+        'noplaylist': True,
+        'match_filter': yt_dlp.utils.match_filter_func("!is_live"), # منع اللايف في البحث العادي
+        'concurrent_fragment_downloads': 5, # تحميل متعدد الأجزاء (سرعة x5)
+        'extractor_args': {'youtube': {'player_client': ['android', 'web']}}, # تمويه
+    }
+
+    # 3. معادلة الجودة الديناميكية (زي ما طلبت)
+    if is_video:
+        if seconds < 600: 
+            # فيديو أقل من 10 دقايق: هات أعلى جودة متاحة في الكون (حتى لو 4K)
+            # بنحاول نجيب فيديو وصوت مدموجين، لو معرفش بيجيب أفضل المتاح
+            opts['format'] = 'bestvideo+bestaudio/best'
+        elif seconds < 1800:
+            # فيديو من 10 لـ 30 دقيقة: 720p (الجودة الذهبية)
+            opts['format'] = 'bestvideo[height<=720]+bestaudio/best[height<=720]/best'
+        else:
+            # فيديو طويل (أفلام/ميكسات): 480p (عشان الاستقرار وعدم التقطيع)
+            opts['format'] = 'bestvideo[height<=480]+bestaudio/best[height<=480]/best'
+    else:
+        # وضع الصوت: هات M4A (الأسرع) ولو مش موجود هات أي صوت عالي الجودة
+        opts['format'] = 'bestaudio[ext=m4a]/bestaudio/best'
+
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(vidid, download=True)
+            filename = ydl.prepare_filename(info)
+            return filename, True
+    except Exception as e:
+        print(f"Nuclear Download Error: {e}")
+        return None, False
 
 @capture_internal_err
 async def stream(
@@ -41,6 +96,7 @@ async def stream(
     if forceplay:
         await StreamController.force_stop_stream(chat_id)
 
+    # === Playlist ===
     if streamtype == "playlist":
         msg = f"{_['play_19']}\n\n"
         count = 0
@@ -80,15 +136,22 @@ async def stream(
             else:
                 if not forceplay:
                     db[chat_id] = []
-                try:
-                    file_path, direct = await YouTube.download(
-                        vidid, mystic, video=is_video, videoid=vidid
-                    )
-                except Exception:
-                    raise AssistantErr(_["play_14"])
-                if not file_path:
-                    raise AssistantErr(_["play_14"])
+                
+                # تشغيل المحرك النووي
+                loop = asyncio.get_running_loop()
+                file_path, direct = await loop.run_in_executor(
+                    None, 
+                    partial(download_nuclear, vidid, is_video, str(duration_min))
+                )
 
+                if not file_path:
+                    try:
+                        file_path, direct = await YouTube.download(
+                            vidid, mystic, video=is_video, videoid=vidid
+                        )
+                    except:
+                        raise AssistantErr(_["play_14"])
+                
                 await StreamController.join_call(
                     chat_id,
                     original_chat_id,
@@ -113,7 +176,7 @@ async def stream(
                 run = await app.send_photo(
                     original_chat_id,
                     photo=img,
-                    caption=_["stream_1"].format(
+                    caption="🧚 " + _["stream_1"].format(
                         f"https://t.me/{app.username}?start=info_{vidid}",
                         title[:23],
                         duration_min,
@@ -141,10 +204,11 @@ async def stream(
         return await app.send_photo(
             original_chat_id,
             photo=playlist_photo,
-            caption=_["play_21"].format(final_position, link),
+            caption="🧚 " + _["play_21"].format(final_position, link),
             reply_markup=upl,
         )
 
+    # === YouTube ===
     elif streamtype == "youtube":
         link = result["link"]
         vidid = result["vidid"]
@@ -152,14 +216,21 @@ async def stream(
         duration_min = result["duration_min"]
         thumbnail = result["thumb"]
 
-        try:
-            file_path, direct = await YouTube.download(
-                vidid, mystic, video=is_video, videoid=vidid
-            )
-        except Exception:
-            raise AssistantErr(_["play_14"])
+        # 🔥 هنا الشغل كله 🔥
+        loop = asyncio.get_running_loop()
+        file_path, direct = await loop.run_in_executor(
+            None, 
+            partial(download_nuclear, vidid, is_video, str(duration_min))
+        )
+        
         if not file_path:
-            raise AssistantErr(_["play_14"])
+            # لو فشل، ارجع للطريقة العادية (احتياطي)
+            try:
+                file_path, direct = await YouTube.download(
+                    vidid, mystic, video=is_video, videoid=vidid
+                )
+            except Exception:
+                raise AssistantErr(_["play_14"])
 
         if await is_active_chat(chat_id):
             await put_queue(
@@ -177,7 +248,7 @@ async def stream(
             button = aq_markup(_, chat_id)
             await app.send_message(
                 chat_id=original_chat_id,
-                text=_["queue_4"].format(position, title[:27], duration_min, user_name),
+                text="🧚 " + _["queue_4"].format(position, title[:27], duration_min, user_name),
                 reply_markup=InlineKeyboardMarkup(button),
             )
         else:
@@ -207,7 +278,7 @@ async def stream(
             run = await app.send_photo(
                 original_chat_id,
                 photo=img,
-                caption=_["stream_1"].format(
+                caption="🧚 " + _["stream_1"].format(
                     f"https://t.me/{app.username}?start=info_{vidid}",
                     title[:23],
                     duration_min,
@@ -218,6 +289,7 @@ async def stream(
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "stream"
 
+    # === SoundCloud ===
     elif streamtype == "soundcloud":
         file_path = result["filepath"]
         title = result["title"]
@@ -241,7 +313,7 @@ async def stream(
             button = aq_markup(_, chat_id)
             await app.send_message(
                 chat_id=original_chat_id,
-                text=_["queue_4"].format(position, title[:27], duration_min, user_name),
+                text="🧚 " + _["queue_4"].format(position, title[:27], duration_min, user_name),
                 reply_markup=InlineKeyboardMarkup(button),
             )
         else:
@@ -264,7 +336,7 @@ async def stream(
             run = await app.send_photo(
                 original_chat_id,
                 photo=config.SOUNCLOUD_IMG_URL,
-                caption=_["stream_1"].format(
+                caption="🧚 " + _["stream_1"].format(
                     config.SUPPORT_CHAT, title[:23], duration_min, user_name
                 ),
                 reply_markup=InlineKeyboardMarkup(button),
@@ -272,6 +344,7 @@ async def stream(
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
 
+    # === Telegram Files ===
     elif streamtype == "telegram":
         file_path = result["path"]
         link = result["link"]
@@ -296,7 +369,7 @@ async def stream(
             button = aq_markup(_, chat_id)
             await app.send_message(
                 chat_id=original_chat_id,
-                text=_["queue_4"].format(position, title[:27], duration_min, user_name),
+                text="🧚 " + _["queue_4"].format(position, title[:27], duration_min, user_name),
                 reply_markup=InlineKeyboardMarkup(button),
             )
         else:
@@ -321,12 +394,13 @@ async def stream(
             run = await app.send_photo(
                 original_chat_id,
                 photo=config.TELEGRAM_VIDEO_URL if is_video else config.TELEGRAM_AUDIO_URL,
-                caption=_["stream_1"].format(link, title[:23], duration_min, user_name),
+                caption="🧚 " + _["stream_1"].format(link, title[:23], duration_min, user_name),
                 reply_markup=InlineKeyboardMarkup(button),
             )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
 
+    # === Live Stream (مفعل) ===
     elif streamtype == "live":
         link = result["link"]
         vidid = result["vidid"]
@@ -350,12 +424,13 @@ async def stream(
             button = aq_markup(_, chat_id)
             await app.send_message(
                 chat_id=original_chat_id,
-                text=_["queue_4"].format(position, title[:27], duration_min, user_name),
+                text="🧚 " + _["queue_4"].format(position, title[:27], duration_min, user_name),
                 reply_markup=InlineKeyboardMarkup(button),
             )
         else:
             if not forceplay:
                 db[chat_id] = []
+            
             n, file_path = await YouTube.video(link)
             if n == 0:
                 raise AssistantErr(_["str_3"])
@@ -386,7 +461,7 @@ async def stream(
             run = await app.send_photo(
                 original_chat_id,
                 photo=img,
-                caption=_["stream_1"].format(
+                caption="🧚 " + _["stream_1"].format(
                     f"https://t.me/{app.username}?start=info_{vidid}",
                     title[:23],
                     duration_min,
@@ -397,6 +472,7 @@ async def stream(
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
 
+    # === Index/M3u8 ===
     elif streamtype == "index":
         link = result
         title = "ɪɴᴅᴇx ᴏʀ ᴍ3ᴜ8 ʟɪɴᴋ"
@@ -416,7 +492,7 @@ async def stream(
             position = len(db.get(chat_id)) - 1
             button = aq_markup(_, chat_id)
             await mystic.edit_text(
-                text=_["queue_4"].format(position, title[:27], duration_min, user_name),
+                text="🧚 " + _["queue_4"].format(position, title[:27], duration_min, user_name),
                 reply_markup=InlineKeyboardMarkup(button),
             )
         else:
@@ -443,7 +519,7 @@ async def stream(
             run = await app.send_photo(
                 original_chat_id,
                 photo=config.STREAM_IMG_URL,
-                caption=_["stream_2"].format(user_name),
+                caption="🧚 " + _["stream_2"].format(user_name),
                 reply_markup=InlineKeyboardMarkup(button),
             )
             db[chat_id][0]["mystic"] = run
