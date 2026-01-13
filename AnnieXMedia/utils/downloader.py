@@ -1,11 +1,12 @@
 # Authored By Certified Coders © 2025
 """
 ذكي، سريع، وعملي: downloader مدعوم بـ yt-dlp + aiohttp + ffmpeg fallback.
-معدل لإعطاء أعلى throughput عملي على Fly.io:
- - دعم aria2c كـ external_downloader إن وُجد
- - زيادة concurrent_fragment_downloads و http_chunk_size اعتمادًا على tuning.CHUNK_SIZE
- - إجبار اختيار صيغ MP4/H264 للسرعة والثبات (تجنب VP9 وm3u8 حينما يمكن)
- - تحويل m3u8 عبر ffmpeg مع -threads 0 و flags منخفضة الكمون
+مميزات هذا الملف:
+ - دعم aria2c كـ external_downloader إن كان متوفرًا
+ - aggressive-friendly defaults (concurrent fragments, chunk size from tuning)
+ - تحويل HLS (m3u8/manifest) إلى ملف محلي باستخدام ffmpeg عند الحاجة
+ - نظام Cache مؤقت: يحفظ الملفات المحلية لمدة 8 دقائق منذ آخر استخدام، منظف خلفي يحذفها بأمان
+ - تسجيل/تجديد TTL من كل نقاط الإرجاع
 """
 
 import asyncio
@@ -30,6 +31,9 @@ from AnnieXMedia.utils.tuning import CHUNK_SIZE, SEM
 from config import API_KEY, API_URL, VIDEO_API_URL
 from AnnieXMedia.logging import LOGGER
 
+# Access global db to avoid deleting files in-use
+from AnnieXMedia.misc import db as _GLOBAL_DB
+
 LOGGER = LOGGER(__name__)
 
 USE_AUDIO_API = bool(API_URL and API_KEY)
@@ -42,6 +46,110 @@ _session: Optional[aiohttp.ClientSession] = None
 _session_lock = asyncio.Lock()
 
 YOUTUBE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
+
+
+# ---------------- Cache Manager (8 minutes TTL) ----------------
+CACHE_TTL = 8 * 60  # seconds
+_cache_registry: Dict[str, float] = {}
+_cache_lock = asyncio.Lock()
+
+
+async def register_cache(path: str) -> None:
+    """Register/extend cached file TTL (async)."""
+    if not path:
+        return
+    try:
+        async with _cache_lock:
+            _cache_registry[path] = time.time() + CACHE_TTL
+    except Exception:
+        # best-effort
+        _cache_registry[path] = time.time() + CACHE_TTL
+
+
+def _register_cache_from_thread(path: str) -> None:
+    """
+    Called from synchronous threads (like executor).
+    Schedule the async register_cache safely if loop running, otherwise store directly.
+    """
+    if not path:
+        return
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.call_soon_threadsafe(asyncio.create_task, register_cache(path))
+        else:
+            # fallback: set value now; cleaner will run later
+            _cache_registry[path] = time.time() + CACHE_TTL
+    except Exception:
+        _cache_registry[path] = time.time() + CACHE_TTL
+
+
+def _is_file_in_use(path: str) -> bool:
+    """
+    Return True if the file is referenced in the global db queue (playing/queued).
+    Safe and forgiving: if structure unexpected we assume "in use".
+    """
+    try:
+        for k, q in list(_GLOBAL_DB.items()):
+            if not q:
+                continue
+            for item in q:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("file") == path or item.get("speed_path") == path:
+                    return True
+    except Exception:
+        return True
+    return False
+
+
+async def _cache_cleaner_loop() -> None:
+    """
+    Background loop: remove expired cached files not currently in use.
+    Runs until cancelled.
+    """
+    try:
+        while True:
+            now = time.time()
+            to_delete = []
+            async with _cache_lock:
+                for p, expiry in list(_cache_registry.items()):
+                    if expiry <= now:
+                        # only delete if file not used in global queues
+                        if not _is_file_in_use(p) and os.path.exists(p):
+                            to_delete.append(p)
+                        else:
+                            # extend by TTL if in use (prevents race)
+                            _cache_registry[p] = now + CACHE_TTL
+            for p in to_delete:
+                try:
+                    os.remove(p)
+                    LOGGER.info(f"cache_cleaner: removed expired file {p}")
+                except Exception as e:
+                    LOGGER.debug(f"cache_cleaner: failed to remove {p}: {e}")
+                async with _cache_lock:
+                    _cache_registry.pop(p, None)
+            await asyncio.sleep(30)
+    except asyncio.CancelledError:
+        return
+    except Exception as e:
+        LOGGER.exception(f"cache_cleaner fatal: {e}")
+
+
+def init_cache_cleaner() -> None:
+    """
+    Start the background cleaner if event loop is running.
+    Call this once during application startup (e.g. from core/call.py.start()).
+    """
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(_cache_cleaner_loop())
+        else:
+            # will start when loop runs; caller can call this again after event loop active
+            pass
+    except Exception:
+        LOGGER.exception("init_cache_cleaner failed")
 
 
 # ---------------- helpers ----------------
@@ -80,6 +188,8 @@ def find_cached_file(video_id: str) -> Optional[str]:
     for ext in ("mp4", "mkv", "webm", "m4a", "mp3", "opus"):
         p = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
         if os.path.exists(p):
+            # renew TTL when file is served from cache
+            _register_cache_from_thread(p)
             return p
     return None
 
@@ -89,9 +199,8 @@ def find_cached_file(video_id: str) -> Optional[str]:
 def get_ytdlp_base_opts(verbose: bool = False) -> Dict[str, object]:
     """
     Aggressive-friendly base options.
-    If aria2c is available as external_downloader, enable it with strong args.
+    If aria2c is available as external_downloader, enable it with aggressive args.
     """
-    # ensure a sensible minimum for chunk size
     min_chunk = max(CHUNK_SIZE, 4 * 1024 * 1024)
 
     opts = {
@@ -104,44 +213,36 @@ def get_ytdlp_base_opts(verbose: bool = False) -> Dict[str, object]:
         "noprogress": True,
         "retries": 5,
         "fragment_retries": 5,
-        # high but controlled concurrency for fragments
         "concurrent_fragment_downloads": 16,
         "http_chunk_size": min_chunk,
         "socket_timeout": 10,
         "cachedir": str(CACHE_DIR),
         "ignoreerrors": True,
         "merge_output_format": "mp4",
-        # network helpers
         "nocheckcertificate": True,
         "geo_bypass": True,
-        # prevent heavy postprocessing in yt-dlp
         "postprocessors": [],
         "recodevideo": None,
         "nopostoverwrites": True,
-        # prefer ffmpeg for merges if needed
         "prefer_ffmpeg": True,
     }
 
-    # enable aria2c if present (much faster for big files)
+    # enable aria2c if present
     aria2_path = shutil.which("aria2c")
     if aria2_path:
-        # tune external_downloader args for throughput
-        # piece length: try to give aria2 a chunk size in K/M (yt-dlp will pass this through)
         piece_len_k = max(1024, min_chunk // 1024)
         opts["external_downloader"] = "aria2c"
         opts["external_downloader_args"] = [
-            "-x", "16",  # connections per server
-            "-s", "16",  # split
+            "-x", "16",
+            "-s", "16",
             "-k", f"{piece_len_k}K",
             "--file-allocation=none",
             "--allow-overwrite=true",
             "--max-connection-per-server=16",
             "--min-split-size=1M",
         ]
-        # reduce internal fragment concurrency when using aria2
         opts["concurrent_fragment_downloads"] = 8
 
-    # add cookie file if exists
     if cookie := get_cookie_file():
         opts["cookiefile"] = cookie
 
@@ -188,7 +289,6 @@ def _run_ffmpeg_convert(input_src: str, out_path: str) -> bool:
     Try copy first, then fast re-encode. Use -threads 0 to utilize CPUs.
     """
     try:
-        # attempt a fast copy first
         cmd_copy = (
             f'ffmpeg -y -hide_banner -loglevel error '
             f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
@@ -196,9 +296,11 @@ def _run_ffmpeg_convert(input_src: str, out_path: str) -> bool:
         )
         res = subprocess.run(cmd_copy, shell=True, timeout=600)
         if res.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+            # register cache
+            _register_cache_from_thread(out_path)
             return True
 
-        # fallback: re-encode quickly with sane stereo audio
+        # fallback: re-encode quickly with stereo audio
         _, ext = os.path.splitext(out_path)
         ext = ext.lower().lstrip(".")
         if ext in ("mp4", "mkv", "webm"):
@@ -224,7 +326,10 @@ def _run_ffmpeg_convert(input_src: str, out_path: str) -> bool:
                 )
 
         res2 = subprocess.run(cmd_recode, shell=True, timeout=900)
-        return res2.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0
+        if res2.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+            _register_cache_from_thread(out_path)
+            return True
+        return False
     except Exception as e:
         try:
             LOGGER.debug(f"ffmpeg conversion failed: {e}")
@@ -245,7 +350,11 @@ def _download_http_blocking(url: str, out_path: str, chunk_size: int = CHUNK_SIZ
                 for chunk in r.iter_content(chunk_size=chunk_size):
                     if chunk:
                         fh.write(chunk)
-        return os.path.exists(out_path)
+        # register cache
+        if os.path.exists(out_path):
+            _register_cache_from_thread(out_path)
+            return True
+        return False
     except Exception as e:
         try:
             LOGGER.debug(f"requests download failed: {e}")
@@ -264,7 +373,6 @@ def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool
     try:
         base_opts = get_ytdlp_base_opts(verbose=verbose)
 
-        # preferred format: try mp4/h264 + m4a audio first (fast to decode & stable)
         preferred = "bestvideo[ext=mp4][vcodec!=?vp9][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]/best"
 
         candidates = []
@@ -288,9 +396,10 @@ def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool
                     info = ydl.extract_info(link, download=True)
                     final = _info_to_final_path(info)
                     if final and os.path.exists(final):
+                        # register cache
+                        _register_cache_from_thread(final)
                         return final
 
-                    # sometimes yt-dlp returns an URL (m3u8 or direct)
                     url = None
                     if isinstance(info, dict):
                         url = info.get("url") or (info.get("requested_downloads") or [{}])[0].get("url")
@@ -298,7 +407,6 @@ def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool
                             entry = info["entries"][0] if info["entries"] else {}
                             url = entry.get("url") if isinstance(entry, dict) else None
 
-                    # if url is an HLS manifest -> convert it locally (stable)
                     if url and _is_m3u8_url(url):
                         vid = info.get("id") or _safe_filename("video")
                         target_ext = "mp4" if not candidate.startswith("bestaudio") else "m4a"
@@ -307,7 +415,6 @@ def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool
                         if ok:
                             return out_path
 
-                    # if url is a direct HTTP media file -> download it (chunked)
                     if url and url.startswith("http"):
                         vid = info.get("id") or _safe_filename("direct")
                         ext = url.split("?")[0].split(".")[-1][:8] or "dat"
@@ -347,7 +454,6 @@ async def get_http_session() -> aiohttp.ClientSession:
         if _session and not _session.closed:
             return _session
         timeout = aiohttp.ClientTimeout(total=600, sock_connect=20, sock_read=60)
-        # connector limit=0 to allow many concurrent connections; Fly.io can handle multiple sockets
         connector = TCPConnector(limit=0, ttl_dns_cache=300, enable_cleanup_closed=True)
         _session = aiohttp.ClientSession(timeout=timeout, connector=connector)
         return _session
@@ -378,6 +484,9 @@ async def download_file(url: str, out_path: str) -> Optional[str]:
                     if not chunk:
                         break
                     await f.write(chunk)
+        # register cache
+        if os.path.exists(out_path):
+            await register_cache(out_path)
         return out_path if os.path.exists(out_path) else None
     except Exception as e:
         LOGGER.debug(f"download_file exception: {e}")
@@ -403,7 +512,10 @@ async def api_download_audio(link: str) -> Optional[str]:
                 status = str(data.get("status", "")).lower()
                 if status == "done":
                     out = os.path.join(DOWNLOAD_DIR, f"{vid}.{data.get('format','webm')}")
-                    return await download_file(data.get("link"), out)
+                    res = await download_file(data.get("link"), out)
+                    if res:
+                        return res
+                    return None
                 if status == "error":
                     return None
                 await asyncio.sleep(1)
@@ -428,7 +540,10 @@ async def api_download_video(link: str) -> Optional[str]:
                 status = str(data.get("status", "")).lower()
                 if status == "done":
                     out = os.path.join(DOWNLOAD_DIR, f"{vid}.{data.get('format','mp4')}")
-                    return await download_file(data.get("link"), out)
+                    res = await download_file(data.get("link"), out)
+                    if res:
+                        return res
+                    return None
                 if status == "error":
                     return None
                 await asyncio.sleep(1)
@@ -482,7 +597,7 @@ async def race_tasks(yt_task, api_task, title: str):
                 return result
         except Exception:
             pass
-    # if none finished immediately, await remaining and return first valid
+    # await remaining if needed and return first valid
     for p in pending:
         try:
             res = await p
@@ -533,7 +648,6 @@ async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str
         key = f"video:{vid}"
 
         async def run():
-            # force mp4/h264 + m4a when possible; avoid handing m3u8 to player
             fmt = "bestvideo[ext=mp4][vcodec!=?vp9][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]/best"
             yt = asyncio.create_task(
                 run_with_semaphore(
