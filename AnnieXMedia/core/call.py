@@ -1,4 +1,3 @@
-# Authored By Certified Coders © 2025
 """
 Core call controller for AnnieXMedia.
 - Ensures remote manifests (m3u8) are converted to local files via the downloader.
@@ -61,7 +60,6 @@ def _is_true_flag(val) -> bool:
         return False
     s = str(val).strip().lower()
     return s in ("true", "1", "yes", "y", "t")
-
 
 def dynamic_media_stream(path: str, video: Union[bool, str] = False, ffmpeg_params: str = None) -> MediaStream:
     """
