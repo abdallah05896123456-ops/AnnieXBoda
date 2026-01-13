@@ -1,12 +1,11 @@
 # Authored By Certified Coders © 2025
 import sys
 import os
+import asyncio
+import importlib
 
 # هـذا السطـر يـجـبـر الـبـوت عـلـى استخـدام مـكـتـبـة pytgcalls المـحـلـيـة
 sys.path.insert(0, os.getcwd())
-
-import asyncio
-import importlib
 
 from pyrogram import idle
 from pytgcalls.exceptions import NoActiveGroupCall
@@ -95,4 +94,11 @@ async def init():
 
 
 if __name__ == "__main__":
-    asyncio.get_event_loop().run_until_complete(init())
+    # ✅ هذا الجزء هو الحل لمشكلتك (Fix for Python 3.12 Loop Error)
+    try:
+        import uvloop
+        uvloop.install()
+    except ImportError:
+        pass
+
+    asyncio.run(init())
