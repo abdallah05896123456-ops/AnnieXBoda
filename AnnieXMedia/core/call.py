@@ -363,26 +363,15 @@ class Call:
                     raise AssistantErr(_["call_11"])
         except NoVideoSourceFound:
             # try audio-only fallback if video not found
-            if play_path and play_path != link:
-                local_audio = await ensure_local_media(link, "audio", title="")
-                if local_audio and os.path.exists(local_audio):
-                    try:
-                        await assistant.play(chat_id, dynamic_media_stream(path=local_audio, video=False))
-                        play_path = local_audio
-                    except Exception:
-                        raise AssistantErr(_["call_12"])
-                else:
+            local_audio = await ensure_local_media(link, "audio", title="")
+            if local_audio and os.path.exists(local_audio):
+                try:
+                    await assistant.play(chat_id, dynamic_media_stream(path=local_audio, video=False))
+                    play_path = local_audio
+                except Exception:
                     raise AssistantErr(_["call_12"])
             else:
-                local_audio = await ensure_local_media(link, "audio", title="")
-                if local_audio and os.path.exists(local_audio):
-                    try:
-                        await assistant.play(chat_id, dynamic_media_stream(path=local_audio, video=False))
-                        play_path = local_audio
-                    except Exception:
-                        raise AssistantErr(_["call_12"])
-                else:
-                    raise AssistantErr(_["call_12"])
+                raise AssistantErr(_["call_12"])
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
         except Exception as e:
