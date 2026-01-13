@@ -4,7 +4,7 @@ from typing import List, Union, Optional
 
 import aiohttp
 from bs4 import BeautifulSoup
-from youtubesearchpython.aio import VideosSearch
+from youtubesearchpython import VideosSearch
 
 
 class AppleAPI:
@@ -35,8 +35,9 @@ class AppleAPI:
         if not title_query:
             return False
 
-        results = VideosSearch(title_query, limit=1)
-        data = await results.next()
+        # تم التعديل: إزالة await واستخدام result()
+        data = VideosSearch(title_query, limit=1).result()
+        
         if not data.get("result"):
             return False
 
