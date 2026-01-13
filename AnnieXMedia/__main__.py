@@ -19,7 +19,7 @@ from AnnieXMedia.utils.database import get_banned_users, get_gbanned
 from AnnieXMedia.utils.cookie_handler import fetch_and_store_cookies
 from config import BANNED_USERS
 
-
+# الدالة الرئيسية (تم تنظيفها لتستدعى من run.py)
 async def init():
     # الـتـحـقـق مـن وجـود كـود جـلـسـة (Session) واحـد عـلـى الأقـل
     if (
@@ -91,14 +91,3 @@ async def init():
     await app.stop()
     await userbot.stop()
     LOGGER("AnnieXMedia").info("جـاري إيـقـاف الـبـوت...")
-
-
-if __name__ == "__main__":
-    # ✅ هذا الجزء هو الحل لمشكلتك (Fix for Python 3.12 Loop Error)
-    try:
-        import uvloop
-        uvloop.install()
-    except ImportError:
-        pass
-
-    asyncio.run(init())
