@@ -7,12 +7,18 @@ ENV PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-# تنظيف أي ملفات قديمة في حالة إعادة build
+# تنظيف أي ملفات قديمة
 RUN rm -rf /app/*
 
-# تثبيت المتطلبات النظامية + deno
+# تثبيت المتطلبات النظامية + deno + aria2
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends git ffmpeg curl unzip build-essential && \
+    apt-get install -y --no-install-recommends \
+        git \
+        ffmpeg \
+        curl \
+        unzip \
+        build-essential \
+        aria2 && \
     rm -rf /var/lib/apt/lists/* && \
     curl -fsSL https://deno.land/install.sh | sh && \
     ln -s /root/.deno/bin/deno /usr/local/bin/deno
@@ -28,14 +34,16 @@ RUN if [ -f /app/requirements.txt ]; then \
 
 # تثبيت باقي المكتبات
 RUN pip install --upgrade pip setuptools wheel && \
-    if [ -f /app/filtered-requirements.txt ]; then pip install --no-cache-dir -r /app/filtered-requirements.txt; fi
+    if [ -f /app/filtered-requirements.txt ]; then \
+        pip install --no-cache-dir -r /app/filtered-requirements.txt; \
+    fi
 
 # نسخ باقي سورس AnnieXMedia
 COPY . /app
 
-# تأكيد ان Python بيستخدم النسخة المحلية من pytgcalls
+# تأكيد ان Python بيستخدم pytgcalls المحلي
 RUN python - <<'PY'
-import pytgcalls, sys
+import pytgcalls
 print('PYTGCALLS_FROM=', getattr(pytgcalls,'__file__','<not found>'))
 PY
 
