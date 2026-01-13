@@ -1,662 +1,693 @@
 # Authored By Certified Coders © 2025
 """
-ذكي، سريع، وعملي: downloader مدعوم بـ yt-dlp + aiohttp + ffmpeg fallback.
-مميزات هذا الملف:
- - دعم aria2c كـ external_downloader إن كان متوفرًا
- - aggressive-friendly defaults (concurrent fragments, chunk size from tuning)
- - تحويل HLS (m3u8/manifest) إلى ملف محلي باستخدام ffmpeg عند الحاجة
- - نظام Cache مؤقت: يحفظ الملفات المحلية لمدة 8 دقائق منذ آخر استخدام، منظف خلفي يحذفها بأمان
- - تسجيل/تجديد TTL من كل نقاط الإرجاع
+Core call controller for AnnieXMedia.
+- Ensures remote manifests (m3u8) are converted to local files via the downloader.
+- Starts cache cleaner on startup.
+- Exposes StreamController = Call() for imports.
 """
 
 import asyncio
-import contextlib
-import glob
 import os
-import re
-import shlex
-import shutil
-import subprocess
-import time
-from typing import Dict, Optional
+from datetime import datetime, timedelta
+from typing import Union, Optional
 
-import aiofiles
-import aiohttp
-from aiohttp import TCPConnector
-from yt_dlp import YoutubeDL
+from ntgcalls import TelegramServerError, ConnectionNotFound
+from pyrogram import Client
+from pyrogram.errors import FloodWait, ChatAdminRequired
+from pyrogram.types import InlineKeyboardMarkup
+from pytgcalls import PyTgCalls
+from pytgcalls.exceptions import NoActiveGroupCall, NoAudioSourceFound, NoVideoSourceFound
+from pytgcalls.types import AudioQuality, ChatUpdate, MediaStream, StreamEnded, Update, VideoQuality
 
-from AnnieXMedia.core.dir import CACHE_DIR, DOWNLOAD_DIR
-from AnnieXMedia.utils.cookie_handler import COOKIE_PATH as _COOKIES_FILE
-from AnnieXMedia.utils.tuning import CHUNK_SIZE, SEM
-from config import API_KEY, API_URL, VIDEO_API_URL
-from AnnieXMedia.logging import LOGGER
+import config
+from strings import get_string
+from AnnieXMedia import LOGGER, YouTube, app
+from AnnieXMedia.misc import db
+from AnnieXMedia.utils.database import (
+    add_active_chat,
+    add_active_video_chat,
+    get_lang,
+    get_loop,
+    group_assistant,
+    is_autoend,
+    music_on,
+    remove_active_chat,
+    remove_active_video_chat,
+    set_loop,
+)
+from AnnieXMedia.utils.exceptions import AssistantErr
+from AnnieXMedia.utils.formatters import check_duration, seconds_to_min, speed_converter
+from AnnieXMedia.utils.inline.play import stream_markup
+from AnnieXMedia.utils.stream.autoclear import auto_clean
+from AnnieXMedia.utils.thumbnails import get_thumb
+from AnnieXMedia.utils.errors import capture_internal_err
 
-# Access global db to avoid deleting files in-use
-from AnnieXMedia.misc import db as _GLOBAL_DB
+# Integrations with our downloader/cache
+from AnnieXMedia.utils.downloader import yt_dlp_download, init_cache_cleaner
 
-LOGGER = LOGGER(__name__)
+autoend = {}
+counter = {}
 
-USE_AUDIO_API = bool(API_URL and API_KEY)
-USE_VIDEO_API = bool(VIDEO_API_URL and API_KEY)
-
-_inflight: Dict[str, asyncio.Future] = {}
-_inflight_lock = asyncio.Lock()
-
-_session: Optional[aiohttp.ClientSession] = None
-_session_lock = asyncio.Lock()
-
-YOUTUBE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
-
-
-# ---------------- Cache Manager (8 minutes TTL) ----------------
-CACHE_TTL = 8 * 60  # seconds
-_cache_registry: Dict[str, float] = {}
-_cache_lock = asyncio.Lock()
-
-
-async def register_cache(path: str) -> None:
-    """Register/extend cached file TTL (async)."""
-    if not path:
-        return
-    try:
-        async with _cache_lock:
-            _cache_registry[path] = time.time() + CACHE_TTL
-    except Exception:
-        # best-effort
-        _cache_registry[path] = time.time() + CACHE_TTL
-
-
-def _register_cache_from_thread(path: str) -> None:
+# --- helper to safely parse video flag ---
+def _is_true_flag(val) -> bool:
     """
-    Called from synchronous threads (like executor).
-    Schedule the async register_cache safely if loop running, otherwise store directly.
+    Safely interpret video-like flags passed as bool or string.
+    Accepts: True, False, "true","false","1","0","yes","no"
+    Defaults to False for unknown/None.
     """
-    if not path:
-        return
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.call_soon_threadsafe(asyncio.create_task, register_cache(path))
-        else:
-            # fallback: set value now; cleaner will run later
-            _cache_registry[path] = time.time() + CACHE_TTL
-    except Exception:
-        _cache_registry[path] = time.time() + CACHE_TTL
-
-
-def _is_file_in_use(path: str) -> bool:
-    """
-    Return True if the file is referenced in the global db queue (playing/queued).
-    Safe and forgiving: if structure unexpected we assume "in use".
-    """
-    try:
-        for k, q in list(_GLOBAL_DB.items()):
-            if not q:
-                continue
-            for item in q:
-                if not isinstance(item, dict):
-                    continue
-                if item.get("file") == path or item.get("speed_path") == path:
-                    return True
-    except Exception:
-        return True
-    return False
-
-
-async def _cache_cleaner_loop() -> None:
-    """
-    Background loop: remove expired cached files not currently in use.
-    Runs until cancelled.
-    """
-    try:
-        while True:
-            now = time.time()
-            to_delete = []
-            async with _cache_lock:
-                for p, expiry in list(_cache_registry.items()):
-                    if expiry <= now:
-                        # only delete if file not used in global queues
-                        if not _is_file_in_use(p) and os.path.exists(p):
-                            to_delete.append(p)
-                        else:
-                            # extend by TTL if in use (prevents race)
-                            _cache_registry[p] = now + CACHE_TTL
-            for p in to_delete:
-                try:
-                    os.remove(p)
-                    LOGGER.info(f"cache_cleaner: removed expired file {p}")
-                except Exception as e:
-                    LOGGER.debug(f"cache_cleaner: failed to remove {p}: {e}")
-                async with _cache_lock:
-                    _cache_registry.pop(p, None)
-            await asyncio.sleep(30)
-    except asyncio.CancelledError:
-        return
-    except Exception as e:
-        LOGGER.exception(f"cache_cleaner fatal: {e}")
-
-
-def init_cache_cleaner() -> None:
-    """
-    Start the background cleaner if event loop is running.
-    Call this once during application startup (e.g. from core/call.py.start()).
-    """
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.create_task(_cache_cleaner_loop())
-        else:
-            # will start when loop runs; caller can call this again after event loop active
-            pass
-    except Exception:
-        LOGGER.exception("init_cache_cleaner failed")
-
-
-# ---------------- helpers ----------------
-
-def log_download_source(title: str, source: str) -> None:
-    try:
-        LOGGER.info(f"Track '{title}' - Downloaded by {source}")
-    except Exception:
-        print(f"[log] Track '{title}' - Downloaded by {source}")
-
-
-def extract_video_id(link: str) -> str:
-    if not link:
-        return ""
-    s = link.strip()
-    if YOUTUBE_ID_RE.match(s):
-        return s
-    if "v=" in s:
-        return s.split("v=")[-1].split("&")[0]
-    last = s.split("/")[-1].split("?")[0]
-    return last if YOUTUBE_ID_RE.match(last) else ""
-
-
-def get_cookie_file() -> Optional[str]:
-    try:
-        if _COOKIES_FILE and os.path.exists(_COOKIES_FILE) and os.path.getsize(_COOKIES_FILE) > 0:
-            return _COOKIES_FILE
-    except Exception:
-        pass
-    return None
-
-
-def find_cached_file(video_id: str) -> Optional[str]:
-    if not video_id:
-        return None
-    for ext in ("mp4", "mkv", "webm", "m4a", "mp3", "opus"):
-        p = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
-        if os.path.exists(p):
-            # renew TTL when file is served from cache
-            _register_cache_from_thread(p)
-            return p
-    return None
-
-
-# ---------------- yt-dlp options & utils ----------------
-
-def get_ytdlp_base_opts(verbose: bool = False) -> Dict[str, object]:
-    """
-    Aggressive-friendly base options.
-    If aria2c is available as external_downloader, enable it with aggressive args.
-    """
-    min_chunk = max(CHUNK_SIZE, 4 * 1024 * 1024)
-
-    opts = {
-        "outtmpl": os.path.join(DOWNLOAD_DIR, "%(id)s.%(ext)s"),
-        "quiet": not verbose,
-        "no_warnings": not verbose,
-        "noplaylist": True,
-        "continuedl": True,
-        "overwrites": False,
-        "noprogress": True,
-        "retries": 5,
-        "fragment_retries": 5,
-        "concurrent_fragment_downloads": 16,
-        "http_chunk_size": min_chunk,
-        "socket_timeout": 10,
-        "cachedir": str(CACHE_DIR),
-        "ignoreerrors": True,
-        "merge_output_format": "mp4",
-        "nocheckcertificate": True,
-        "geo_bypass": True,
-        "postprocessors": [],
-        "recodevideo": None,
-        "nopostoverwrites": True,
-        "prefer_ffmpeg": True,
-    }
-
-    # enable aria2c if present
-    aria2_path = shutil.which("aria2c")
-    if aria2_path:
-        piece_len_k = max(1024, min_chunk // 1024)
-        opts["external_downloader"] = "aria2c"
-        opts["external_downloader_args"] = [
-            "-x", "16",
-            "-s", "16",
-            "-k", f"{piece_len_k}K",
-            "--file-allocation=none",
-            "--allow-overwrite=true",
-            "--max-connection-per-server=16",
-            "--min-split-size=1M",
-        ]
-        opts["concurrent_fragment_downloads"] = 8
-
-    if cookie := get_cookie_file():
-        opts["cookiefile"] = cookie
-
-    return opts
-
-
-def _info_to_final_path(info: Dict) -> Optional[str]:
-    """Find local final file path reported/created by yt-dlp"""
-    if not isinstance(info, dict):
-        return None
-    vid = info.get("id")
-    if not vid:
-        return None
-    ext = info.get("ext")
-    if ext:
-        p = os.path.join(DOWNLOAD_DIR, f"{vid}.{ext}")
-        if os.path.exists(p):
-            return p
-    matches = sorted(
-        glob.glob(os.path.join(DOWNLOAD_DIR, f"{vid}.*")),
-        key=os.path.getmtime,
-        reverse=True,
-    )
-    return matches[0] if matches else None
-
-
-def _is_m3u8_url(url: str) -> bool:
-    if not url:
+    if isinstance(val, bool):
+        return val
+    if val is None:
         return False
-    lower = url.lower()
-    return lower.endswith(".m3u8") or ("manifest" in lower and "m3u8" in lower)
+    s = str(val).strip().lower()
+    return s in ("true", "1", "yes", "y", "t")
 
 
-def _safe_filename(prefix: str = "tmp") -> str:
-    ts = int(time.time() * 1000)
-    return f"{prefix}_{ts}"
-
-
-# ---------------- blocking helpers (run in executor) ----------------
-
-def _run_ffmpeg_convert(input_src: str, out_path: str) -> bool:
+def dynamic_media_stream(path: str, video: Union[bool, str] = False, ffmpeg_params: str = None) -> MediaStream:
     """
-    Convert an HLS manifest or remote URL to a local file.
-    Try copy first, then fast re-encode. Use -threads 0 to utilize CPUs.
+    Build a MediaStream with safer defaults:
+    - parse video flag safely
+    - set default low-latency ffmpeg params and stereo audio
     """
-    try:
-        cmd_copy = (
-            f'ffmpeg -y -hide_banner -loglevel error '
-            f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
-            f'-threads 0 -i {shlex.quote(input_src)} -c copy {shlex.quote(out_path)}'
+    is_video = _is_true_flag(video)
+
+    # sensible default ffmpeg params to reduce buffer/latency and ensure stereo
+    default_ffmpeg = "-re -fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 -ac 2"
+    ffmpeg_params = ffmpeg_params or default_ffmpeg
+
+    if is_video:
+        return MediaStream(
+            media_path=path,
+            audio_parameters=AudioQuality.HIGH,
+            video_parameters=VideoQuality.HD_720p,
+            audio_flags=MediaStream.Flags.REQUIRED,
+            video_flags=MediaStream.Flags.REQUIRED,
+            ffmpeg_parameters=ffmpeg_params,
         )
-        res = subprocess.run(cmd_copy, shell=True, timeout=600)
-        if res.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
-            # register cache
-            _register_cache_from_thread(out_path)
-            return True
+    else:
+        return MediaStream(
+            media_path=path,
+            audio_parameters=AudioQuality.HIGH,
+            audio_flags=MediaStream.Flags.REQUIRED,
+            video_flags=MediaStream.Flags.IGNORE,
+            ffmpeg_parameters=ffmpeg_params,
+        )
 
-        # fallback: re-encode quickly with stereo audio
-        _, ext = os.path.splitext(out_path)
-        ext = ext.lower().lstrip(".")
-        if ext in ("mp4", "mkv", "webm"):
-            cmd_recode = (
-                f'ffmpeg -y -hide_banner -loglevel error '
-                f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
-                f'-threads 0 -i {shlex.quote(input_src)} '
-                f'-c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 160k -ac 2 -ar 48000 '
-                f'{shlex.quote(out_path)}'
-            )
-        else:
-            if ext in ("opus",):
-                cmd_recode = (
-                    f'ffmpeg -y -hide_banner -loglevel error '
-                    f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
-                    f'-threads 0 -i {shlex.quote(input_src)} -c:a libopus -b:a 160k -ac 2 -ar 48000 {shlex.quote(out_path)}'
-                )
-            else:
-                cmd_recode = (
-                    f'ffmpeg -y -hide_banner -loglevel error '
-                    f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
-                    f'-threads 0 -i {shlex.quote(input_src)} -c:a aac -b:a 160k -ac 2 -ar 48000 {shlex.quote(out_path)}'
-                )
+async def _clear_(chat_id: int) -> None:
+    popped = db.pop(chat_id, None)
+    if popped:
+        await auto_clean(popped)
+    db[chat_id] = []
+    await remove_active_video_chat(chat_id)
+    await remove_active_chat(chat_id)
+    await set_loop(chat_id, 0)
 
-        res2 = subprocess.run(cmd_recode, shell=True, timeout=900)
-        if res2.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
-            _register_cache_from_thread(out_path)
-            return True
-        return False
-    except Exception as e:
-        try:
-            LOGGER.debug(f"ffmpeg conversion failed: {e}")
-        except Exception:
-            print("ffmpeg conversion failed:", e)
-        return False
-
-
-def _download_http_blocking(url: str, out_path: str, chunk_size: int = CHUNK_SIZE) -> bool:
+# -------------------- New: ensure local file --------------------
+async def ensure_local_media(path_or_url: Optional[str], kind: str, title: str = "", attempts: int = 2) -> Optional[str]:
     """
-    Blocking HTTP download helper (used in executor) for direct URLs.
-    """
-    import requests
-    try:
-        with requests.get(url, stream=True, timeout=(10, 180)) as r:
-            r.raise_for_status()
-            with open(out_path, "wb") as fh:
-                for chunk in r.iter_content(chunk_size=chunk_size):
-                    if chunk:
-                        fh.write(chunk)
-        # register cache
-        if os.path.exists(out_path):
-            _register_cache_from_thread(out_path)
-            return True
-        return False
-    except Exception as e:
-        try:
-            LOGGER.debug(f"requests download failed: {e}")
-        except Exception:
-            print("requests download failed:", e)
-        return False
-
-
-# ---------------- core sync ytdlp downloader (used inside executor) ----------------
-
-def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool = False) -> Optional[str]:
-    """
-    Synchronous worker for yt-dlp (runs in executor).
-    Prioritizes MP4/H264 outputs and avoids returning HLS manifests when possible.
+    If path_or_url is a remote URL (especially m3u8/manifest), try to produce a local file via yt_dlp_download.
+    kind: "video" or "audio"
+    Returns local file path if successful, else returns original path_or_url (so caller can attempt fallback).
     """
     try:
-        base_opts = get_ytdlp_base_opts(verbose=verbose)
+        if not path_or_url:
+            return None
+        # if already a local file path, return it
+        if isinstance(path_or_url, str) and os.path.exists(path_or_url):
+            return path_or_url
+        # only handle http/https
+        if not (isinstance(path_or_url, str) and path_or_url.startswith("http")):
+            return path_or_url
 
-        preferred = "bestvideo[ext=mp4][vcodec!=?vp9][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]/best"
-
-        candidates = []
-        if fmt:
-            candidates.append(fmt)
-        candidates.extend([
-            preferred,
-            "bestaudio[ext=m4a]/bestaudio/best",
-            "bestaudio/best",
-            "bestvideo[height<=1080]+bestaudio/best",
-            "best"
-        ])
-
-        last_exc = None
-        for candidate in candidates:
-            opts = dict(base_opts)
-            opts["format"] = candidate
-
+        # attempt downloading/converting to local file
+        for i in range(attempts):
+            LOGGER(__name__).info(f"ensure_local_media: attempt {i+1} -> downloading {kind} from {path_or_url}")
             try:
-                with YoutubeDL(opts) as ydl:
-                    info = ydl.extract_info(link, download=True)
-                    final = _info_to_final_path(info)
-                    if final and os.path.exists(final):
-                        # register cache
-                        _register_cache_from_thread(final)
-                        return final
-
-                    url = None
-                    if isinstance(info, dict):
-                        url = info.get("url") or (info.get("requested_downloads") or [{}])[0].get("url")
-                        if not url and info.get("entries"):
-                            entry = info["entries"][0] if info["entries"] else {}
-                            url = entry.get("url") if isinstance(entry, dict) else None
-
-                    if url and _is_m3u8_url(url):
-                        vid = info.get("id") or _safe_filename("video")
-                        target_ext = "mp4" if not candidate.startswith("bestaudio") else "m4a"
-                        out_path = os.path.join(DOWNLOAD_DIR, f"{vid}.{target_ext}")
-                        ok = _run_ffmpeg_convert(url, out_path)
-                        if ok:
-                            return out_path
-
-                    if url and url.startswith("http"):
-                        vid = info.get("id") or _safe_filename("direct")
-                        ext = url.split("?")[0].split(".")[-1][:8] or "dat"
-                        out_path = os.path.join(DOWNLOAD_DIR, f"{vid}.{ext}")
-                        ok = _download_http_blocking(url, out_path)
-                        if ok:
-                            return out_path
-
+                local = await yt_dlp_download(path_or_url, kind, title=title or "")
+                if local and os.path.exists(local):
+                    LOGGER(__name__).info(f"ensure_local_media: success -> {local}")
+                    return local
             except Exception as e:
-                last_exc = e
+                LOGGER(__name__).warning(f"ensure_local_media: yt_dlp_download failed attempt {i+1}: {e}")
+            await asyncio.sleep(0.5)
+        LOGGER(__name__).warning(f"ensure_local_media: failed to produce local file for {path_or_url}")
+        return path_or_url
+    except Exception as e:
+        LOGGER(__name__).exception(f"ensure_local_media fatal: {e}")
+        return path_or_url
+
+class Call:
+    def __init__(self):
+        self.userbot1 = Client(
+            "AnnieXAssis1", config.API_ID, config.API_HASH, session_string=config.STRING1
+        ) if config.STRING1 else None
+        self.one = PyTgCalls(self.userbot1) if self.userbot1 else None
+
+        self.userbot2 = Client(
+            "AnnieXAssis2", config.API_ID, config.API_HASH, session_string=config.STRING2
+        ) if config.STRING2 else None
+        self.two = PyTgCalls(self.userbot2) if self.userbot2 else None
+
+        self.userbot3 = Client(
+            "AnnieXAssis3", config.API_ID, config.API_HASH, session_string=config.STRING3
+        ) if config.STRING3 else None
+        self.three = PyTgCalls(self.userbot3) if self.userbot3 else None
+
+        self.userbot4 = Client(
+            "AnnieXAssis4", config.API_ID, config.API_HASH, session_string=config.STRING4
+        ) if config.STRING4 else None
+        self.four = PyTgCalls(self.userbot4) if self.userbot4 else None
+
+        self.userbot5 = Client(
+            "AnnieXAssis5", config.API_ID, config.API_HASH, session_string=config.STRING5
+        ) if config.STRING5 else None
+        self.five = PyTgCalls(self.userbot5) if self.userbot5 else None
+
+        self.active_calls: set[int] = set()
+
+
+    @capture_internal_err
+    async def pause_stream(self, chat_id: int) -> None:
+        assistant = await group_assistant(self, chat_id)
+        await assistant.pause(chat_id)
+
+    @capture_internal_err
+    async def resume_stream(self, chat_id: int) -> None:
+        assistant = await group_assistant(self, chat_id)
+        await assistant.resume(chat_id)
+
+    @capture_internal_err
+    async def mute_stream(self, chat_id: int) -> None:
+        assistant = await group_assistant(self, chat_id)
+        await assistant.mute(chat_id)
+
+    @capture_internal_err
+    async def unmute_stream(self, chat_id: int) -> None:
+        assistant = await group_assistant(self, chat_id)
+        await assistant.unmute(chat_id)
+
+    @capture_internal_err
+    async def stop_stream(self, chat_id: int) -> None:
+        assistant = await group_assistant(self, chat_id)
+        await _clear_(chat_id)
+        if chat_id not in self.active_calls:
+            return
+        try:
+            await assistant.leave_call(chat_id)
+        except Exception:
+            pass
+        finally:
+            self.active_calls.discard(chat_id)
+
+
+    @capture_internal_err
+    async def force_stop_stream(self, chat_id: int) -> None:
+        assistant = await group_assistant(self, chat_id)
+        try:
+            check = db.get(chat_id)
+            if check:
+                check.pop(0)
+        except (IndexError, KeyError):
+            pass
+        await remove_active_video_chat(chat_id)
+        await remove_active_chat(chat_id)
+        await _clear_(chat_id)
+        if chat_id not in self.active_calls:
+            return
+        try:
+            await assistant.leave_call(chat_id)
+        except Exception:
+            pass
+        finally:
+            self.active_calls.discard(chat_id)
+
+
+    @capture_internal_err
+    async def skip_stream(self, chat_id: int, link: str, video: Union[bool, str] = None, image: Union[bool, str] = None) -> None:
+        assistant = await group_assistant(self, chat_id)
+
+        # ensure local if URL (force video->local if requested)
+        kind = "video" if _is_true_flag(video) else "audio"
+        play_path = await ensure_local_media(link, kind, title="")
+        stream = dynamic_media_stream(path=play_path, video=_is_true_flag(video))
+        try:
+            await assistant.play(chat_id, stream)
+        except NoVideoSourceFound:
+            # fallback: try audio-only local
+            if play_path != link:
+                fallback = await ensure_local_media(link, "audio", title="")
                 try:
-                    LOGGER.debug(f"yt-dlp attempt fmt={candidate} failed: {e}")
+                    await assistant.play(chat_id, dynamic_media_stream(path=fallback, video=False))
                 except Exception:
-                    print(f"[yt-dlp-debug] fmt={candidate} -> {e}")
-                continue
-
-        try:
-            LOGGER.error(f"All yt-dlp attempts failed for {link}. Last error: {last_exc}")
-        except Exception:
-            print("All yt-dlp attempts failed:", last_exc)
-        return None
-    except Exception as e:
-        try:
-            LOGGER.exception("download_with_ytdlp_sync fatal")
-        except Exception:
-            print("download_with_ytdlp_sync fatal:", e)
-        return None
+                    raise
+            else:
+                raise
+        except NoAudioSourceFound:
+            # try simpler audio fallback
+            raise
 
 
-# ---------------- async helpers ----------------
+    @capture_internal_err
+    async def vc_users(self, chat_id: int) -> list:
+        assistant = await group_assistant(self, chat_id)
+        participants = await assistant.get_participants(chat_id)
+        return [p.user_id for p in participants if not p.is_muted]
 
-async def get_http_session() -> aiohttp.ClientSession:
-    global _session
-    if _session and not _session.closed:
-        return _session
-    async with _session_lock:
-        if _session and not _session.closed:
-            return _session
-        timeout = aiohttp.ClientTimeout(total=600, sock_connect=20, sock_read=60)
-        connector = TCPConnector(limit=0, ttl_dns_cache=300, enable_cleanup_closed=True)
-        _session = aiohttp.ClientSession(timeout=timeout, connector=connector)
-        return _session
+    @capture_internal_err
+    async def seek_stream(self, chat_id: int, file_path: str, to_seek: str, duration: str, mode: str) -> None:
+        assistant = await group_assistant(self, chat_id)
+        ffmpeg_params = f"-ss {to_seek} -to {duration}"
+        is_video = mode == "video"
+        stream = dynamic_media_stream(path=file_path, video=is_video, ffmpeg_params=ffmpeg_params)
+        await assistant.play(chat_id, stream)
 
+    @capture_internal_err
+    async def speedup_stream(self, chat_id: int, file_path: str, speed: float, playing: list) -> None:
+        if not isinstance(playing, list) or not playing or not isinstance(playing[0], dict):
+            raise AssistantErr("Invalid stream info for speedup.")
 
-async def close_http_session() -> None:
-    global _session
-    async with _session_lock:
-        if _session and not _session.closed:
-            await _session.close()
-        _session = None
+        assistant = await group_assistant(self, chat_id)
+        base = os.path.basename(file_path)
+        chatdir = os.path.join("playback", str(speed))
+        os.makedirs(chatdir, exist_ok=True)
+        out = os.path.join(chatdir, base)
 
-
-async def download_file(url: str, out_path: str) -> Optional[str]:
-    """
-    Async download using aiohttp (used by API wrappers).
-    """
-    if not url:
-        return None
-    try:
-        session = await get_http_session()
-        async with session.get(url) as resp:
-            if resp.status != 200:
-                LOGGER.debug(f"download_file http status {resp.status} for {url}")
-                return None
-            async with aiofiles.open(out_path, "wb") as f:
-                async for chunk in resp.content.iter_chunked(CHUNK_SIZE):
-                    if not chunk:
-                        break
-                    await f.write(chunk)
-        # register cache
-        if os.path.exists(out_path):
-            await register_cache(out_path)
-        return out_path if os.path.exists(out_path) else None
-    except Exception as e:
-        LOGGER.debug(f"download_file exception: {e}")
-        return None
-
-
-# ---------------- api download wrappers ----------------
-
-async def api_download_audio(link: str) -> Optional[str]:
-    if not USE_AUDIO_API:
-        return None
-    vid = extract_video_id(link)
-    if not vid:
-        return None
-    url = f"{API_URL}/song/{vid}?api={API_KEY}"
-    try:
-        session = await get_http_session()
-        while True:
-            async with session.get(url) as r:
-                if r.status != 200:
-                    return None
-                data = await r.json()
-                status = str(data.get("status", "")).lower()
-                if status == "done":
-                    out = os.path.join(DOWNLOAD_DIR, f"{vid}.{data.get('format','webm')}")
-                    res = await download_file(data.get("link"), out)
-                    if res:
-                        return res
-                    return None
-                if status == "error":
-                    return None
-                await asyncio.sleep(1)
-    except Exception:
-        return None
-
-
-async def api_download_video(link: str) -> Optional[str]:
-    if not USE_VIDEO_API:
-        return None
-    vid = extract_video_id(link)
-    if not vid:
-        return None
-    url = f"{VIDEO_API_URL}/video/{vid}?api={API_KEY}"
-    try:
-        session = await get_http_session()
-        while True:
-            async with session.get(url) as r:
-                if r.status != 200:
-                    return None
-                data = await r.json()
-                status = str(data.get("status", "")).lower()
-                if status == "done":
-                    out = os.path.join(DOWNLOAD_DIR, f"{vid}.{data.get('format','mp4')}")
-                    res = await download_file(data.get("link"), out)
-                    if res:
-                        return res
-                    return None
-                if status == "error":
-                    return None
-                await asyncio.sleep(1)
-    except Exception:
-        return None
-
-
-# ---------------- orchestration ----------------
-
-async def run_with_semaphore(coro):
-    async with SEM:
-        return await coro
-
-
-async def deduplicate_download(key: str, runner):
-    async with _inflight_lock:
-        if fut := _inflight.get(key):
-            return await fut
-        fut = asyncio.get_running_loop().create_future()
-        _inflight[key] = fut
-    try:
-        res = await runner()
-        fut.set_result(res)
-        return res
-    except Exception as e:
-        try:
-            fut.set_exception(e)
-        except Exception:
-            pass
-        return None
-    finally:
-        async with _inflight_lock:
-            _inflight.pop(key, None)
-
-
-async def race_tasks(yt_task, api_task, title: str):
-    # race between yt-dlp and optional API; return the first successful file path
-    tasks = {t for t in (yt_task, api_task) if t}
-    if not tasks:
-        return None
-    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-    for t in done:
-        try:
-            result = t.result()
-            if result and os.path.exists(result):
-                src = "yt-dlp" if t is yt_task else "API"
-                log_download_source(title or "Unknown", src)
-                # cancel pending
-                for p in pending:
-                    p.cancel()
-                return result
-        except Exception:
-            pass
-    # await remaining if needed and return first valid
-    for p in pending:
-        try:
-            res = await p
-            if res and os.path.exists(res):
-                src = "yt-dlp" if p is yt_task else "API"
-                log_download_source(title or "Unknown", src)
-                return res
-        except asyncio.CancelledError:
-            pass
-        except Exception:
-            pass
-    return None
-
-
-# ---------------- public API ----------------
-
-async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str]:
-    """
-    Public async wrapper:
-      link: URL or video id
-      type: "audio" or "video"
-    Returns local file path or None.
-    """
-    loop = asyncio.get_running_loop()
-    vid = extract_video_id(link)
-
-    # serve from cache if present
-    if cached := find_cached_file(vid):
-        if title:
-            LOGGER.info(f"Track '{title}' - Served from cache")
-        return cached
-
-    if type == "audio":
-        key = f"audio:{vid}"
-
-        async def run():
-            yt = asyncio.create_task(
-                run_with_semaphore(
-                    loop.run_in_executor(None, download_with_ytdlp_sync, link, "bestaudio[ext=m4a]/bestaudio/best", False)
-                )
+        if not os.path.exists(out):
+            vs = str(2.0 / float(speed))
+            cmd = f'ffmpeg -i "{file_path}" -filter:v "setpts={vs}*PTS" -filter:a atempo={speed} -y "{out}"'
+            proc = await asyncio.create_subprocess_shell(
+                cmd,
+                stdin=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-            api = asyncio.create_task(api_download_audio(link)) if USE_AUDIO_API else None
-            return await race_tasks(yt, api, title or "Unknown")
+            await proc.communicate()
 
-        return await deduplicate_download(key, run)
+        dur = int(await asyncio.get_event_loop().run_in_executor(None, check_duration, out))
+        played, con_seconds = speed_converter(playing[0]["played"], speed)
+        duration_min = seconds_to_min(dur)
+        is_video = playing[0]["streamtype"] == "video"
+        ffmpeg_params = f"-ss {played} -to {duration_min}"
+        stream = dynamic_media_stream(path=out, video=is_video, ffmpeg_params=ffmpeg_params)
 
-    if type == "video":
-        key = f"video:{vid}"
+        if chat_id in db and db[chat_id] and db[chat_id][0].get("file") == file_path:
+            await assistant.play(chat_id, stream)
+            db[chat_id][0].update({
+                "played": con_seconds,
+                "dur": duration_min,
+                "seconds": dur,
+                "speed_path": out,
+                "speed": speed,
+                "old_dur": db[chat_id][0].get("dur"),
+                "old_second": db[chat_id][0].get("seconds"),
+            })
+        else:
+            raise AssistantErr("Stream mismatch during speedup.")
 
-        async def run():
-            fmt = "bestvideo[ext=mp4][vcodec!=?vp9][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]/best"
-            yt = asyncio.create_task(
-                run_with_semaphore(
-                    loop.run_in_executor(None, download_with_ytdlp_sync, link, fmt, False)
+
+    @capture_internal_err
+    async def stream_call(self, link: str) -> None:
+        assistant = await group_assistant(self, config.LOGGER_ID)
+        try:
+            await assistant.play(config.LOGGER_ID, MediaStream(link))
+            await asyncio.sleep(8)
+        finally:
+            try:
+                await assistant.leave_call(config.LOGGER_ID)
+            except:
+                pass
+
+    @capture_internal_err
+    async def join_call(
+        self,
+        chat_id: int,
+        original_chat_id: int,
+        link: str,
+        video: Union[bool, str] = None,
+        image: Union[bool, str] = None,
+    ) -> None:
+        assistant = await group_assistant(self, chat_id)
+        lang = await get_lang(chat_id)
+        _ = get_string(lang)
+
+        # ensure local file when link is URL/manifest
+        desired_kind = "video" if _is_true_flag(video) else "audio"
+        play_path = await ensure_local_media(link, desired_kind, title="")
+
+        stream = dynamic_media_stream(path=play_path, video=_is_true_flag(video))
+
+        # ✅ FIX: Force leave first to prevent Ghost Call issues
+        try:
+            await assistant.leave_call(chat_id)
+            await asyncio.sleep(1)
+        except:
+            pass
+        # ====================================================
+
+        try:
+            await assistant.play(chat_id, stream)
+        except (NoActiveGroupCall, ChatAdminRequired):
+            raise AssistantErr(_["call_8"])
+        except NoAudioSourceFound:
+            # try audio-only local fallback
+            if play_path and play_path != link:
+                raise AssistantErr(_["call_11"])
+            else:
+                local_audio = await ensure_local_media(link, "audio", title="")
+                if local_audio and os.path.exists(local_audio):
+                    try:
+                        await assistant.play(chat_id, dynamic_media_stream(path=local_audio, video=False))
+                        play_path = local_audio
+                    except Exception:
+                        raise AssistantErr(_["call_11"])
+                else:
+                    raise AssistantErr(_["call_11"])
+        except NoVideoSourceFound:
+            # try audio-only fallback if video not found
+            if play_path and play_path != link:
+                local_audio = await ensure_local_media(link, "audio", title="")
+                if local_audio and os.path.exists(local_audio):
+                    try:
+                        await assistant.play(chat_id, dynamic_media_stream(path=local_audio, video=False))
+                        play_path = local_audio
+                    except Exception:
+                        raise AssistantErr(_["call_12"])
+                else:
+                    raise AssistantErr(_["call_12"])
+            else:
+                local_audio = await ensure_local_media(link, "audio", title="")
+                if local_audio and os.path.exists(local_audio):
+                    try:
+                        await assistant.play(chat_id, dynamic_media_stream(path=local_audio, video=False))
+                        play_path = local_audio
+                    except Exception:
+                        raise AssistantErr(_["call_12"])
+                else:
+                    raise AssistantErr(_["call_12"])
+        except (ConnectionNotFound, TelegramServerError):
+            raise AssistantErr(_["call_10"])
+        except Exception as e:
+            # last attempt: try playing a local file if available
+            try:
+                 await asyncio.sleep(0.8)
+                 if play_path and os.path.exists(play_path):
+                     await assistant.play(chat_id, dynamic_media_stream(path=play_path, video=_is_true_flag(video)))
+                 else:
+                     await assistant.play(chat_id, stream)
+            except Exception as exc:
+                 raise AssistantErr(
+                    f"ᴜɴᴀʙʟᴇ ᴛᴏ ᴊᴏɪɴ ᴛʜᴇ ɢʀᴏᴜᴘ ᴄᴀʟʟ.\nRᴇᴀsᴏɴ: {exc}"
                 )
-            )
-            api = asyncio.create_task(api_download_video(link)) if USE_VIDEO_API else None
-            return await race_tasks(yt, api, title or "Unknown")
+        self.active_calls.add(chat_id)
+        await add_active_chat(chat_id)
+        await music_on(chat_id)
+        if video:
+            await add_active_video_chat(chat_id)
 
-        return await deduplicate_download(key, run)
+        if await is_autoend():
+            counter[chat_id] = {}
+            users = len(await assistant.get_participants(chat_id))
+            if users == 1:
+                autoend[chat_id] = datetime.now() + timedelta(minutes=1)
 
-    return None
+
+    @capture_internal_err
+    async def play(self, client, chat_id: int) -> None:
+        check = db.get(chat_id)
+        popped = None
+        loop = await get_loop(chat_id)
+        try:
+            if loop == 0:
+                popped = check.pop(0)
+            else:
+                loop = loop - 1
+                await set_loop(chat_id, loop)
+            await auto_clean(popped)
+            if not check:
+                    await _clear_(chat_id)
+                    if chat_id in self.active_calls:
+                        try:
+                            await client.leave_call(chat_id)
+                        except NoActiveGroupCall:
+                            pass
+                        except Exception:
+                            pass
+                        finally:
+                            self.active_calls.discard(chat_id)
+                    return
+        except:
+            try:
+                await _clear_(chat_id)
+                return await client.leave_call(chat_id)
+            except:
+                return
+        else:
+            queued = check[0]["file"]
+            language = await get_lang(chat_id)
+            _ = get_string(language)
+            title = (check[0]["title"]).title()
+            user = check[0]["by"]
+            original_chat_id = check[0]["chat_id"]
+            streamtype = check[0]["streamtype"]
+            videoid = check[0]["vidid"]
+            db[chat_id][0]["played"] = 0
+
+            exis = (check[0]).get("old_dur")
+            if exis:
+                db[chat_id][0]["dur"] = exis
+                db[chat_id][0]["seconds"] = check[0]["old_second"]
+                db[chat_id][0]["speed_path"] = None
+                db[chat_id][0]["speed"] = 1.0
+
+            video = True if str(streamtype) == "video" else False
+
+            # helper to prepare a playable local path when queued is a URL/manifest
+            async def prepare_play_path(raw):
+                if isinstance(raw, str) and raw.startswith("http"):
+                    kind = "video" if video else "audio"
+                    return await ensure_local_media(raw, kind, title=title)
+                return raw
+
+            if "live_" in queued:
+                n, link = await YouTube.video(videoid, True)
+                if n == 0:
+                    return await app.send_message(original_chat_id, text=_["call_6"])
+
+                play_path = await prepare_play_path(link)
+                stream = dynamic_media_stream(path=play_path, video=video)
+                try:
+                    await client.play(chat_id, stream)
+                except Exception:
+                    return await app.send_message(original_chat_id, text=_["call_6"])
+
+                img = await get_thumb(videoid)
+                button = stream_markup(_, chat_id)
+                run = await app.send_photo(
+                    chat_id=original_chat_id,
+                    photo=img,
+                    caption=_["stream_1"].format(
+                        f"https://t.me/{app.username}?start=info_{videoid}",
+                        title[:23],
+                        check[0]["dur"],
+                        user,
+                    ),
+                    reply_markup=InlineKeyboardMarkup(button),
+                )
+                db[chat_id][0]["mystic"] = run
+                db[chat_id][0]["markup"] = "tg"
+
+            elif "vid_" in queued:
+                mystic = await app.send_message(original_chat_id, _["call_7"])
+                try:
+                    file_path, direct = await YouTube.download(
+                        videoid,
+                        mystic,
+                        videoid=True,
+                        video=True if str(streamtype) == "video" else False,
+                    )
+                except:
+                    return await mystic.edit_text(
+                        _["call_6"], disable_web_page_preview=True
+                    )
+
+                # ensure local (in case YouTube.download returned a URL or remote manifest)
+                if not file_path or not os.path.exists(file_path):
+                    file_path = await ensure_local_media(file_path or videoid, "video" if video else "audio", title=title)
+                    if not file_path:
+                        return await mystic.edit_text(_["call_6"], disable_web_page_preview=True)
+
+                stream = dynamic_media_stream(path=file_path, video=video)
+                try:
+                    await client.play(chat_id, stream)
+                except:
+                    return await app.send_message(original_chat_id, text=_["call_6"])
+
+                img = await get_thumb(videoid)
+                button = stream_markup(_, chat_id)
+                await mystic.delete()
+                run = await app.send_photo(
+                    chat_id=original_chat_id,
+                    photo=img,
+                    caption=_["stream_1"].format(
+                        f"https://t.me/{app.username}?start=info_{videoid}",
+                        title[:23],
+                        check[0]["dur"],
+                        user,
+                    ),
+                    reply_markup=InlineKeyboardMarkup(button),
+                )
+                db[chat_id][0]["mystic"] = run
+                db[chat_id][0]["markup"] = "stream"
+
+            elif "index_" in queued:
+                play_path = await prepare_play_path(videoid)
+                stream = dynamic_media_stream(path=play_path, video=video)
+                try:
+                    await client.play(chat_id, stream)
+                except:
+                    return await app.send_message(original_chat_id, text=_["call_6"])
+
+                button = stream_markup(_, chat_id)
+                run = await app.send_photo(
+                    chat_id=original_chat_id,
+                    photo=config.STREAM_IMG_URL,
+                    caption=_["stream_2"].format(user),
+                    reply_markup=InlineKeyboardMarkup(button),
+                )
+                db[chat_id][0]["mystic"] = run
+                db[chat_id][0]["markup"] = "tg"
+
+            else:
+                play_path = await prepare_play_path(queued)
+                stream = dynamic_media_stream(path=play_path, video=video)
+                try:
+                    await client.play(chat_id, stream)
+                except:
+                    return await app.send_message(original_chat_id, text=_["call_6"])
+
+                if videoid == "telegram":
+                    button = stream_markup(_, chat_id)
+                    run = await app.send_photo(
+                        chat_id=original_chat_id,
+                        photo=(
+                            config.TELEGRAM_AUDIO_URL
+                            if str(streamtype) == "audio"
+                            else config.TELEGRAM_VIDEO_URL
+                        ),
+                        caption=_["stream_1"].format(
+                            config.SUPPORT_CHAT, title[:23], check[0]["dur"], user
+                        ),
+                        reply_markup=InlineKeyboardMarkup(button),
+                    )
+                    db[chat_id][0]["mystic"] = run
+                    db[chat_id][0]["markup"] = "tg"
+
+                elif videoid == "soundcloud":
+                    button = stream_markup(_, chat_id)
+                    run = await app.send_photo(
+                        chat_id=original_chat_id,
+                        photo=config.SOUNCLOUD_IMG_URL,
+                        caption=_["stream_1"].format(
+                            config.SUPPORT_CHAT, title[:23], check[0]["dur"], user
+                        ),
+                        reply_markup=InlineKeyboardMarkup(button),
+                    )
+                    db[chat_id][0]["mystic"] = run
+                    db[chat_id][0]["markup"] = "tg"
+
+                else:
+                    img = await get_thumb(videoid)
+                    button = stream_markup(_, chat_id)
+                    try:
+                        run = await app.send_photo(
+                            chat_id=original_chat_id,
+                            photo=img,
+                            caption=_["stream_1"].format(
+                                f"https://t.me/{app.username}?start=info_{videoid}",
+                                title[:23],
+                                check[0]["dur"],
+                                user,
+                            ),
+                            reply_markup=InlineKeyboardMarkup(button),
+                        )
+                    except FloodWait as e:
+                        LOGGER(__name__).warning(f"FloodWait: Sleeping for {e.value}")
+                        await asyncio.sleep(e.value)
+                        run = await app.send_photo(
+                            chat_id=original_chat_id,
+                            photo=img,
+                            caption=_["stream_1"].format(
+                                f"https://t.me/{app.username}?start=info_{videoid}",
+                                title[:23],
+                                check[0]["dur"],
+                                user,
+                            ),
+                            reply_markup=InlineKeyboardMarkup(button),
+                        )
+                    db[chat_id][0]["mystic"] = run
+                    db[chat_id][0]["markup"] = "stream"
+
+
+    async def start(self) -> None:
+        LOGGER(__name__).info("Starting PyTgCalls Clients...")
+        if config.STRING1:
+            await self.one.start()
+        if config.STRING2:
+            await self.two.start()
+        if config.STRING3:
+            await self.three.start()
+        if config.STRING4:
+            await self.four.start()
+        if config.STRING5:
+            await self.five.start()
+
+        # Start cache cleaner (downloader.init_cache_cleaner) once event loop is active
+        try:
+            init_cache_cleaner()
+            LOGGER(__name__).info("Cache cleaner started.")
+        except Exception:
+            LOGGER(__name__).warning("Could not start cache cleaner.")
+
+
+    @capture_internal_err
+    async def ping(self) -> str:
+        pings = []
+        if config.STRING1:
+            pings.append(self.one.ping)
+        if config.STRING2:
+            pings.append(self.two.ping)
+        if config.STRING3:
+            pings.append(self.three.ping)
+        if config.STRING4:
+            pings.append(self.four.ping)
+        if config.STRING5:
+            pings.append(self.five.ping)
+        return str(round(sum(pings) / len(pings), 3)) if pings else "0.0"
+
+    @capture_internal_err
+    async def decorators(self) -> None:
+        assistants = list(filter(None, [self.one, self.two, self.three, self.four, self.five]))
+
+        CRITICAL = (
+            ChatUpdate.Status.KICKED
+            | ChatUpdate.Status.LEFT_GROUP
+            | ChatUpdate.Status.CLOSED_VOICE_CHAT
+        )
+
+        async def unified_update_handler(client, update: Update) -> None:
+            if isinstance(update, StreamEnded):
+                if update.stream_type == StreamEnded.Type.AUDIO:
+                    assistant = await group_assistant(self, update.chat_id)
+                    await self.play(assistant, update.chat_id)
+            
+            elif isinstance(update, ChatUpdate):
+                status = update.status
+                if (status & ChatUpdate.Status.LEFT_CALL) or (status & CRITICAL):
+                    await self.stop_stream(update.chat_id)
+                    return
+
+        for assistant in assistants:
+            assistant.on_update()(unified_update_handler)
+
+
+# single exported controller used by rest of the app
+StreamController = Call()
