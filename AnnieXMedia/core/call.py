@@ -39,8 +39,34 @@ from AnnieXMedia.utils.errors import capture_internal_err
 autoend = {}
 counter = {}
 
-def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
-    if video:
+# --- helper to safely parse video flag ---
+def _is_true_flag(val) -> bool:
+    """
+    Safely interpret video-like flags passed as bool or string.
+    Accepts: True, False, "true","false","1","0","yes","no"
+    Defaults to False for unknown/None.
+    """
+    if isinstance(val, bool):
+        return val
+    if val is None:
+        return False
+    s = str(val).strip().lower()
+    return s in ("true", "1", "yes", "y", "t")
+
+
+def dynamic_media_stream(path: str, video: Union[bool, str] = False, ffmpeg_params: str = None) -> MediaStream:
+    """
+    Build a MediaStream with safer defaults:
+    - parse video flag safely
+    - set default low-latency ffmpeg params and stereo audio
+    """
+    is_video = _is_true_flag(video)
+
+    # sensible default ffmpeg params to reduce buffer/latency and ensure stereo
+    default_ffmpeg = "-re -fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 -ac 2"
+    ffmpeg_params = ffmpeg_params or default_ffmpeg
+
+    if is_video:
         return MediaStream(
             media_path=path,
             audio_parameters=AudioQuality.HIGH,
@@ -156,8 +182,17 @@ class Call:
     @capture_internal_err
     async def skip_stream(self, chat_id: int, link: str, video: Union[bool, str] = None, image: Union[bool, str] = None) -> None:
         assistant = await group_assistant(self, chat_id)
-        stream = dynamic_media_stream(path=link, video=bool(video))
-        await assistant.play(chat_id, stream)
+        stream = dynamic_media_stream(path=link, video=_is_true_flag(video))
+        try:
+            await assistant.play(chat_id, stream)
+        except NoVideoSourceFound:
+            # fallback: try audio-only if video not actually present
+            try:
+                stream = dynamic_media_stream(path=link, video=False)
+                await assistant.play(chat_id, stream)
+            except Exception as e:
+                raise
+
 
     @capture_internal_err
     async def vc_users(self, chat_id: int) -> list:
@@ -240,7 +275,7 @@ class Call:
         assistant = await group_assistant(self, chat_id)
         lang = await get_lang(chat_id)
         _ = get_string(lang)
-        stream = dynamic_media_stream(path=link, video=bool(video))
+        stream = dynamic_media_stream(path=link, video=_is_true_flag(video))
 
         # ✅ FIX: Force leave first to prevent Ghost Call issues
         try:
@@ -257,7 +292,12 @@ class Call:
         except NoAudioSourceFound:
             raise AssistantErr(_["call_11"])
         except NoVideoSourceFound:
-            raise AssistantErr(_["call_12"])
+            # Attempt fallback: if source has no video, try audio-only play
+            try:
+                stream = dynamic_media_stream(path=link, video=False)
+                await assistant.play(chat_id, stream)
+            except Exception:
+                raise AssistantErr(_["call_12"])
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
         # ✅ FIX: تمت إزالة AlreadyJoinedError
