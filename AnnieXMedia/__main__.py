@@ -1,61 +1,27 @@
 # Authored By Certified Coders © 2025
 import sys
 import os
+
+# السطر ده بيجبر البوت يستخدم مجلد pytgcalls المحلي بدل اللي نازل من النت
+sys.path.insert(0, os.getcwd())
+
 import asyncio
 import importlib
-
-sys.path.insert(0, os.getcwd())
 
 from pyrogram import idle
 from pytgcalls.exceptions import NoActiveGroupCall
 
 import config
 from AnnieXMedia import LOGGER, app, userbot
+from AnnieXMedia.core.call import StreamController
 from AnnieXMedia.misc import sudo
 from AnnieXMedia.plugins import ALL_MODULES
 from AnnieXMedia.utils.database import get_banned_users, get_gbanned
 from AnnieXMedia.utils.cookie_handler import fetch_and_store_cookies
 from config import BANNED_USERS
 
-# ⚠️ إزالة StreamController من هنا (سنستدعيه بالداخل)
 
 async def init():
-    # 👇👇👇 إصلاح شامل للـ Loop (Bot + Userbot + Assistants) 👇👇👇
-    try:
-        current_loop = asyncio.get_running_loop()
-        
-        # 1. إصلاح البوت
-        if hasattr(app, "loop"): app.loop = current_loop
-        if hasattr(app, "session"): app.session = None
-
-        # 2. إصلاح اليوزربوت الرئيسي
-        if hasattr(userbot, "loop"): userbot.loop = current_loop
-        if hasattr(userbot, "session"): userbot.session = None
-
-        # 3. إصلاح المساعدين الداخليين (مهم جداً)
-        # أغلب السورسات تخزن المساعدين في قائمة assistants أو متغيرات one, two...
-        if hasattr(userbot, "assistants"):
-            for assistant in userbot.assistants:
-                if hasattr(assistant, "loop"): assistant.loop = current_loop
-                if hasattr(assistant, "session"): assistant.session = None
-        
-        # محاولة إصلاح إضافية للمتغيرات الفردية (احتياط)
-        for attr in ["one", "two", "three", "four", "five"]:
-            if hasattr(userbot, attr):
-                cli = getattr(userbot, attr)
-                if cli:
-                    if hasattr(cli, "loop"): cli.loop = current_loop
-                    if hasattr(cli, "session"): cli.session = None
-
-        LOGGER("AnnieXMedia").info("✅ تـم تـحـديـث الـ Loop لـجـمـيـع الـحـسـابـات.")
-    except Exception as e:
-        LOGGER("AnnieXMedia").warning(f"⚠️ تحذير Loop Fix: {e}")
-    # 👆👆👆 نهاية الإصلاح 👆👆👆
-
-    # ✅ استدعاء StreamController هنا (لضمان أنه يأخذ الـ Loop الجديد)
-    # هذا سيحل مشكلة PyTgCalls attached to different loop
-    from AnnieXMedia.core.call import StreamController
-
     if (
         not config.STRING1
         and not config.STRING2
@@ -63,14 +29,16 @@ async def init():
         and not config.STRING4
         and not config.STRING5
     ):
-        LOGGER(__name__).error("لـم يـتـم إدخـال كـود جـلـسـة الـمـسـاعـد...")
+        LOGGER(__name__).error("لـم يـتـم إدخـال كـود جـلـسـة الـمـسـاعـد (Session)، يـرجـى الـتـحـقـق...")
         exit()
 
+    # ✅ Try to fetch cookies at startup
     try:
         await fetch_and_store_cookies()
-        LOGGER("AnnieXMedia").info("تـم تـحـمـيـل كوكيز يوتـيوب ✅")
+        LOGGER("AnnieXMedia").info("تـم تـحـمـيـل مـلـفـات كـوكـيـز يـوتـيـوب بـنـجـاح ✅")
     except Exception as e:
-        LOGGER("AnnieXMedia").warning(f"⚠️ خـطـأ كوكيز: {e}")
+        LOGGER("AnnieXMedia").warning(f"⚠️ خـطـأ فـي الـكـوكـيـز: {e}")
+
 
     await sudo()
 
@@ -84,38 +52,35 @@ async def init():
     except:
         pass
 
-    try:
-        await app.start()
-    except Exception as e:
-        LOGGER("AnnieXMedia").error(f"فشل تشغيل البوت: {e}")
-        exit()
-    
+    await app.start()
     for all_module in ALL_MODULES:
         importlib.import_module("AnnieXMedia.plugins" + all_module)
 
-    LOGGER("AnnieXMedia.plugins").info("تـم تـحـمـيـل الـمـلـفـات...")
+    LOGGER("AnnieXMedia.plugins").info("تـم تـحـمـيـل مـلـفـات الـبـوت بـنـجـاح...")
 
-    try:
-        await userbot.start()
-    except Exception as e:
-        LOGGER("AnnieXMedia").error(f"فشل تشغيل اليوزربوت: {e}")
-        exit()
-
-    # الآن StreamController سيعمل لأننا استدعيناه في الداخل
+    await userbot.start()
     await StreamController.start()
 
     try:
+        # تم تغيير الرابط لملفك الجديد
         await StreamController.stream_call("AnnieXMedia/assets/test.mp4")
     except NoActiveGroupCall:
-        LOGGER("AnnieXMedia").error("يرجى فتح المكالمة في مجموعة السجل!")
+        LOGGER("AnnieXMedia").error(
+            "يـرجـى فـتـح الـمـحـادثـة الـصـوتـيـة فـي مـجـمـوعـة الـسـجـل (Log Group) \n\n تـم إيـقـاف الـبـوت..."
+        )
         exit()
     except:
         pass
 
     await StreamController.decorators()
-    LOGGER("AnnieXMedia").info("تـم الـتـشـغـيـل بـنـجـاح ⚡️")
-    
+    LOGGER("AnnieXMedia").info(
+        "تـم تـشـغـيـل بـوت الـمـيـوزك بـنـجـاح... جـاهـز لـلاسـتـخـدام ⚡️"
+    )
     await idle()
-    
     await app.stop()
     await userbot.stop()
+    LOGGER("AnnieXMedia").info("جـاري إيـقـاف الـبـوت...")
+
+
+if __name__ == "__main__":
+    asyncio.get_event_loop().run_until_complete(init())
