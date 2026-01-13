@@ -30,11 +30,12 @@ async def safe_delete(message):
     except:
         pass
 
-# --- الدالة الذكية للتشغيل (Smart Play Wrapper) ---
-# هذه الدالة تحاول التشغيل المباشر، وإذا فشلت، تقوم بالتحميل تلقائياً
-async def smart_play(chat_id, original_chat_id, file_path, video_status, thumbnail, link, vidid, mystic):
+# --- دالة الانضمام الآمن (تمنع الكراش لو الرابط None) ---
+async def safe_join_call(chat_id, original_chat_id, file_path, video_status, thumbnail):
+    if not file_path:
+        raise AssistantErr("❌ لم يتم العثور على رابط صالح للتشغيل.")
+    
     try:
-        # المحاولة 1: تشغيل الرابط المباشر (الأسرع)
         await StreamController.join_call(
             chat_id,
             original_chat_id,
@@ -42,40 +43,11 @@ async def smart_play(chat_id, original_chat_id, file_path, video_status, thumbna
             video=video_status,
             image=thumbnail,
         )
-        return file_path, False  # False تعني أنه لم يتم التحميل محلياً (رابط مباشر)
     except Exception as e:
-        # إذا فشل التشغيل المباشر، ننتقل للخطة البديلة
-        if "NoVideoSourceFound" in str(e) or "Format" in str(e):
-            try:
-                # المحاولة 2: تحميل الملف محلياً (الأضمن)
-                if mystic:
-                    try:
-                        await mystic.edit_text("⚠️ فشل الرابط المباشر.. جاري التحميل السريع 📥...")
-                    except:
-                        pass
-                
-                # إجبار التحميل
-                new_file_path, _ = await YouTube.download(
-                    vidid if vidid else link, 
-                    mystic, 
-                    videoid=False, # نجبره يحمل كملف
-                    video=video_status
-                )
-                
-                if new_file_path:
-                    await StreamController.join_call(
-                        chat_id,
-                        original_chat_id,
-                        new_file_path,
-                        video=video_status,
-                        image=thumbnail,
-                    )
-                    return new_file_path, True # True تعني أنه تم التحميل محلياً
-            except Exception as final_err:
-                raise AssistantErr(f"فشل التشغيل بكل الطرق: {final_err}")
-        else:
-            raise e
-    return file_path, False
+        # لو المشكلة في نوع الرابط، نرمي خطأ مفهوم
+        if "NoneType" in str(e) or "incorrect type" in str(e):
+            raise AssistantErr("⚠️ خطأ داخلي: فشل استخراج الرابط.")
+        raise e
 
 @capture_internal_err
 async def stream(
@@ -143,18 +115,34 @@ async def stream(
                 if not forceplay:
                     db[chat_id] = []
                 
-                # نحاول نجيب رابط مباشر الأول
+                # --- نظام المحاولة الثلاثي للقوائم ---
+                file_path = None
+                direct = False
+                
+                # 1. محاولة الرابط المباشر
                 try:
-                    file_path, direct = await YouTube.download(
-                        vidid, mystic, video=status, videoid=True
-                    )
+                    file_path, direct = await YouTube.download(vidid, mystic, video=status, videoid=True)
                 except:
+                    pass
+                
+                # 2. محاولة التحميل
+                if not file_path:
+                    try:
+                        file_path, direct = await YouTube.download(vidid, mystic, video=status, videoid=False)
+                    except:
+                        pass
+                
+                # 3. لو كله فشل، تخطي الأغنية دي
+                if not file_path:
                     continue
 
-                # استخدام التشغيل الذكي
                 try:
-                    final_path, is_downloaded = await smart_play(
-                        chat_id, original_chat_id, file_path, status, thumbnail, None, vidid, mystic
+                    await safe_join_call(
+                        chat_id,
+                        original_chat_id,
+                        file_path,
+                        status,
+                        thumbnail,
                     )
                 except:
                     continue
@@ -162,7 +150,7 @@ async def stream(
                 await put_queue(
                     chat_id,
                     original_chat_id,
-                    final_path if is_downloaded else f"vid_{vidid}",
+                    file_path if direct else f"vid_{vidid}",
                     title,
                     duration_min,
                     user_name,
@@ -229,7 +217,7 @@ async def stream(
         )
 
     # =====================================
-    # 2. YOUTUBE MODE (SMART HANDLING)
+    # 2. YOUTUBE MODE (SMART FALLBACK SYSTEM)
     # =====================================
     elif streamtype == "youtube":
         link = result.get("link")
@@ -238,15 +226,37 @@ async def stream(
         duration_min = result.get("duration_min", "00:00")
         thumbnail = result.get("thumb")
 
+        file_path = None
+        direct = False
+
+        # --- المحاولة 1: الرابط المباشر (Direct Link) ---
         try:
-            # نجرب نجيب رابط مباشر (videoid=True) للسرعة
             file_path, direct = await YouTube.download(
                 vidid, mystic, videoid=True, video=status
             )
         except Exception:
-             # لو فشل الاستخراج، نعتبره فشل ونجرب نحمل
-            file_path = vidid # مجرد تمرير
-            direct = False
+            pass # فشل، نكمل للي بعده
+
+        # --- المحاولة 2: التحميل الإجباري (Force Download) ---
+        if not file_path:
+            try:
+                # نرسل إشعار للمستخدم لو اتأخرنا
+                try:
+                    await mystic.edit_text("🔄 جاري محاولة التحميل بطريقة بديلة...")
+                except:
+                    pass
+                
+                file_path, direct = await YouTube.download(
+                    vidid, mystic, videoid=False, video=status
+                )
+            except Exception:
+                pass # فشل برضه
+
+        # --- المحاولة 3: الرابط الخام (Raw Link Fallback) ---
+        # لو التحميل فشل بسبب "Format not available"، نبعت الرابط الأصلي للمكالمة تتصرف
+        if not file_path:
+            file_path = link 
+            direct = True # نعتبره مباشر عشان ميمسحوش كملف
 
         if await is_active_chat(chat_id):
             await put_queue(
@@ -280,22 +290,30 @@ async def stream(
             if not forceplay:
                 db[chat_id] = []
             
-            # 🔥 هنا السحر: التشغيل الذكي (مباشر أو تحميل)
+            # محاولة التشغيل مع حماية الـ NoneType
             try:
-                final_path, is_downloaded = await smart_play(
-                    chat_id, original_chat_id, file_path, status, thumbnail, link, vidid, mystic
+                await safe_join_call(
+                    chat_id,
+                    original_chat_id,
+                    file_path,
+                    status,
+                    thumbnail,
                 )
             except AssistantErr as e:
                 await safe_delete(mystic)
                 return await app.send_message(original_chat_id, f"⚠️ {e}")
             except Exception as e:
-                 await safe_delete(mystic)
-                 return await app.send_message(original_chat_id, f"⚠️ حدث خطأ غير متوقع: {e}")
+                await safe_delete(mystic)
+                # لو فشل خالص، نبعت رسالة بدل الكراش
+                return await app.send_message(
+                    original_chat_id, 
+                    f"⚠️ تعذر تشغيل الفيديو.\nيوتيوب يرفض الاتصال أو الصيغة غير مدعومة حالياً."
+                )
 
             await put_queue(
                 chat_id,
                 original_chat_id,
-                final_path if is_downloaded else f"vid_{vidid}",
+                file_path if direct else f"vid_{vidid}",
                 title,
                 duration_min,
                 user_name,
@@ -372,7 +390,13 @@ async def stream(
         else:
             if not forceplay:
                 db[chat_id] = []
-            await StreamController.join_call(chat_id, original_chat_id, file_path, video=False)
+            
+            try:
+                await safe_join_call(chat_id, original_chat_id, file_path, False, None)
+            except Exception as e:
+                await safe_delete(mystic)
+                return await app.send_message(original_chat_id, "⚠️ فشل تشغيل الساوند كلاود.")
+
             await put_queue(
                 chat_id,
                 original_chat_id,
@@ -432,7 +456,12 @@ async def stream(
         else:
             if not forceplay:
                 db[chat_id] = []
-            await StreamController.join_call(chat_id, original_chat_id, file_path, video=status)
+            
+            try:
+                await safe_join_call(chat_id, original_chat_id, file_path, status, None)
+            except:
+                return await app.send_message(original_chat_id, "⚠️ الملف غير صالح.")
+
             await put_queue(
                 chat_id,
                 original_chat_id,
@@ -491,19 +520,27 @@ async def stream(
             if not forceplay:
                 db[chat_id] = []
             
-            # في اللايف نحاول نشغل الرابط مباشرة
+            # محاولة جلب رابط البث المباشر
+            file_path = None
             try:
-                await StreamController.join_call(
+                n, file_path = await YouTube.video(link)
+                if n == 0 or not file_path:
+                     # لو فشل الاستخراج، نجرب الرابط الأصلي
+                    file_path = link
+            except:
+                file_path = link
+
+            try:
+                await safe_join_call(
                     chat_id,
                     original_chat_id,
-                    link,
-                    video=status,
-                    image=thumbnail or None,
+                    file_path,
+                    status,
+                    thumbnail or None,
                 )
             except Exception as e:
-                # لو فشل اللايف، مفيش حل غير إنه الرابط مش شغال، لأن اللايف مينفعش يتحمل
                 await safe_delete(mystic)
-                return await app.send_message(original_chat_id, f"⚠️ فشل تشغيل البث المباشر. قد يكون الرابط منتهي الصلاحية.")
+                return await app.send_message(original_chat_id, f"⚠️ فشل تشغيل البث المباشر: {e}")
 
             await put_queue(
                 chat_id,
@@ -567,12 +604,18 @@ async def stream(
         else:
             if not forceplay:
                 db[chat_id] = []
-            await StreamController.join_call(
-                chat_id,
-                original_chat_id,
-                link,
-                video=status,
-            )
+            
+            try:
+                await safe_join_call(
+                    chat_id,
+                    original_chat_id,
+                    link,
+                    status,
+                    None
+                )
+            except:
+                return await app.send_message(original_chat_id, "⚠️ الرابط الخارجي لا يعمل.")
+
             await put_queue_index(
                 chat_id,
                 original_chat_id,
