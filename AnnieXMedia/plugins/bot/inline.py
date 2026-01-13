@@ -4,7 +4,8 @@ from pyrogram.types import (
     InlineKeyboardMarkup,
     InlineQueryResultPhoto,
 )
-from youtubesearchpython import VideosSearch
+# ✅ استرجاع مكتبة aio
+from youtubesearchpython.aio import VideosSearch
 
 from AnnieXMedia.utils.inlinequery import answer
 from config import BANNED_USERS
@@ -21,9 +22,9 @@ async def inline_query_handler(client, query):
         except:
             return
     else:
-        # البحث بالنظام العادي (بدون aio/await)
+        # ✅ البحث بالنظام غير المتزامن (aio/await)
         a = VideosSearch(text, limit=20)
-        result = a.result().get("result")
+        result = (await a.next()).get("result")
         
         for x in range(15):
             try:
