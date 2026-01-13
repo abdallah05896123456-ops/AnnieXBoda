@@ -1,516 +1,318 @@
 # Authored By Certified Coders © 2025
-# ⚡ STREAM CONTROLLER: FULL & STABLE EDITION ⚡
-
-import os
+# 🛡️ THE FULL TANK EDITION: Stable, Complete, No Crashes
 import asyncio
-from random import randint
-from typing import Union
+import contextlib
+import json
+import os
+import re
+import time
+import requests
+from typing import Dict, List, Optional, Tuple, Union
 
-from pyrogram.types import InlineKeyboardMarkup
-from pyrogram.errors import FloodWait
+import yt_dlp
+from pyrogram.enums import MessageEntityType
+from pyrogram.types import Message
+from youtubesearchpython.aio import VideosSearch, Playlist
 
-import config
-from AnnieXMedia import Carbon, YouTube, app
-from AnnieXMedia.core.call import StreamController
-from AnnieXMedia.misc import db
-from AnnieXMedia.utils.database import add_active_video_chat, is_active_chat
-from AnnieXMedia.utils.exceptions import AssistantErr
-from AnnieXMedia.utils.inline import aq_markup, close_markup, stream_markup
-from AnnieXMedia.utils.pastebin import ANNIEBIN
-from AnnieXMedia.utils.stream.queue import put_queue, put_queue_index
-from AnnieXMedia.utils.thumbnails import get_thumb
+from AnnieXMedia.utils.cookie_handler import COOKIE_PATH
+from AnnieXMedia.utils.database import is_on_off
+from AnnieXMedia.utils.downloader import yt_dlp_download
 from AnnieXMedia.utils.errors import capture_internal_err
+from AnnieXMedia.utils.formatters import time_to_seconds
+from AnnieXMedia.utils.tuning import YTDLP_TIMEOUT, YOUTUBE_META_MAX, YOUTUBE_META_TTL
 
+# === Caches ===
+_cache: Dict[str, Tuple[float, List[Dict]]] = {}
+_cache_lock = asyncio.Lock()
 
-# === Helper for Safe Deletion ===
-async def safe_delete(message):
+# === Constants ===
+YOUTUBE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
+
+# === 🍪 COOKIE SYSTEM ===
+def _ensure_cookies() -> Optional[str]:
+    path = str(COOKIE_PATH)
+    if os.path.exists(path) and os.path.getsize(path) > 0:
+        return path
+    
+    # Try Env
+    cookie_url = os.getenv("COOKIE_URL") or os.getenv("COOKIES_URL") or os.getenv("UPSTREAM_COOKIES")
+    if cookie_url:
+        try:
+            if "batbin.me" in cookie_url and "/raw/" not in cookie_url:
+                cookie_url = cookie_url.replace("batbin.me/", "batbin.me/raw/")
+            elif "pastebin.com" in cookie_url and "/raw/" not in cookie_url:
+                cookie_url = cookie_url.replace("pastebin.com/", "pastebin.com/raw/")
+            r = requests.get(cookie_url, timeout=10)
+            if r.status_code == 200:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(r.text)
+                return path
+        except:
+            pass
+
+    # Try Dir
     try:
-        await message.delete()
+        if os.path.exists("cookies"):
+            for f in os.listdir("cookies"):
+                if f.endswith(".txt"):
+                    return os.path.join("cookies", f)
     except:
         pass
+    return None
 
+def _cookies_args() -> List[str]:
+    path = _ensure_cookies()
+    return ["--cookies", path] if path else []
+
+# === ⚡ EXECUTOR ===
+async def _exec_proc(*args: str) -> Tuple[bytes, bytes]:
+    _ensure_cookies()
+    proc = await asyncio.create_subprocess_exec(
+        *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    try:
+        return await asyncio.wait_for(proc.communicate(), timeout=YTDLP_TIMEOUT)
+    except asyncio.TimeoutError:
+        with contextlib.suppress(Exception):
+            proc.kill()
+        return b"", b"timeout"
 
 @capture_internal_err
-async def stream(
-    _,
-    mystic,
-    user_id,
-    result,
-    chat_id,
-    user_name,
-    original_chat_id,
-    video: Union[bool, str] = None,
-    streamtype: Union[bool, str] = None,
-    spotify: Union[bool, str] = None,
-    forceplay: Union[bool, str] = None,
-) -> None:
-    if not result:
-        return
+async def cached_youtube_search(query: str) -> List[Dict]:
+    key = f"q:{query}"
+    now = time.time()
+    async with _cache_lock:
+        if key in _cache:
+            ts, val = _cache[key]
+            if now - ts < YOUTUBE_META_TTL: return val
+            _cache.pop(key, None)
+        if len(_cache) > YOUTUBE_META_MAX: _cache.clear()
 
-    # Ensure Boolean Logic
-    forceplay = bool(forceplay)
-    is_video = True if video else False
+    try:
+        data = await VideosSearch(query, limit=1).next()
+        result = data.get("result", [])
+    except: result = []
+    if result:
+        async with _cache_lock: _cache[key] = (now, result)
+    return result
 
-    # Force Stop if requested
-    if forceplay:
-        await StreamController.force_stop_stream(chat_id)
-
-    # ==========================
-    # 1. PLAYLIST MODE
-    # ==========================
-    if streamtype == "playlist":
-        msg = f"{_['play_19']}\n\n"
-        count = 0
+class YouTubeAPI:
+    def __init__(self) -> None:
+        self.base_url = "https://www.youtube.com/watch?v="
+        self.playlist_url = "https://youtube.com/playlist?list="
+        self._url_pattern = re.compile(r"(?:youtube\.com|youtu\.be)")
         
-        for search in result:
-            if int(count) == config.PLAYLIST_FETCH_LIMIT:
-                continue
-            try:
-                title, duration_min, duration_sec, thumbnail, vidid = await YouTube.details(
-                    search, videoid=search
-                )
-            except Exception:
-                continue
+        # 🚀 STABLE FLAGS: توازن بين السرعة وعدم استهلاك الرام
+        self.opts = [
+            "--no-warnings", "--ignore-errors",
+            "--geo-bypass", "--nocheckcertificate",
+            "--no-playlist", "--no-part",
+            "--concurrent-fragments", "3", 
+            "--extractor-args", "youtube:player_client=android",
+            "-o", "downloads/%(id)s.%(ext)s"
+        ]
 
-            if str(duration_min) == "None":
-                continue
-            if duration_sec and duration_sec > config.DURATION_LIMIT:
-                continue
+    def _prepare_link(self, link: str, videoid: Union[str, bool, None] = None) -> str:
+        if isinstance(videoid, str) and videoid.strip():
+            link = self.base_url + videoid.strip()
+        link = link.strip()
+        if "youtu.be" in link:
+            link = self.base_url + link.split("/")[-1].split("?")[0]
+        elif "youtube.com/shorts/" in link or "youtube.com/live/" in link:
+            link = self.base_url + link.split("/")[-1].split("?")[0]
+        return link.split("&")[0]
 
-            if await is_active_chat(chat_id):
-                await put_queue(
-                    chat_id,
-                    original_chat_id,
-                    f"vid_{vidid}",
-                    title,
-                    duration_min,
-                    user_name,
-                    vidid,
-                    user_id,
-                    "video" if is_video else "audio",
-                )
-                position = len(db.get(chat_id)) - 1
-                count += 1
-                msg += f"{count}. {title[:70]}\n"
-                msg += f"{_['play_20']} {position}\n\n"
-            else:
-                if not forceplay:
-                    db[chat_id] = []
-                
-                # Try to download the first track
+    @capture_internal_err
+    async def exists(self, link: str, videoid: Union[str, bool, None] = None) -> bool:
+        return bool(self._url_pattern.search(self._prepare_link(link, videoid)))
+
+    @capture_internal_err
+    async def url(self, message: Message) -> Optional[str]:
+        msgs = [message] + ([message.reply_to_message] if message.reply_to_message else [])
+        for msg in msgs:
+            text = msg.text or msg.caption or ""
+            entities = (msg.entities or []) + (msg.caption_entities or [])
+            for ent in entities:
+                if ent.type == MessageEntityType.URL:
+                    return text[ent.offset: ent.offset + ent.length].split("&si")[0]
+                if ent.type == MessageEntityType.TEXT_LINK:
+                    return ent.url.split("&si")[0]
+        return None
+
+    async def _ensure_watch_url(self, maybe_query_or_url: str) -> Optional[str]:
+        prepared = self._prepare_link(maybe_query_or_url)
+        if prepared.startswith("http"): return prepared
+        data = await cached_youtube_search(prepared)
+        return (self.base_url + data[0].get("id")) if data else None
+
+    @capture_internal_err
+    async def _fetch_video_info(self, query: str, *, use_cache: bool = True) -> Optional[Dict]:
+        q = self._prepare_link(query)
+        if use_cache and not q.startswith("http"):
+            res = await cached_youtube_search(q)
+            return res[0] if res else None
+        data = await VideosSearch(q, limit=1).next()
+        result = data.get("result", [])
+        return result[0] if result else None
+
+    @capture_internal_err
+    async def is_live(self, link: str) -> bool:
+        prepared = self._prepare_link(link)
+        stdout, _ = await _exec_proc("yt-dlp", *(_cookies_args()), "--dump-json", prepared)
+        if not stdout: return False
+        try: return bool(json.loads(stdout.decode()).get("is_live"))
+        except: return False
+
+    @capture_internal_err
+    async def details(self, link: str, videoid: Union[str, bool, None] = None) -> Tuple[str, Optional[str], int, str, str]:
+        prepared_link = self._prepare_link(link, videoid)
+        info = await self._fetch_video_info(prepared_link)
+        if not info: raise ValueError("Video not found")
+        dt = info.get("duration")
+        ds = int(time_to_seconds(dt)) if dt else 0
+        thumb = (info.get("thumbnail") or info.get("thumbnails", [{}])[-1].get("url", "")).split("?")[0]
+        return info.get("title", ""), dt, ds, thumb, info.get("id", "")
+
+    @capture_internal_err
+    async def title(self, link: str, videoid: Union[str, bool, None] = None) -> str:
+        info = await self._fetch_video_info(self._prepare_link(link, videoid))
+        return info.get("title", "") if info else ""
+
+    @capture_internal_err
+    async def duration(self, link: str, videoid: Union[str, bool, None] = None) -> Optional[str]:
+        info = await self._fetch_video_info(self._prepare_link(link, videoid))
+        return info.get("duration") if info else None
+
+    @capture_internal_err
+    async def thumbnail(self, link: str, videoid: Union[str, bool, None] = None) -> str:
+        info = await self._fetch_video_info(self._prepare_link(link, videoid))
+        return (info.get("thumbnail") or info.get("thumbnails", [{}])[-1].get("url", "")).split("?")[0] if info else ""
+
+    @capture_internal_err
+    async def track(self, link: str, videoid: Union[str, bool, None] = None) -> Tuple[Dict, str]:
+        prepared_link = self._prepare_link(link, videoid)
+        try:
+            info = await self._fetch_video_info(prepared_link)
+            if not info: raise ValueError("No results")
+        except:
+            stdout, stderr = await _exec_proc("yt-dlp", *(_cookies_args()), "--dump-json", "--no-warnings", prepared_link)
+            if not stdout: raise ValueError("Track error")
+            info = json.loads(stdout.decode())
+        
+        thumb = (info.get("thumbnail") or info.get("thumbnails", [{}])[-1].get("url", "")).split("?")[0]
+        details = {
+            "title": info.get("title", ""),
+            "link": info.get("webpage_url", prepared_link),
+            "vidid": info.get("id", ""),
+            "duration_min": (info.get("duration") if isinstance(info.get("duration"), str) else None),
+            "thumb": thumb,
+        }
+        return details, info.get("id", "")
+
+    @capture_internal_err
+    async def video(self, link: str, videoid: Union[str, bool, None] = None) -> Tuple[int, str]:
+        link = self._prepare_link(link, videoid)
+        stdout, stderr = await _exec_proc("yt-dlp", *(_cookies_args()), "-g", "-f", "best", link)
+        return (1, stdout.decode().split("\n")[0]) if stdout else (0, stderr.decode())
+
+    @capture_internal_err
+    async def playlist(self, link: str, limit: int, user_id, videoid: Union[str, bool, None] = None) -> List[str]:
+        if videoid: link = self.playlist_url + str(videoid)
+        link = self._prepare_link(link).split("&")[0]
+        try:
+            plist = await Playlist.get(link)
+            items = [video.get("id") for video in plist.get("videos", [])[:limit] if video.get("id")]
+            if items: return items
+        except: pass
+        stdout, _ = await _exec_proc("yt-dlp", *(_cookies_args()), "-i", "--get-id", "--flat-playlist", "--playlist-end", str(limit), "--skip-download", link)
+        return stdout.decode().strip().split("\n") if stdout else []
+
+    @capture_internal_err
+    async def formats(self, link: str, videoid: Union[str, bool, None] = None) -> Tuple[List[Dict], str]:
+        return [], link
+
+    @capture_internal_err
+    async def slider(self, link: str, query_type: int, videoid: Union[str, bool, None] = None) -> Tuple[str, Optional[str], str, str]:
+        data = await VideosSearch(self._prepare_link(link, videoid), limit=10).next()
+        results = data.get("result", [])
+        if not results or query_type >= len(results): raise IndexError("Out of range")
+        r = results[query_type]
+        return (r.get("title", ""), r.get("duration"), r.get("thumbnails", [{}])[-1].get("url", "").split("?")[0], r.get("id", ""))
+
+    # === 🔥 THE CORE DOWNLOADER 🔥 ===
+    @capture_internal_err
+    async def download(
+        self,
+        link: str,
+        mystic,
+        *,
+        video: Union[bool, str, None] = None,
+        videoid: Union[str, bool, None] = None,
+    ) -> Union[Tuple[str, Optional[bool]], Tuple[None, None]]:
+        link = self._prepare_link(link, videoid)
+        _ensure_cookies()
+        cookies = _cookies_args()
+
+        # 1. VIDEO LOGIC
+        if video:
+            if await self.is_live(link):
+                status, stream_url = await self.video(link)
+                return (stream_url, None) if status == 1 else (None, None)
+
+            # الترتيب ده لمنع الـ Crash في السيرفرات الضعيفة
+            formats = [
+                "best[height<=720]",   # ملف واحد جاهز (خفيف جداً)
+                "best[height<=480]",   # جودة أقل (خفيف جداً)
+                "bestvideo[height<=480]+bestaudio/best", # دمج خفيف لو اضطررنا
+                "best"                 # الحل الأخير (مضمون 100%)
+            ]
+
+            for fmt in formats:
                 try:
-                    file_path, direct = await YouTube.download(
-                        vidid, mystic, video=is_video, videoid=vidid
+                    cmd = ["yt-dlp", *cookies, *self.opts, "-f", fmt, link]
+                    proc = await asyncio.create_subprocess_exec(
+                        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
                     )
+                    await proc.communicate()
+
+                    cmd_name = ["yt-dlp", "--get-filename", "-o", "downloads/%(id)s.%(ext)s", link]
+                    name_proc = await asyncio.create_subprocess_exec(
+                        *cmd_name, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                    )
+                    name_out, _ = await name_proc.communicate()
+                    filename = name_out.decode().strip()
+
+                    if os.path.exists(filename) and os.path.getsize(filename) > 0:
+                        return filename, True
                 except:
                     continue
-                
-                if not file_path:
-                    continue
 
-                await StreamController.join_call(
-                    chat_id,
-                    original_chat_id,
-                    file_path,
-                    video=is_video,
-                    image=thumbnail,
-                )
-                await put_queue(
-                    chat_id,
-                    original_chat_id,
-                    file_path if direct else f"vid_{vidid}",
-                    title,
-                    duration_min,
-                    user_name,
-                    vidid,
-                    user_id,
-                    "video" if is_video else "audio",
-                    forceplay=forceplay,
-                )
-                
-                img = await get_thumb(vidid)
-                button = stream_markup(_, chat_id)
-                
-                try:
-                    run = await app.send_photo(
-                        original_chat_id,
-                        photo=img,
-                        caption=_["stream_1"].format(
-                            f"https://t.me/{app.username}?start=info_{vidid}",
-                            title[:23],
-                            duration_min,
-                            user_name,
-                        ),
-                        reply_markup=InlineKeyboardMarkup(button),
-                    )
-                    db[chat_id][0]["mystic"] = run
-                    db[chat_id][0]["markup"] = "stream"
-                except FloodWait as e:
-                    await asyncio.sleep(e.value)
-                except Exception:
-                    pass
+            # Fallback
+            if await is_on_off(1):
+                p = await yt_dlp_download(link, type="video", title=await self.title(link))
+                return (p, True) if p else (None, None)
+            
+            return None, None
 
-        if count == 0:
-            return
-        
-        link = await ANNIEBIN(msg)
-        lines = msg.count("\n")
+        # 2. AUDIO LOGIC
         try:
-            if lines >= 17:
-                car = os.linesep.join(msg.split(os.linesep)[:17])
-            else:
-                car = msg
-            carbon = await Carbon.generate(car, randint(100, 10000000))
-            playlist_photo = carbon
-        except Exception:
-            playlist_photo = config.PLAYLIST_IMG_URL
-        
-        upl = close_markup(_)
-        final_pos = len(db.get(chat_id) or []) - 1
-        
-        return await app.send_photo(
-            original_chat_id,
-            photo=playlist_photo,
-            caption=_["play_21"].format(final_pos, link),
-            reply_markup=upl,
-        )
-
-    # ==========================
-    # 2. YOUTUBE MODE (CORE)
-    # ==========================
-    elif streamtype == "youtube":
-        link = result.get("link")
-        vidid = result.get("vidid")
-        title = (result.get("title", "Unknown")).title()
-        duration_min = result.get("duration_min", "00:00")
-        thumbnail = result.get("thumb")
-
-        try:
-            # Download using the optimized YouTube class
-            file_path, direct = await YouTube.download(
-                vidid, mystic, video=is_video, videoid=vidid
+            cmd = ["yt-dlp", *cookies, *self.opts, "-f", "bestaudio[ext=m4a]/bestaudio/best", link]
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
-        except Exception as e:
-            print(f"Stream Download Error: {e}")
-            raise AssistantErr(_["play_14"])
-        
-        if not file_path:
-            raise AssistantErr(_["play_14"])
-
-        if await is_active_chat(chat_id):
-            await put_queue(
-                chat_id,
-                original_chat_id,
-                file_path if direct else f"vid_{vidid}",
-                title,
-                duration_min,
-                user_name,
-                vidid,
-                user_id,
-                "video" if is_video else "audio",
-            )
-            position = len(db.get(chat_id)) - 1
-            button = aq_markup(_, chat_id)
-            await safe_delete(mystic)
-            await app.send_message(
-                chat_id=original_chat_id,
-                text=_["queue_4"].format(position, title[:27], duration_min, user_name),
-                reply_markup=InlineKeyboardMarkup(button),
-            )
-        else:
-            if not forceplay:
-                db[chat_id] = []
+            await proc.communicate()
             
-            await StreamController.join_call(
-                chat_id,
-                original_chat_id,
-                file_path,
-                video=is_video,
-                image=thumbnail,
+            cmd_name = ["yt-dlp", "--get-filename", "-o", "downloads/%(id)s.%(ext)s", link]
+            name_proc = await asyncio.create_subprocess_exec(
+                *cmd_name, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
-            await put_queue(
-                chat_id,
-                original_chat_id,
-                file_path if direct else f"vid_{vidid}",
-                title,
-                duration_min,
-                user_name,
-                vidid,
-                user_id,
-                "video" if is_video else "audio",
-                forceplay=forceplay,
-            )
+            name_out, _ = await name_proc.communicate()
+            filename = name_out.decode().strip()
             
-            img = await get_thumb(vidid)
-            button = stream_markup(_, chat_id)
-            await safe_delete(mystic)
-            
-            try:
-                run = await app.send_photo(
-                    original_chat_id,
-                    photo=img,
-                    caption=_["stream_1"].format(
-                        f"https://t.me/{app.username}?start=info_{vidid}",
-                        title[:23],
-                        duration_min,
-                        user_name,
-                    ),
-                    reply_markup=InlineKeyboardMarkup(button),
-                )
-                db[chat_id][0]["mystic"] = run
-                db[chat_id][0]["markup"] = "stream"
-            except Exception:
-                pass
+            if os.path.exists(filename) and os.path.getsize(filename) > 0:
+                return filename, True
+        except:
+            pass
 
-    # ==========================
-    # 3. SOUNDCLOUD MODE
-    # ==========================
-    elif streamtype == "soundcloud":
-        file_path = result.get("filepath")
-        title = result.get("title")
-        duration_min = result.get("duration_min")
-        
-        if not file_path:
-            raise AssistantErr(_["play_14"])
-
-        if await is_active_chat(chat_id):
-            await put_queue(
-                chat_id,
-                original_chat_id,
-                file_path,
-                title,
-                duration_min,
-                user_name,
-                streamtype,
-                user_id,
-                "audio",
-            )
-            position = len(db.get(chat_id)) - 1
-            button = aq_markup(_, chat_id)
-            await safe_delete(mystic)
-            await app.send_message(
-                chat_id=original_chat_id,
-                text=_["queue_4"].format(position, title[:27], duration_min, user_name),
-                reply_markup=InlineKeyboardMarkup(button),
-            )
-        else:
-            if not forceplay:
-                db[chat_id] = []
-            await StreamController.join_call(chat_id, original_chat_id, file_path, video=False)
-            await put_queue(
-                chat_id,
-                original_chat_id,
-                file_path,
-                title,
-                duration_min,
-                user_name,
-                streamtype,
-                user_id,
-                "audio",
-                forceplay=forceplay,
-            )
-            button = stream_markup(_, chat_id)
-            await safe_delete(mystic)
-            run = await app.send_photo(
-                original_chat_id,
-                photo=config.SOUNCLOUD_IMG_URL,
-                caption=_["stream_1"].format(
-                    config.SUPPORT_CHAT, title[:23], duration_min, user_name
-                ),
-                reply_markup=InlineKeyboardMarkup(button),
-            )
-            db[chat_id][0]["mystic"] = run
-            db[chat_id][0]["markup"] = "tg"
-
-    # ==========================
-    # 4. TELEGRAM FILES MODE
-    # ==========================
-    elif streamtype == "telegram":
-        file_path = result.get("path")
-        link = result.get("link")
-        title = (result.get("title")).title()
-        duration_min = result.get("dur", result.get("duration_min", "00:00"))
-        
-        if not file_path:
-            raise AssistantErr(_["play_14"])
-
-        if await is_active_chat(chat_id):
-            await put_queue(
-                chat_id,
-                original_chat_id,
-                file_path,
-                title,
-                duration_min,
-                user_name,
-                streamtype,
-                user_id,
-                "video" if is_video else "audio",
-            )
-            position = len(db.get(chat_id)) - 1
-            button = aq_markup(_, chat_id)
-            await safe_delete(mystic)
-            await app.send_message(
-                chat_id=original_chat_id,
-                text=_["queue_4"].format(position, title[:27], duration_min, user_name),
-                reply_markup=InlineKeyboardMarkup(button),
-            )
-        else:
-            if not forceplay:
-                db[chat_id] = []
-            await StreamController.join_call(chat_id, original_chat_id, file_path, video=is_video)
-            await put_queue(
-                chat_id,
-                original_chat_id,
-                file_path,
-                title,
-                duration_min,
-                user_name,
-                streamtype,
-                user_id,
-                "video" if is_video else "audio",
-                forceplay=forceplay,
-            )
-            if is_video:
-                await add_active_video_chat(chat_id)
-            button = stream_markup(_, chat_id)
-            await safe_delete(mystic)
-            run = await app.send_photo(
-                original_chat_id,
-                photo=config.TELEGRAM_VIDEO_URL if is_video else config.TELEGRAM_AUDIO_URL,
-                caption=_["stream_1"].format(link, title[:23], duration_min, user_name),
-                reply_markup=InlineKeyboardMarkup(button),
-            )
-            db[chat_id][0]["mystic"] = run
-            db[chat_id][0]["markup"] = "tg"
-
-    # ==========================
-    # 5. LIVE STREAM MODE
-    # ==========================
-    elif streamtype == "live":
-        link = result.get("link")
-        vidid = result.get("vidid")
-        title = (result.get("title")).title()
-        thumbnail = result.get("thumb")
-        duration_min = "Live Track"
-
-        if await is_active_chat(chat_id):
-            await put_queue(
-                chat_id,
-                original_chat_id,
-                f"live_{vidid}",
-                title,
-                duration_min,
-                user_name,
-                vidid,
-                user_id,
-                "video" if is_video else "audio",
-            )
-            position = len(db.get(chat_id)) - 1
-            button = aq_markup(_, chat_id)
-            await safe_delete(mystic)
-            await app.send_message(
-                chat_id=original_chat_id,
-                text=_["queue_4"].format(position, title[:27], duration_min, user_name),
-                reply_markup=InlineKeyboardMarkup(button),
-            )
-        else:
-            if not forceplay:
-                db[chat_id] = []
-            
-            n, file_path = await YouTube.video(link)
-            if n == 0:
-                raise AssistantErr(_["str_3"])
-            if not file_path:
-                raise AssistantErr(_["play_14"])
-
-            await StreamController.join_call(
-                chat_id,
-                original_chat_id,
-                file_path,
-                video=is_video,
-                image=thumbnail or None,
-            )
-            await put_queue(
-                chat_id,
-                original_chat_id,
-                f"live_{vidid}",
-                title,
-                duration_min,
-                user_name,
-                vidid,
-                user_id,
-                "video" if is_video else "audio",
-                forceplay=forceplay,
-            )
-            img = await get_thumb(vidid)
-            button = stream_markup(_, chat_id)
-            await safe_delete(mystic)
-            run = await app.send_photo(
-                original_chat_id,
-                photo=img,
-                caption=_["stream_1"].format(
-                    f"https://t.me/{app.username}?start=info_{vidid}",
-                    title[:23],
-                    duration_min,
-                    user_name,
-                ),
-                reply_markup=InlineKeyboardMarkup(button),
-            )
-            db[chat_id][0]["mystic"] = run
-            db[chat_id][0]["markup"] = "tg"
-
-    # ==========================
-    # 6. INDEX / M3U8 MODE
-    # ==========================
-    elif streamtype == "index":
-        link = result
-        title = "ɪɴᴅᴇx ᴏʀ ᴍ3ᴜ8 ʟɪɴᴋ"
-        duration_min = "00:00"
-
-        if await is_active_chat(chat_id):
-            await put_queue_index(
-                chat_id,
-                original_chat_id,
-                "index_url",
-                title,
-                duration_min,
-                user_name,
-                link,
-                "video" if is_video else "audio",
-            )
-            position = len(db.get(chat_id)) - 1
-            button = aq_markup(_, chat_id)
-            await mystic.edit_text(
-                text=_["queue_4"].format(position, title[:27], duration_min, user_name),
-                reply_markup=InlineKeyboardMarkup(button),
-            )
-        else:
-            if not forceplay:
-                db[chat_id] = []
-            await StreamController.join_call(
-                chat_id,
-                original_chat_id,
-                link,
-                video=is_video,
-            )
-            await put_queue_index(
-                chat_id,
-                original_chat_id,
-                "index_url",
-                title,
-                duration_min,
-                user_name,
-                link,
-                "video" if is_video else "audio",
-                forceplay=forceplay,
-            )
-            button = stream_markup(_, chat_id)
-            await safe_delete(mystic)
-            run = await app.send_photo(
-                original_chat_id,
-                photo=config.STREAM_IMG_URL,
-                caption=_["stream_2"].format(user_name),
-                reply_markup=InlineKeyboardMarkup(button),
-            )
-            db[chat_id][0]["mystic"] = run
-            db[chat_id][0]["markup"] = "tg"
+        p = await yt_dlp_download(link, type="audio", title=await self.title(link))
+        return (p, True) if p else (None, None)
