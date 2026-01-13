@@ -21,6 +21,29 @@ from config import BANNED_USERS
 
 # الدالة الرئيسية (تم تنظيفها لتستدعى من run.py)
 async def init():
+    # 👇👇👇 بدايـة الإصـلاح (Loop Fix) 👇👇👇
+    # هـذا الـجـزء هـو الـذي سـيـحـل مـشـكـلـة "attached to a different loop"
+    try:
+        current_loop = asyncio.get_running_loop()
+        
+        # نـقـل الـبـوت لـلـعـمـل عـلـى الـ Loop الـجـديـد
+        if hasattr(app, "loop"):
+            app.loop = current_loop
+        if hasattr(app, "session"):
+            app.session = None  # إعـادة تـهـيـئـة الـجـلـسـة
+
+        # نـقـل الـيـوزر بـوت لـلـعـمـل عـلـى الـ Loop الـجـديـد
+        if hasattr(userbot, "loop"):
+            userbot.loop = current_loop
+        if hasattr(userbot, "session"):
+            userbot.session = None
+
+        LOGGER("AnnieXMedia").info("✅ تـم ضـبـط الـ Loop بـنـجـاح لـمـنـع الـتـعـارض.")
+    except Exception as e:
+        LOGGER("AnnieXMedia").warning(f"⚠️ تـحـذيـر Loop: {e}")
+    # 👆👆👆 نـهـايـة الإصـلاح 👆👆👆
+
+
     # الـتـحـقـق مـن وجـود كـود جـلـسـة (Session) واحـد عـلـى الأقـل
     if (
         not config.STRING1
@@ -54,7 +77,11 @@ async def init():
         pass
 
     # بـدء تـشـغـيـل الـبـوت الأسـاسـي
-    await app.start()
+    try:
+        await app.start()
+    except Exception as e:
+        LOGGER("AnnieXMedia").error(f"فشل تشغيل البوت: {e}")
+        exit()
     
     # تـحـمـيـل الـمـلـفـات (Plugins)
     for all_module in ALL_MODULES:
@@ -63,7 +90,12 @@ async def init():
     LOGGER("AnnieXMedia.plugins").info("تـم تـحـمـيـل مـلـفـات الـبـوت بـنـجـاح...")
 
     # بـدء تـشـغـيـل الـحـسـاب الـمـسـاعـد ومـتـحـكـم الـمـكـالـمـات
-    await userbot.start()
+    try:
+        await userbot.start()
+    except Exception as e:
+        LOGGER("AnnieXMedia").error(f"فشل تشغيل اليوزربوت: {e}")
+        exit()
+
     await StreamController.start()
 
     # مـحـاولـة دخـول الـكـول وتـشـغـيـل فـيـديـو الاخـتـبـار
