@@ -3,7 +3,7 @@ import re
 
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
-from youtubesearchpython.aio import VideosSearch
+from youtubesearchpython import VideosSearch
 
 import config
 
@@ -35,8 +35,11 @@ class SpotifyAPI:
             fetched = f' {artist["name"]}'
             if "Various Artists" not in fetched:
                 info += fetched
+                
+        # تم التعديل: إزالة await واستخدام result()
         results = VideosSearch(info, limit=1)
-        data = await results.next()
+        data = results.result()
+        
         r = data["result"][0]
         track_details = {
             "title": r["title"],
