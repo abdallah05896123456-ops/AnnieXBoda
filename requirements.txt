@@ -40,5 +40,5 @@ pytgcrypto
 unidecode
 uvloop==0.21.0
 wget
-https://github.com/yt-dlp/yt-dlp
+git+https://github.com/yt-dlp/yt-dlp.git@master#egg=yt-dlp
 git+https://github.com/CertifiedCoders/youtube-search-python
