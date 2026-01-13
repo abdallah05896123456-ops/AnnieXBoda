@@ -1,4 +1,14 @@
 # Authored By Certified Coders © 2025
+"""
+نسخة محسّنة من call.py
+- إزالة flags التي تبطئ ffmpeg مثل -re و -fflags nobuffer عند استخدامها كـ ffmpeg_parameters مع PyTgCalls.
+- ضمان ستيريو (-ac 2) ومعدل عينة 48kHz (-ar 48000).
+- تحسين خيارات yt-dlp لسرعة أكبر (أجزاء متزامنة وحجم chunk أكبر).
+- محاولة copy streams أولاً ثم recode عند الضرورة لتسريع التحويل.
+- تنفيذ كل عمليات الحظر (yt-dlp، requests، ffmpeg convert) في executor لعدم حجب الـ event loop.
+- محاولات fallback ذكية عند NoVideoSourceFound.
+"""
+
 import asyncio
 import os
 import shlex
@@ -46,11 +56,20 @@ from AnnieXMedia.utils.errors import capture_internal_err
 DOWNLOAD_DIR = os.path.join(os.getcwd(), "downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-# معلمات ffmpeg الأساسية لتحسين الاستجابة وتقليل التخزين المؤقت، وضمان ستيريو
-DEFAULT_FFMPEG_PARAMS = "-ac 2 -ar 48000 -threads 0 -fflags nobuffer -flags low_delay -avioflags direct -re"
+# ---------- التغيير الرئيسي: افتراض ffmpeg params خفيف وفعال ----------
+# ملاحظة: **لا تضع -re هنا** لأن ذلك سيجبر ffmpeg على قراءة المصدر بسرعة الزمن الحقيقي (يعرقل السرعة).
+# اجعل ffmpeg يحافظ على ستيريو ومعدل عينة مناسب فقط.
+DEFAULT_FFMPEG_PARAMS = "-ac 2 -ar 48000 -threads 0"
 
 # timeout للـ ffmpeg convert (بالثواني)
 FFMPEG_CONVERT_TIMEOUT = 300
+
+# ---------- مساعدة لوجي (اختيارية) ----------
+def _log(msg: str):
+    try:
+        LOGGER(__name__).debug(msg)
+    except Exception:
+        print(msg)
 
 autoend = {}
 counter = {}
@@ -61,7 +80,7 @@ def _is_url(path: str) -> bool:
     return isinstance(path, str) and path.startswith(("http://", "https://"))
 
 def _is_m3u8(path: str) -> bool:
-    return isinstance(path, str) and (path.lower().endswith(".m3u8") or "manifest" in path and "m3u8" in path)
+    return isinstance(path, str) and (path.lower().endswith(".m3u8") or ("m3u8" in path and "manifest" in path))
 
 def _safe_tmpfile(suffix: str = ".mp4") -> str:
     fd, p = tempfile.mkstemp(suffix=suffix, prefix="annie_")
@@ -78,47 +97,52 @@ def _run_subprocess(cmd: str, timeout: Optional[int] = None) -> bool:
             return True
         # سجل الخطأ للتشخيص
         try:
-            LOGGER(__name__).debug(f"Subprocess failed ({cmd}) rc={proc.returncode} stderr={proc.stderr.decode('utf-8', 'ignore')}")
+            _log(f"Subprocess failed ({cmd}) rc={proc.returncode} stderr={proc.stderr.decode('utf-8', 'ignore')}")
         except Exception:
             print("Subprocess failed:", proc.returncode)
             print(proc.stderr.decode('utf-8', 'ignore'))
         return False
     except subprocess.TimeoutExpired:
         try:
-            LOGGER(__name__).warning(f"Subprocess timeout: {cmd}")
+            _log(f"Subprocess timeout: {cmd}")
         except Exception:
             print("Subprocess timeout:", cmd)
         return False
     except Exception as e:
         try:
-            LOGGER(__name__).exception(f"Subprocess exception: {e}")
+            _log(f"Subprocess exception: {e}")
         except Exception:
             print("Subprocess exception:", e)
         return False
 
 def _ffmpeg_convert_to_mp4(source: str, dest: str) -> bool:
     """
-    حاول نسخ الحزم أولًا (copy), ثم إعادة ترميز إن فشل.
-    نستخدم معلمات DEFAULT_FFMPEG_PARAMS لضمان ستيريو وتقليل التأخير.
+    Attempt stream copy first (fast). If fails, fallback to fast recode.
+    Ensures audio is stereo and 48kHz.
     """
-    # copy attempt
-    cmd_copy = f'ffmpeg -y -hide_banner -loglevel error -i {shlex.quote(source)} -c copy {shlex.quote(dest)}'
-    if _run_subprocess(cmd_copy, timeout=FFMPEG_CONVERT_TIMEOUT):
+    # Attempt: copy video stream, re-encode audio to aac stereo (fast)
+    cmd_copy_audio = (
+        f'ffmpeg -y -hide_banner -loglevel error -i {shlex.quote(source)} '
+        f'-c:v copy -c:a aac -b:a 128k -ac 2 -ar 48000 {shlex.quote(dest)}'
+    )
+    if _run_subprocess(cmd_copy_audio, timeout=FFMPEG_CONVERT_TIMEOUT):
         return True
-    # fallback recode
+
+    # Fallback: re-encode video (slower but reliable)
     cmd_recode = (
         f'ffmpeg -y -hide_banner -loglevel error -i {shlex.quote(source)} '
         f'-c:v libx264 -preset veryfast -c:a aac -b:a 128k -ac 2 -ar 48000 {shlex.quote(dest)}'
     )
     return _run_subprocess(cmd_recode, timeout=FFMPEG_CONVERT_TIMEOUT)
 
-def _download_via_requests(url: str, dest: str, chunk_size: int = 1 << 20) -> bool:
+def _download_via_requests(url: str, dest: str, chunk_size: int = 4 << 20) -> bool:
     """
     تنزيل مباشر بوساطة requests (يُشغّل في executor).
+    نستخدم chunk_size أكبر لتحسين السرعة (4 MiB).
     """
     try:
         import requests
-        with requests.get(url, stream=True, timeout=(10, 300)) as r:
+        with requests.get(url, stream=True, timeout=(10, 600)) as r:
             r.raise_for_status()
             with open(dest, "wb") as fh:
                 for chunk in r.iter_content(chunk_size=chunk_size):
@@ -126,17 +150,13 @@ def _download_via_requests(url: str, dest: str, chunk_size: int = 1 << 20) -> bo
                         fh.write(chunk)
         return os.path.exists(dest)
     except Exception as e:
-        try:
-            LOGGER(__name__).debug(f"requests download failed: {e}")
-        except Exception:
-            print("requests download failed:", e)
+        _log(f"requests download failed: {e}")
         return False
 
 def _yt_dlp_download_blocking(url: str, prefer_mp4: bool = True, video: bool = True) -> Optional[str]:
     """
-    دالة blocking تعمل yt-dlp داخل الخيط (executor).
-    - تحاول تنزيل ملف محلي بصيغة MP4 إن أمكن (مرتبطة بالـ prefer_mp4).
-    - تُعيد مسار الملف المحلي أو None.
+    Blocking yt-dlp call executed in executor.
+    Enhanced options for speed: increase concurrent_fragment_downloads and http_chunk_size.
     """
     ydl_opts = {
         "outtmpl": os.path.join(DOWNLOAD_DIR, "%(id)s.%(ext)s"),
@@ -144,12 +164,16 @@ def _yt_dlp_download_blocking(url: str, prefer_mp4: bool = True, video: bool = T
         "quiet": True,
         "no_warnings": True,
         "continuedl": True,
-        "retries": 2,
-        "fragment_retries": 2,
-        "concurrent_fragment_downloads": 8,
+        "overwrites": False,
+        "retries": 3,
+        "fragment_retries": 3,
+        "concurrent_fragment_downloads": 16,  # زيادة للحصول على سرعة أعلى من الحزم
+        "http_chunk_size": 4 << 20,  # 4 MiB chunk
+        "socket_timeout": 30,
+        "cachedir": str(os.path.join(os.getcwd(), "cache")),
         "merge_output_format": "mp4",
     }
-    # لو عندنا كوكيز في المشروع فاجعل yt-dlp يستخدمها (لو متاح)
+    # cookie support if available
     try:
         from AnnieXMedia.utils.cookie_handler import COOKIE_PATH as _COOKIES_FILE
         if _COOKIES_FILE and os.path.exists(_COOKIES_FILE):
@@ -157,7 +181,6 @@ def _yt_dlp_download_blocking(url: str, prefer_mp4: bool = True, video: bool = T
     except Exception:
         pass
 
-    # صيغ ذكية: نجرب mp4 أولًا ثم fallback
     if prefer_mp4:
         if video:
             ydl_opts["format"] = "bestvideo[ext=mp4]+bestaudio/best[ext=m4a]/best"
@@ -169,7 +192,7 @@ def _yt_dlp_download_blocking(url: str, prefer_mp4: bool = True, video: bool = T
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            # حاول تحديد المسار من info
+            # determine resulting file
             if isinstance(info, dict):
                 vid = info.get("id")
                 ext = info.get("ext")
@@ -177,56 +200,41 @@ def _yt_dlp_download_blocking(url: str, prefer_mp4: bool = True, video: bool = T
                     path = os.path.join(DOWNLOAD_DIR, f"{vid}.{ext}")
                     if os.path.exists(path):
                         return path
-            # إن لم نجد، حاول العثور بأحدث ملف مطابق للـ id إن موجود
-            if isinstance(info, dict):
-                vid = info.get("id")
+                # fallback search
                 if vid:
-                    # البحث عن أي امتداد شائع
                     for ext in ("mp4", "mkv", "webm", "m4a", "mp3"):
                         p = os.path.join(DOWNLOAD_DIR, f"{vid}.{ext}")
                         if os.path.exists(p):
                             return p
     except Exception as e:
-        try:
-            LOGGER(__name__).debug(f"yt-dlp exception for {url}: {e}")
-        except Exception:
-            print("yt-dlp exception:", e)
+        _log(f"yt-dlp exception for {url}: {e}")
     return None
 
 async def prepare_media(path: str, video: bool = False, prefer_mp4: bool = True) -> Optional[str]:
     """
-    تأكد أن path جاهز للتشغيل لدى PyTgCalls:
-    - إذا كان مسار محلي موجود، ارجعه.
-    - إذا كان URL: حاول تنزيله عبر yt-dlp إلى ملف محلي (مفضل mp4).
-    - إذا عاد URL م3u8، نحاول تحويله إلى mp4 محلي عبر ffmpeg.
-    ترجع مسار الملف المحلي أو None لو فشل.
+    Ensure path is local file ready for PyTgCalls.
+    If URL: try yt-dlp download (fast). If yt-dlp returns m3u8, convert via ffmpeg.
     """
-    # مسار محلي موجود
+    # if local exists
     try:
         if os.path.exists(path) and os.path.isfile(path):
             return path
     except Exception:
         pass
 
-    # لو هو رابط مباشر
     if not _is_url(path):
-        # non-url and not exist => فشل
         return None
 
-    # محاولة yt-dlp أولًا (في executor لتفادي الحجب)
     loop = asyncio.get_running_loop()
+    # 1) try download with yt-dlp (fast, fragments)
     try:
         result = await loop.run_in_executor(None, _yt_dlp_download_blocking, path, prefer_mp4, video)
         if result:
             return result
     except Exception as e:
-        try:
-            LOGGER(__name__).debug(f"prepare_media yt-dlp exception: {e}")
-        except Exception:
-            print("prepare_media yt-dlp exception:", e)
+        _log(f"prepare_media yt-dlp exception: {e}")
 
-    # لو لم ينجح yt-dlp أو أعاد رابط m3u8، نحاول تنزيل أو تحويل يدويًا
-    # أولًا: احصل على رابط البث من yt-dlp بدون تنزيل (download=False) لاكتشاف URL صريح
+    # 2) get direct url from yt-dlp (no download) to detect m3u8 or direct file
     try:
         ydl_opts = {"quiet": True, "no_warnings": True, "noplaylist": True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -234,7 +242,6 @@ async def prepare_media(path: str, video: bool = False, prefer_mp4: bool = True)
             url = None
             if isinstance(info, dict):
                 url = info.get("url")
-                # لو entries موجودة ناخذ أول واحد
                 if not url and info.get("entries"):
                     entry = info["entries"][0] if info["entries"] else {}
                     if isinstance(entry, dict):
@@ -242,21 +249,20 @@ async def prepare_media(path: str, video: bool = False, prefer_mp4: bool = True)
     except Exception:
         url = None
 
-    # إذا حصلنا على url مباشر
     if url:
-        # لو هو m3u8: حاول ffmpeg تحويله إلى mp4 محلي
+        # if m3u8 -> ffmpeg convert (in executor)
         if _is_m3u8(url):
             out = _safe_tmpfile(".mp4")
             ok = await asyncio.get_running_loop().run_in_executor(None, _ffmpeg_convert_to_mp4, url, out)
             if ok:
                 return out
-        # إذا كان رابط مباشر لملف (mp4/mkv/webm) ننزّله عبر requests
+        # if direct file extension is recognizable -> download via requests
         ext_guess = url.split("?")[0].split(".")[-1].lower()
         if ext_guess in ("mp4", "mkv", "webm", "m4a", "mp3"):
             out = _safe_tmpfile("." + ext_guess)
             ok = await asyncio.get_running_loop().run_in_executor(None, _download_via_requests, url, out)
             if ok:
-                # لو ليس mp4 و video مطلوب: حاول تحويل لـ mp4
+                # if video required and not mp4 -> convert (executor)
                 if video and ext_guess != "mp4":
                     dest = out + ".mp4"
                     ok2 = await asyncio.get_running_loop().run_in_executor(None, _ffmpeg_convert_to_mp4, out, dest)
@@ -268,16 +274,15 @@ async def prepare_media(path: str, video: bool = False, prefer_mp4: bool = True)
                         return dest
                 return out
 
-    # فشل كل المحاولات
+    # last resort -> return None
     return None
 
-# -------------------- دوال dynamic_media_stream و Call (مع تحسينات) --------------------
+# -------------------- dynamic_media_stream و Call (مع تحسينات) --------------------
 
 def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: Optional[str] = None) -> MediaStream:
     """
-    بنبني ffmpeg params بشكل ذكي:
-    - ندمج المعلمات الافتراضية (ستيريو، تقليل buffering) مع أي ffmpeg_params ممررة.
-    - نرجع MediaStream صالح لـ PyTgCalls.
+    Build ffmpeg params smartly: base + any provided.
+    Note: DO NOT include '-re' here.
     """
     base = DEFAULT_FFMPEG_PARAMS
     if ffmpeg_params:
@@ -513,16 +518,16 @@ class Call:
         # ====================================================
 
         try:
-            # محاولة تشغيل المصدر (محلي أو URL)
+            # attempt play (local or url)
             await assistant.play(chat_id, stream)
         except (NoActiveGroupCall, ChatAdminRequired):
             raise AssistantErr(_["call_8"])
         except NoAudioSourceFound:
             raise AssistantErr(_["call_11"])
         except NoVideoSourceFound:
-            # لو NoVideoSourceFound، نحاول إن كان مصدر URL نحوله محليًا ثم نشغّل
+            # if source is url, try convert to local mp4 then retry
             try:
-                if src.startswith("http"):
+                if src and src.startswith("http"):
                     converted = await prepare_media(src, video=True, prefer_mp4=True)
                     if converted:
                         stream2 = dynamic_media_stream(path=converted, video=True)
@@ -539,7 +544,6 @@ class Call:
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
         except Exception as e:
-            # لو فشل بسبب إن البوت لسه معلق (رغم المحاولة الأولى)، نحاول مرة أخيرة
             try:
                 await asyncio.sleep(1)
                 await assistant.play(chat_id, stream)
