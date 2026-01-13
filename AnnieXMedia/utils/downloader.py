@@ -1,12 +1,7 @@
 """
-ذكي، سريع، وعملي: downloader مدعوم بـ yt-dlp + aiohttp + ffmpeg fallback.
-مميزات هذا الملف:
- - دعم aria2c كـ external_downloader إن كان متوفرًا (لكن **لا** يُستخدم على HLS/googlevideo manifests)
- - aggressive-friendly defaults (concurrent fragments, chunk size from tuning)
- - تحويل HLS (m3u8/manifest) إلى ملف محلي باستخدام ffmpeg عند الحاجة
- - نظام Cache مؤقت: يحفظ الملفات المحلية لمدة 8 دقائق منذ آخر استخدام، منظف خلفي يحذفها بأمان
- - تسجيل/تجديد TTL من كل نقاط الإرجاع
- - إصلاح dedupe key عند غياب video id (يستخدم هاش للرابط)
+AnnieXMedia/utils/downloader.py
+محسّن: أسماء كاش فريدة per-kind، لوج واضح يحدد audio/video، تجديد TTL، no manifest-return.
+Author: Certified Coders © 2025 (modified)
 """
 import asyncio
 import contextlib
@@ -61,12 +56,10 @@ async def register_cache(path: str) -> None:
         return
     async with _cache_lock:
         _cache_registry[path] = time.time() + CACHE_TTL
+        LOGGER.debug(f"register_cache: {os.path.basename(path)} -> expiry {int(_cache_registry[path])}")
 
 def _register_cache_from_thread(path: str) -> None:
-    """
-    Called from synchronous threads (like executor).
-    Schedule the async register_cache safely if loop running, otherwise store directly.
-    """
+    """Thread-safe wrapper for register_cache."""
     if not path:
         return
     try:
@@ -79,10 +72,7 @@ def _register_cache_from_thread(path: str) -> None:
         _cache_registry[path] = time.time() + CACHE_TTL
 
 def _is_file_in_use(path: str) -> bool:
-    """
-    Return True if the file is referenced in the global db queue (playing/queued).
-    Safe and forgiving: if structure unexpected we assume "in use".
-    """
+    """Return True if the file is referenced in the global db queue (playing/queued)."""
     try:
         for k, q in list(_GLOBAL_DB.items()):
             if not q:
@@ -97,10 +87,7 @@ def _is_file_in_use(path: str) -> bool:
     return False
 
 async def _cache_cleaner_loop() -> None:
-    """
-    Background loop: remove expired cached files not currently in use.
-    Runs until cancelled.
-    """
+    """Background loop: remove expired cached files not currently in use."""
     try:
         while True:
             now = time.time()
@@ -111,6 +98,7 @@ async def _cache_cleaner_loop() -> None:
                         if not _is_file_in_use(p) and os.path.exists(p):
                             to_delete.append(p)
                         else:
+                            # extend slightly to avoid deleting in-use files
                             _cache_registry[p] = now + CACHE_TTL
             for p in to_delete:
                 try:
@@ -127,28 +115,28 @@ async def _cache_cleaner_loop() -> None:
         LOGGER.exception(f"cache_cleaner fatal: {e}")
 
 def init_cache_cleaner() -> None:
-    """
-    Start the background cleaner if event loop is running.
-    Call this once during application startup (e.g. from core/call.py.start()).
-    """
+    """Start background cleaner once loop is active."""
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
             loop.create_task(_cache_cleaner_loop())
+            LOGGER.debug("init_cache_cleaner: started background cleaner")
         else:
-            pass
+            LOGGER.debug("init_cache_cleaner: loop not running; cleaner not started")
     except Exception:
         LOGGER.exception("init_cache_cleaner failed")
 
 # ---------------- helpers ----------------
 
-def log_download_source(title: str, source: str) -> None:
+def log_download_source(title: str, source: str, kind: str) -> None:
+    """Log with explicit kind (audio/video)."""
     try:
-        LOGGER.info(f"Track '{title}' - Downloaded by {source}")
+        LOGGER.info(f"Track '{title}' ({kind}) - Downloaded by {source}")
     except Exception:
-        print(f"[log] Track '{title}' - Downloaded by {source}")
+        print(f"[log] Track '{title}' ({kind}) - Downloaded by {source}")
 
 def extract_video_id(link: str) -> str:
+    """Try simple extraction; if fails, caller may fetch via yt-dlp extract_info."""
     if not link:
         return ""
     s = link.strip()
@@ -174,23 +162,39 @@ def get_cookie_file() -> Optional[str]:
         pass
     return None
 
-def find_cached_file(video_id: str) -> Optional[str]:
+def find_cached_file(video_id: str, kind: Optional[str] = None) -> Optional[str]:
+    """
+    Return cached media file path by id.
+    If kind provided, prefer files named with that kind suffix (e.g. id_audio.m4a).
+    Backwards-compatible: also check id.ext fallback.
+    """
     if not video_id:
         return None
+    # priority: id_kind.ext
+    if kind:
+        for ext in ("mp4", "mkv", "webm", "m4a", "mp3", "opus"):
+            p = os.path.join(DOWNLOAD_DIR, f"{video_id}_{kind}.{ext}")
+            if os.path.exists(p):
+                _register_cache_from_thread(p)
+                return p
+    # fallback: id.ext
     for ext in ("mp4", "mkv", "webm", "m4a", "mp3", "opus"):
         p = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
         if os.path.exists(p):
             _register_cache_from_thread(p)
             return p
+    # final fallback: any file starting with id_
+    patterns = glob.glob(os.path.join(DOWNLOAD_DIR, f"{video_id}_*"))
+    if patterns:
+        p = sorted(patterns, key=os.path.getmtime, reverse=True)[0]
+        _register_cache_from_thread(p)
+        return p
     return None
 
 # ---------------- yt-dlp options & utils ----------------
 
 def get_ytdlp_base_opts(verbose: bool = False) -> Dict[str, object]:
-    """
-    Aggressive-friendly base options.
-    external_downloader may be added later per-link (we avoid enabling it globally for HLS).
-    """
+    """Base options for yt-dlp. external_downloader may be disabled on HLS/Googlevideo links."""
     min_chunk = max(CHUNK_SIZE, 4 * 1024 * 1024)
 
     opts = {
@@ -220,7 +224,7 @@ def get_ytdlp_base_opts(verbose: bool = False) -> Dict[str, object]:
     if cookie := get_cookie_file():
         opts["cookiefile"] = cookie
 
-    # Use aria2c if available for external downloads (will be disabled on HLS or Googlevideo links)
+    # set aria2 as external downloader by default if available (we will disable for HLS later)
     if ARIA2_PATH:
         opts["external_downloader"] = "aria2c"
         opts["external_downloader_args"] = ["-x", "4", "-k", "1M"]
@@ -228,7 +232,7 @@ def get_ytdlp_base_opts(verbose: bool = False) -> Dict[str, object]:
     return opts
 
 def _info_to_final_path(info: Dict) -> Optional[str]:
-    """Find local final file path reported/created by yt-dlp"""
+    """Return path reported by yt-dlp (may be id.ext)."""
     if not isinstance(info, dict):
         return None
     vid = info.get("id")
@@ -258,22 +262,42 @@ def _safe_filename(prefix: str = "tmp") -> str:
 
 # ---------------- blocking helpers (run in executor) ----------------
 
+def _ffmpeg_run_capture(cmd: str, timeout: int):
+    """Run ffmpeg command and capture stderr for logging. Return True on success."""
+    try:
+        proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+        if proc.returncode == 0:
+            LOGGER.debug(f"ffmpeg success cmd={cmd}")
+            return True
+        stderr = (proc.stderr or "").strip().splitlines()
+        head = "\n".join(stderr[:6])
+        LOGGER.warning(f"ffmpeg failed (rc={proc.returncode}). stderr head:\n{head}")
+        return False
+    except subprocess.TimeoutExpired:
+        LOGGER.warning("ffmpeg command timed out")
+        return False
+    except Exception as e:
+        LOGGER.exception(f"ffmpeg execution error: {e}")
+        return False
+
 def _run_ffmpeg_convert(input_src: str, out_path: str) -> bool:
     """
     Convert an HLS manifest or remote URL to a local file.
-    Try copy first, then fast re-encode. Use -threads 0 to utilize CPUs.
+    Out_path must be a full path (with desired filename).
     """
     try:
+        # try copy first
         cmd_copy = (
             f'ffmpeg -y -hide_banner -loglevel error '
             f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
             f'-threads 0 -i {shlex.quote(input_src)} -c copy {shlex.quote(out_path)}'
         )
-        res = subprocess.run(cmd_copy, shell=True, timeout=600)
-        if res.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+        ok = _ffmpeg_run_capture(cmd_copy, timeout=600)
+        if ok and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
             _register_cache_from_thread(out_path)
             return True
 
+        # transcode
         _, ext = os.path.splitext(out_path)
         ext = ext.lower().lstrip(".")
         if ext in ("mp4", "mkv", "webm"):
@@ -285,7 +309,7 @@ def _run_ffmpeg_convert(input_src: str, out_path: str) -> bool:
                 f'{shlex.quote(out_path)}'
             )
         else:
-            if ext in ("opus",):
+            if ext == "opus":
                 cmd_recode = (
                     f'ffmpeg -y -hide_banner -loglevel error '
                     f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
@@ -297,20 +321,19 @@ def _run_ffmpeg_convert(input_src: str, out_path: str) -> bool:
                     f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
                     f'-threads 0 -i {shlex.quote(input_src)} -c:a aac -b:a 160k -ac 2 -ar 48000 {shlex.quote(out_path)}'
                 )
-
-        res2 = subprocess.run(cmd_recode, shell=True, timeout=900)
-        if res2.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+        ok2 = _ffmpeg_run_capture(cmd_recode, timeout=900)
+        if ok2 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
             _register_cache_from_thread(out_path)
             return True
+
+        LOGGER.debug(f"_run_ffmpeg_convert: failed to convert {input_src} -> {out_path}")
         return False
     except Exception as e:
-        LOGGER.debug(f"ffmpeg conversion failed: {e}")
+        LOGGER.exception(f"ffmpeg conversion failed: {e}")
         return False
 
 def _download_http_blocking(url: str, out_path: str, chunk_size: int = CHUNK_SIZE) -> bool:
-    """
-    Blocking HTTP download helper (used in executor) for direct URLs.
-    """
+    """Blocking HTTP download helper (used in executor) for direct URLs."""
     try:
         import requests
         with requests.get(url, stream=True, timeout=(10, 180)) as r:
@@ -327,13 +350,49 @@ def _download_http_blocking(url: str, out_path: str, chunk_size: int = CHUNK_SIZ
         LOGGER.debug(f"requests download failed: {e}")
         return False
 
+# ---------------- helpers for naming/renaming ----------------
+
+def _ensure_named_final(candidate_path: str, desired_vid: str, kind: str) -> Optional[str]:
+    """
+    Ensure the file is named as <desired_vid>_<kind>.<ext>.
+    Move/rename candidate_path accordingly and return final path.
+    """
+    try:
+        if not candidate_path or not os.path.exists(candidate_path):
+            return None
+        # avoid manifest returns
+        if candidate_path.lower().endswith(".m3u8"):
+            return None
+        _, ext = os.path.splitext(candidate_path)
+        ext = ext.lstrip(".").lower() or "dat"
+        final_name = os.path.join(DOWNLOAD_DIR, f"{desired_vid}_{kind}.{ext}")
+        if os.path.abspath(candidate_path) != os.path.abspath(final_name):
+            # if final exists and non-empty, prefer it
+            if os.path.exists(final_name) and os.path.getsize(final_name) > 0:
+                LOGGER.debug(f"_ensure_named_final: final exists {final_name}, keeping it")
+                return final_name
+            try:
+                shutil.move(candidate_path, final_name)
+            except Exception:
+                try:
+                    shutil.copy(candidate_path, final_name)
+                    os.remove(candidate_path)
+                except Exception:
+                    LOGGER.debug(f"_ensure_named_final: move/copy failed for {candidate_path}")
+                    return None
+        _register_cache_from_thread(final_name)
+        return final_name if os.path.exists(final_name) else None
+    except Exception as e:
+        LOGGER.debug(f"_ensure_named_final exception: {e}")
+        return None
+
 # ---------------- core sync ytdlp downloader (used inside executor) ----------------
 
-def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool = False) -> Optional[str]:
+def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool = False, kind: str = "video") -> Optional[str]:
     """
     Synchronous worker for yt-dlp (runs in executor).
-    Prioritizes MP4/H264 outputs and avoids returning HLS manifests when possible.
-    Also disables aria2 external_downloader when link is HLS/googlevideo to avoid 403 on shards.
+    Ensures manifests (.m3u8) are converted to final mp4/m4a and never returned as-is.
+    kind must be 'audio' or 'video' and used for final naming.
     """
     try:
         base_opts = get_ytdlp_base_opts(verbose=verbose)
@@ -352,11 +411,28 @@ def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool
         ])
 
         last_exc = None
+        # try to extract info (without download) first to get real id & urls
+        info = None
+        desired_vid = ""
+        try:
+            info = YoutubeDL(get_ytdlp_base_opts(False)).extract_info(link, download=False)
+            if isinstance(info, dict):
+                desired_vid = info.get("id") or _make_link_id(link)
+        except Exception:
+            desired_vid = extract_video_id(link) or _make_link_id(link)
+
+        # if there is already a cached final file, return it
+        existing = find_cached_file(desired_vid, kind=kind)
+        if existing:
+            LOGGER.debug(f"download_with_ytdlp_sync: served from cache {os.path.basename(existing)}")
+            _register_cache_from_thread(existing)
+            return existing
+
         for candidate in candidates:
             opts = dict(base_opts)
             opts["format"] = candidate
 
-            # If the original link looks like HLS/googlevideo manifest, disable external_downloader
+            # If the link looks like HLS/googlevideo manifest, disable external_downloader to avoid 403s
             if ARIA2_PATH and (_is_m3u8_url(link) or "googlevideo.com" in link or "manifest.googlevideo" in link):
                 opts.pop("external_downloader", None)
                 opts.pop("external_downloader_args", None)
@@ -364,10 +440,17 @@ def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool
             try:
                 with YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(link, download=True)
+                    # try to get a final path reported by yt-dlp (but avoid returning manifests)
                     final = _info_to_final_path(info)
                     if final and os.path.exists(final):
-                        _register_cache_from_thread(final)
-                        return final
+                        named = _ensure_named_final(final, desired_vid, kind)
+                        if named:
+                            LOGGER.debug(f"download_with_ytdlp_sync: yt-dlp final -> {os.path.basename(named)}")
+                            return named
+                        # if cannot rename, but final is acceptable, return it
+                        if not final.lower().endswith(".m3u8"):
+                            _register_cache_from_thread(final)
+                            return final
 
                     url = None
                     if isinstance(info, dict):
@@ -376,18 +459,32 @@ def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool
                             entry = info["entries"][0] if info["entries"] else {}
                             url = entry.get("url") if isinstance(entry, dict) else None
 
+                    # if we got a manifest URL -> convert with ffmpeg to desired named file
                     if url and _is_m3u8_url(url):
-                        vid = info.get("id") or _safe_filename("video")
-                        target_ext = "mp4" if not candidate.startswith("bestaudio") else "m4a"
-                        out_path = os.path.join(DOWNLOAD_DIR, f"{vid}.{target_ext}")
+                        target_ext = "mp4" if kind == "video" else "m4a"
+                        out_path = os.path.join(DOWNLOAD_DIR, f"{desired_vid}_{kind}.{target_ext}")
+                        if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+                            _register_cache_from_thread(out_path)
+                            return out_path
                         ok = _run_ffmpeg_convert(url, out_path)
                         if ok:
+                            LOGGER.debug(f"download_with_ytdlp_sync: ffmpeg convert -> {os.path.basename(out_path)}")
                             return out_path
+                        # else try next candidate
 
+                    # if yt-dlp returned a direct http URL to a media file
                     if url and url.startswith("http"):
-                        vid = info.get("id") or _safe_filename("direct")
-                        ext = url.split("?")[0].split(".")[-1][:8] or "dat"
-                        out_path = os.path.join(DOWNLOAD_DIR, f"{vid}.{ext}")
+                        ext_guess = url.split("?")[0].split(".")[-1][:8] or "dat"
+                        out_path = os.path.join(DOWNLOAD_DIR, f"{desired_vid}_{kind}.{ext_guess}")
+                        if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+                            _register_cache_from_thread(out_path)
+                            return out_path
+                        # prefer aria2 when allowed for direct links (not googlevideo/hls)
+                        if ARIA2_PATH and not (_is_m3u8_url(url) or "googlevideo.com" in url):
+                            ok = _download_http_blocking(url, out_path)
+                            if ok:
+                                return out_path
+                            # else fallback to requests
                         ok = _download_http_blocking(url, out_path)
                         if ok:
                             return out_path
@@ -403,7 +500,7 @@ def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool
         LOGGER.exception("download_with_ytdlp_sync fatal")
         return None
 
-# ---------------- async helpers ----------------
+# ---------------- async helpers / orchestration ----------------
 
 async def get_http_session() -> aiohttp.ClientSession:
     global _session
@@ -425,9 +522,7 @@ async def close_http_session() -> None:
         _session = None
 
 async def download_file(url: str, out_path: str) -> Optional[str]:
-    """
-    Async download using aiohttp (used by API wrappers).
-    """
+    """Async download using aiohttp (used by API wrappers)."""
     if not url:
         return None
     try:
@@ -464,7 +559,7 @@ async def api_download_audio(link: str) -> Optional[str]:
                 data = await r.json()
                 status = str(data.get("status", "")).lower()
                 if status == "done":
-                    out = os.path.join(DOWNLOAD_DIR, f"{vid}.{data.get('format','webm')}")
+                    out = os.path.join(DOWNLOAD_DIR, f"{vid}_audio.{data.get('format','m4a')}")
                     res = await download_file(data.get("link"), out)
                     if res:
                         return res
@@ -491,7 +586,7 @@ async def api_download_video(link: str) -> Optional[str]:
                 data = await r.json()
                 status = str(data.get("status", "")).lower()
                 if status == "done":
-                    out = os.path.join(DOWNLOAD_DIR, f"{vid}.{data.get('format','mp4')}")
+                    out = os.path.join(DOWNLOAD_DIR, f"{vid}_video.{data.get('format','mp4')}")
                     res = await download_file(data.get("link"), out)
                     if res:
                         return res
@@ -509,6 +604,7 @@ async def run_with_semaphore(coro):
 async def deduplicate_download(key: str, runner):
     async with _inflight_lock:
         if fut := _inflight.get(key):
+            LOGGER.debug(f"deduplicate_download: waiting on in-flight key {key}")
             return await fut
         fut = asyncio.get_running_loop().create_future()
         _inflight[key] = fut
@@ -526,7 +622,7 @@ async def deduplicate_download(key: str, runner):
         async with _inflight_lock:
             _inflight.pop(key, None)
 
-async def race_tasks(yt_task, api_task, title: str):
+async def race_tasks(yt_task, api_task, title: str, kind: str):
     tasks = {t for t in (yt_task, api_task) if t}
     if not tasks:
         return None
@@ -536,7 +632,7 @@ async def race_tasks(yt_task, api_task, title: str):
             result = t.result()
             if result and os.path.exists(result):
                 src = "yt-dlp" if t is yt_task else "API"
-                log_download_source(title or "Unknown", src)
+                log_download_source(title or "Unknown", src, kind)
                 for p in pending:
                     p.cancel()
                 return result
@@ -547,15 +643,13 @@ async def race_tasks(yt_task, api_task, title: str):
             res = await p
             if res and os.path.exists(res):
                 src = "yt-dlp" if p is yt_task else "API"
-                log_download_source(title or "Unknown", src)
+                log_download_source(title or "Unknown", src, kind)
                 return res
         except asyncio.CancelledError:
             pass
         except Exception:
             pass
     return None
-
-# ---------------- public API ----------------
 
 async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str]:
     """
@@ -565,23 +659,23 @@ async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str
     Returns local file path or None.
     """
     loop = asyncio.get_running_loop()
+    kind = "audio" if type == "audio" else "video"
 
-    # compute a stable key id: prefer youtube id, else short hash of link
+    # compute stable key id: try simple extract, else use yt-dlp info, else hash
     vid = extract_video_id(link)
-    # If no clear id from link, try using yt-dlp info to determine ID
     if not vid:
         try:
             info = await loop.run_in_executor(None, lambda: YoutubeDL(get_ytdlp_base_opts()).extract_info(link, download=False))
-            if isinstance(info, dict):
-                vid = info.get("id", "")
+            if isinstance(info, dict) and info.get("id"):
+                vid = info.get("id")
         except Exception:
             vid = ""
     id_key = vid if vid else _make_link_id(link)
 
-    # serve from cache if present (only works for real video id files named by id)
-    if vid and (cached := find_cached_file(vid)):
+    # serve from cache if present (works for genuine id-based media files)
+    if vid and (cached := find_cached_file(vid, kind=kind)):
         if title:
-            LOGGER.info(f"Track '{title}' - Served from cache")
+            LOGGER.info(f"Track '{title}' ({kind}) - Served from cache -> {os.path.basename(cached)}")
         await register_cache(cached)
         return cached
 
@@ -591,11 +685,11 @@ async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str
         async def run():
             yt = asyncio.create_task(
                 run_with_semaphore(
-                    loop.run_in_executor(None, download_with_ytdlp_sync, link, "bestaudio[ext=m4a]/bestaudio/best", False)
+                    loop.run_in_executor(None, download_with_ytdlp_sync, link, "bestaudio[ext=m4a]/bestaudio/best", False, "audio")
                 )
             )
             api = asyncio.create_task(api_download_audio(link)) if USE_AUDIO_API else None
-            return await race_tasks(yt, api, title or "Unknown")
+            return await race_tasks(yt, api, title or "Unknown", "audio")
 
         result = await deduplicate_download(key, run)
         if result:
@@ -609,11 +703,11 @@ async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str
             fmt = "bestvideo[ext=mp4][vcodec!=?vp9][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]/best"
             yt = asyncio.create_task(
                 run_with_semaphore(
-                    loop.run_in_executor(None, download_with_ytdlp_sync, link, fmt, False)
+                    loop.run_in_executor(None, download_with_ytdlp_sync, link, fmt, False, "video")
                 )
             )
             api = asyncio.create_task(api_download_video(link)) if USE_VIDEO_API else None
-            return await race_tasks(yt, api, title or "Unknown")
+            return await race_tasks(yt, api, title or "Unknown", "video")
 
         result = await deduplicate_download(key, run)
         if result:
