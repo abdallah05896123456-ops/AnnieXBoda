@@ -1,11 +1,12 @@
 # Authored By Certified Coders © 2025
+# The "Ultimate Hybrid" Edition: Full Code + Go Speed + Alexa Smarts
 import asyncio
 import contextlib
 import json
 import os
 import re
 import time
-import requests  # تمت الإضافة عشان سحب الكوكيز
+import requests
 from typing import Dict, List, Optional, Tuple, Union
 
 import yt_dlp
@@ -32,49 +33,54 @@ _formats_lock = asyncio.Lock()
 YOUTUBE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 
 
-# === Helpers (Smart Cookie System) ===
+# === 🍪 Smart Cookie Logic (Alexa + Annie Merged) ===
 def _ensure_cookies() -> Optional[str]:
-    """
-    دالة ذكية للتأكد من وجود الكوكيز وصحتها قبل أي عملية
-    """
     path = str(COOKIE_PATH)
     
-    # 1. لو الملف مش موجود أو فاضي، حاول تجيبه من السيكرتس
-    if not (os.path.exists(path) and os.path.getsize(path) > 0):
-        cookie_url = os.getenv("COOKIE_URL") or os.getenv("COOKIES_URL") or os.getenv("UPSTREAM_COOKIES")
-        if cookie_url:
-            try:
-                # تصحيح الروابط تلقائياً
-                if "batbin.me" in cookie_url and "/raw/" not in cookie_url:
-                    cookie_url = cookie_url.replace("batbin.me/", "batbin.me/raw/")
-                elif "pastebin.com" in cookie_url and "/raw/" not in cookie_url:
-                    cookie_url = cookie_url.replace("pastebin.com/", "pastebin.com/raw/")
-                
-                # تحميل الملف
-                response = requests.get(cookie_url, timeout=10)
-                if response.status_code == 200:
-                    content = response.text
-                    # التأكد إنه مش HTML
-                    if "<!DOCTYPE html>" not in content and "<html" not in content.lower():
-                        with open(path, "w", encoding="utf-8") as f:
-                            f.write(content)
-            except Exception:
-                pass
-
-    # 2. إرجاع المسار لو الملف موجود وسليم
-    if path and os.path.exists(path) and os.path.getsize(path) > 0:
+    # 1. لو الملف موجود، استخدمه فوراً
+    if os.path.exists(path) and os.path.getsize(path) > 0:
         return path
+
+    # 2. لو مش موجود، دور في الـ ENV (نظام Annie)
+    cookie_url = os.getenv("COOKIE_URL") or os.getenv("COOKIES_URL") or os.getenv("UPSTREAM_COOKIES")
+    if cookie_url:
+        try:
+            if "batbin.me" in cookie_url and "/raw/" not in cookie_url:
+                cookie_url = cookie_url.replace("batbin.me/", "batbin.me/raw/")
+            elif "pastebin.com" in cookie_url and "/raw/" not in cookie_url:
+                cookie_url = cookie_url.replace("pastebin.com/", "pastebin.com/raw/")
+            
+            response = requests.get(cookie_url, timeout=10)
+            if response.status_code == 200:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(response.text)
+                return path
+        except:
+            pass
+
+    # 3. لو فشل، دور في مجلد cookies (نظام Alexa)
+    try:
+        cookie_dir = "cookies"
+        if os.path.exists(cookie_dir):
+            cookies_files = [f for f in os.listdir(cookie_dir) if f.endswith(".txt")]
+            if cookies_files:
+                # استخدم أول ملف يلاقيه
+                found_path = os.path.join(cookie_dir, cookies_files[0])
+                return found_path
+    except:
+        pass
+        
     return None
 
 
 def _cookies_args() -> List[str]:
-    # استدعاء الدالة الذكية بدلاً من الدالة القديمة
     path = _ensure_cookies()
     return ["--cookies", path] if path else []
 
 
+# === ⚡ Fast Executor ===
 async def _exec_proc(*args: str) -> Tuple[bytes, bytes]:
-    # التأكد من الكوكيز قبل تنفيذ أي أمر
+    # حقن الكوكيز قبل أي عملية
     _ensure_cookies()
     
     proc = await asyncio.create_subprocess_exec(
@@ -123,6 +129,14 @@ class YouTubeAPI:
         self.base_url = "https://www.youtube.com/watch?v="
         self.playlist_url = "https://youtube.com/playlist?list="
         self._url_pattern = re.compile(r"(?:youtube\.com|youtu\.be)")
+        
+        # Go Speed Flags Injection
+        self.go_speed_flags = [
+            "--concurrent-fragments", "3", 
+            "--resize-buffer",
+            "--http-chunk-size", "10M",
+            "--extractor-args", "youtube:player_client=android"
+        ]
 
     def _prepare_link(self, link: str, videoid: Union[str, bool, None] = None) -> str:
         if isinstance(videoid, str) and videoid.strip():
@@ -378,6 +392,25 @@ class YouTubeAPI:
         return out, link
 
     @capture_internal_err
+    async def slider(
+        self, link: str, query_type: int, videoid: Union[str, bool, None] = None
+    ) -> Tuple[str, Optional[str], str, str]:
+        data = await VideosSearch(self._prepare_link(link, videoid), limit=10).next()
+        results = data.get("result", [])
+        if not results or query_type >= len(results):
+            raise IndexError(
+                f"Query type index {query_type} out of range (found {len(results)} results)"
+            )
+        r = results[query_type]
+        return (
+            r.get("title", ""),
+            r.get("duration"),
+            r.get("thumbnails", [{}])[-1].get("url", "").split("?")[0],
+            r.get("id", ""),
+        )
+
+    # === 🔥 THE HYBRID DOWNLOAD ENGINE (Go Speed + Auto Fix) 🔥 ===
+    @capture_internal_err
     async def download(
         self,
         link: str,
@@ -387,10 +420,9 @@ class YouTubeAPI:
         videoid: Union[str, bool, None] = None,
     ) -> Union[Tuple[str, Optional[bool]], Tuple[None, None]]:
         link = self._prepare_link(link, videoid)
-        
-        # التأكد من الكوكيز قبل البدء (لتجنب إيرور Sign in)
         _ensure_cookies()
 
+        # [1] Video Section (Live & Standard)
         if video:
             if await self.is_live(link):
                 status, stream_url = await self.video(link)
@@ -398,21 +430,91 @@ class YouTubeAPI:
                     return stream_url, None
                 return None, None
 
+            # [1.1] Try Turbo Subprocess (With Go Flags)
+            try:
+                cookies = _cookies_args()
+                # صيغة ذكية: 720، ولو فشل هات أي حاجة (Best)
+                fmt = "bestvideo[height<=720]+bestaudio/best[height<=720]/best"
+                
+                cmd = [
+                    "yt-dlp",
+                    *cookies,
+                    *self.go_speed_flags,  # Inject Speed
+                    "-f", fmt,
+                    "--no-warnings",
+                    "--quiet",
+                    "-o", "downloads/%(id)s.%(ext)s",
+                    "--geo-bypass",
+                    "--nocheckcertificate",
+                    link
+                ]
+                
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await proc.communicate()
+                
+                # [1.2] Smart Fallback: لو فشل بسبب الجودة، عيد المحاولة بـ Best فقط
+                if stderr and b"Requested format is not available" in stderr:
+                    cmd[cmd.index("-f") + 1] = "best" # Force BEST
+                    proc = await asyncio.create_subprocess_exec(
+                        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                    )
+                    stdout, stderr = await proc.communicate()
+
+                # Get Filename
+                cmd_name = ["yt-dlp", "--get-filename", "-o", "downloads/%(id)s.%(ext)s", link]
+                name_proc = await asyncio.create_subprocess_exec(
+                    *cmd_name, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                )
+                name_out, _ = await name_proc.communicate()
+                filename = name_out.decode().strip()
+                
+                if os.path.exists(filename) and os.path.getsize(filename) > 0:
+                    return filename, True
+            except Exception:
+                pass
+
+            # [1.3] Last Resort (Annie Original)
             if await is_on_off(1):
                 p = await yt_dlp_download(link, type="video", title=await self.title(link))
                 return (p, True) if p else (None, None)
-
-            stdout, _ = await _exec_proc(
-                "yt-dlp",
-                *(_cookies_args()),
-                "-g",
-                "-f",
-                "best[height<=?720][width<=?1280]",
-                link,
-            )
-            if stdout:
-                return stdout.decode().split("\n")[0], None
+            
             return None, None
 
+        # [2] Audio Section (With Turbo Speed)
+        try:
+             # Fast Audio via Subprocess
+             cookies = _cookies_args()
+             cmd = [
+                "yt-dlp",
+                *cookies,
+                *self.go_speed_flags,
+                "-f", "bestaudio[ext=m4a]/bestaudio/best",
+                "--no-warnings", "--quiet",
+                "-o", "downloads/%(id)s.%(ext)s",
+                "--geo-bypass", "--nocheckcertificate",
+                link
+             ]
+             proc = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+             )
+             await proc.communicate()
+             
+             cmd_name = ["yt-dlp", "--get-filename", "-o", "downloads/%(id)s.%(ext)s", link]
+             name_proc = await asyncio.create_subprocess_exec(
+                *cmd_name, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+             )
+             name_out, _ = await name_proc.communicate()
+             filename = name_out.decode().strip()
+             
+             if os.path.exists(filename) and os.path.getsize(filename) > 0:
+                 return filename, True
+        except:
+            pass
+
+        # [2.1] Fallback Audio
         p = await yt_dlp_download(link, type="audio", title=await self.title(link))
         return (p, True) if p else (None, None)
