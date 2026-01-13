@@ -1,29 +1,37 @@
 # Authored By Certified Coders © 2025
-# اسم الملف: run.py
-# المكان: في المجلد الرئيسي (خارج AnnieXMedia)
-
 import asyncio
 import os
 import sys
 
-# 1. تفعيل uvloop كأول خطوة في حياة البوت (قبل استيراد أي شيء آخر)
-try:
-    import uvloop
-    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-    print("✅ uvloop policy set successfully.")
-except ImportError:
-    print("⚠️ uvloop not installed, falling back to default asyncio loop.")
+def setup_uvloop():
+    """
+    وظيفـة هـذه الـدالـة هي تـفـعـيـل مـحـرك uvloop
+    الـذي يـجـعـل الـبـوت أسـرع بـمـراحـل في الـمـعـالـجـة.
+    """
+    try:
+        import uvloop
+        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+        print("✅ تـم تـفـعـيـل مـحـرك uvloop بـنـجـاح (أداء عـالـي).")
+    except ImportError:
+        print("⚠️ مـكـتـبـة uvloop غـيـر مـثـبـتـة، سـيـتـم الـعـمـل بـالـنـظـام الافـتـراضـي.")
 
-# 2. استدعاء دالة التشغيل من داخل السورس
-# (نستدعيها بعد تفعيل الـ Policy لضمان أن البوت يعمل على Loop واحد)
+# 1. تـفـعـيـل الـمـحـرك قـبـل اسـتـدعـاء أي كـود آخـر
+setup_uvloop()
+
+# 2. اسـتـدعـاء دالـة الـتـشـغـيـل الـرئـيـسـيـة مـن داخـل الـسـورس
+# يـتـم هـذا بـعـد ضـبـط الـ Loop لـضـمـان عـدم حـدوث تـعـارض
 from AnnieXMedia.__main__ import init
 
 if __name__ == "__main__":
-    print("🚀 Starting Bot via run.py...")
+    print("🚀 جـاري بـدء تـشـغـيـل الـبـوت عـبـر مـلـف run.py ...")
+    
     try:
-        # تشغيل البوت باستخدام asyncio.run
+        # 3. الـتـشـغـيـل الآمـن بـاسـتـخـدام asyncio.run
+        # هـذه الـطـريـقـة تـنـشـئ Loop واحـد مـوحـد لـكـل عـمـلـيـات الـبـوت
         asyncio.run(init())
+        
     except KeyboardInterrupt:
-        print("❌ Bot stopped by user.")
+        print("❌ تـم إيـقـاف الـبـوت يـدويـاً (Ctrl+C).")
+        
     except Exception as e:
-        print(f"❌ Fatal Error: {e}")
+        print(f"❌ حـدث خـطـأ قـاتـل أدى لـتـوقـف الـبـوت: {e}")
