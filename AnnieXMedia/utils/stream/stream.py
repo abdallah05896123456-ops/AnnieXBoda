@@ -23,12 +23,59 @@ from AnnieXMedia.utils.stream.queue import put_queue, put_queue_index
 from AnnieXMedia.utils.thumbnails import get_thumb
 from AnnieXMedia.utils.errors import capture_internal_err
 
-# --- دالة الحذف السريع والآمن (مأخوذة من BrandrdX) ---
+# --- دالة الحذف الآمن ---
 async def safe_delete(message):
     try:
         await message.delete()
     except:
         pass
+
+# --- الدالة الذكية للتشغيل (Smart Play Wrapper) ---
+# هذه الدالة تحاول التشغيل المباشر، وإذا فشلت، تقوم بالتحميل تلقائياً
+async def smart_play(chat_id, original_chat_id, file_path, video_status, thumbnail, link, vidid, mystic):
+    try:
+        # المحاولة 1: تشغيل الرابط المباشر (الأسرع)
+        await StreamController.join_call(
+            chat_id,
+            original_chat_id,
+            file_path,
+            video=video_status,
+            image=thumbnail,
+        )
+        return file_path, False  # False تعني أنه لم يتم التحميل محلياً (رابط مباشر)
+    except Exception as e:
+        # إذا فشل التشغيل المباشر، ننتقل للخطة البديلة
+        if "NoVideoSourceFound" in str(e) or "Format" in str(e):
+            try:
+                # المحاولة 2: تحميل الملف محلياً (الأضمن)
+                if mystic:
+                    try:
+                        await mystic.edit_text("⚠️ فشل الرابط المباشر.. جاري التحميل السريع 📥...")
+                    except:
+                        pass
+                
+                # إجبار التحميل
+                new_file_path, _ = await YouTube.download(
+                    vidid if vidid else link, 
+                    mystic, 
+                    videoid=False, # نجبره يحمل كملف
+                    video=video_status
+                )
+                
+                if new_file_path:
+                    await StreamController.join_call(
+                        chat_id,
+                        original_chat_id,
+                        new_file_path,
+                        video=video_status,
+                        image=thumbnail,
+                    )
+                    return new_file_path, True # True تعني أنه تم التحميل محلياً
+            except Exception as final_err:
+                raise AssistantErr(f"فشل التشغيل بكل الطرق: {final_err}")
+        else:
+            raise e
+    return file_path, False
 
 @capture_internal_err
 async def stream(
@@ -47,7 +94,6 @@ async def stream(
     if not result:
         return
 
-    # استخدام منطق أليكسا السريع في تحديد حالة الفيديو
     status = True if video else None
     forceplay = bool(forceplay)
 
@@ -66,7 +112,6 @@ async def stream(
             if int(count) == config.PLAYLIST_FETCH_LIMIT:
                 continue
             try:
-                # منطق أليكسا في جلب التفاصيل (أسرع)
                 title, duration_min, duration_sec, thumbnail, vidid = await YouTube.details(
                     search, False if spotify else True
                 )
@@ -97,27 +142,27 @@ async def stream(
             else:
                 if not forceplay:
                     db[chat_id] = []
+                
+                # نحاول نجيب رابط مباشر الأول
                 try:
                     file_path, direct = await YouTube.download(
                         vidid, mystic, video=status, videoid=True
                     )
-                except Exception:
-                    continue # تخطي الخطأ للاستمرار في القائمة
-
-                if not file_path:
+                except:
                     continue
 
-                await StreamController.join_call(
-                    chat_id,
-                    original_chat_id,
-                    file_path,
-                    video=status,
-                    image=thumbnail,
-                )
+                # استخدام التشغيل الذكي
+                try:
+                    final_path, is_downloaded = await smart_play(
+                        chat_id, original_chat_id, file_path, status, thumbnail, None, vidid, mystic
+                    )
+                except:
+                    continue
+
                 await put_queue(
                     chat_id,
                     original_chat_id,
-                    file_path if direct else f"vid_{vidid}",
+                    final_path if is_downloaded else f"vid_{vidid}",
                     title,
                     duration_min,
                     user_name,
@@ -127,7 +172,6 @@ async def stream(
                     forceplay=forceplay,
                 )
                 
-                # توليد الصورة (مع حماية)
                 try:
                     img = await get_thumb(vidid)
                 except:
@@ -136,7 +180,6 @@ async def stream(
                 button = stream_markup(_, chat_id)
                 await safe_delete(mystic)
 
-                # إرسال الرسالة مع حماية FloodWait وجماليات أليكسا
                 caption_text = "🧚 " + _["stream_1"].format(
                     f"https://t.me/{app.username}?start=info_{vidid}",
                     title[:23],
@@ -178,7 +221,6 @@ async def stream(
         upl = close_markup(_)
         final_position = len(db.get(chat_id) or []) - 1
         
-        # رد القائمة بستايل أليكسا
         return await app.send_photo(
             original_chat_id,
             photo=playlist_photo,
@@ -187,10 +229,9 @@ async def stream(
         )
 
     # =====================================
-    # 2. YOUTUBE MODE (الأسرع والأذكى)
+    # 2. YOUTUBE MODE (SMART HANDLING)
     # =====================================
     elif streamtype == "youtube":
-        # استخدام .get() للحماية من الأخطاء (BrandrdX)
         link = result.get("link")
         vidid = result.get("vidid")
         title = (result.get("title", "Unknown Track")).title()
@@ -198,21 +239,20 @@ async def stream(
         thumbnail = result.get("thumb")
 
         try:
-            # تحميل سريع باستخدام منطق أليكسا (videoid=True)
+            # نجرب نجيب رابط مباشر (videoid=True) للسرعة
             file_path, direct = await YouTube.download(
                 vidid, mystic, videoid=True, video=status
             )
         except Exception:
-            raise AssistantErr(_["play_14"])
-            
-        if not file_path:
-            raise AssistantErr(_["play_14"])
+             # لو فشل الاستخراج، نعتبره فشل ونجرب نحمل
+            file_path = vidid # مجرد تمرير
+            direct = False
 
         if await is_active_chat(chat_id):
             await put_queue(
                 chat_id,
                 original_chat_id,
-                file_path if direct else f"vid_{vidid}",
+                f"vid_{vidid}",
                 title,
                 duration_min,
                 user_name,
@@ -240,18 +280,22 @@ async def stream(
             if not forceplay:
                 db[chat_id] = []
             
-            # الانضمام السريع
-            await StreamController.join_call(
-                chat_id,
-                original_chat_id,
-                file_path,
-                video=status,
-                image=thumbnail,
-            )
+            # 🔥 هنا السحر: التشغيل الذكي (مباشر أو تحميل)
+            try:
+                final_path, is_downloaded = await smart_play(
+                    chat_id, original_chat_id, file_path, status, thumbnail, link, vidid, mystic
+                )
+            except AssistantErr as e:
+                await safe_delete(mystic)
+                return await app.send_message(original_chat_id, f"⚠️ {e}")
+            except Exception as e:
+                 await safe_delete(mystic)
+                 return await app.send_message(original_chat_id, f"⚠️ حدث خطأ غير متوقع: {e}")
+
             await put_queue(
                 chat_id,
                 original_chat_id,
-                file_path if direct else f"vid_{vidid}",
+                final_path if is_downloaded else f"vid_{vidid}",
                 title,
                 duration_min,
                 user_name,
@@ -446,19 +490,21 @@ async def stream(
         else:
             if not forceplay:
                 db[chat_id] = []
-            n, file_path = await YouTube.video(link)
-            if n == 0:
-                raise AssistantErr(_["str_3"])
-            if not file_path:
-                raise AssistantErr(_["play_14"])
+            
+            # في اللايف نحاول نشغل الرابط مباشرة
+            try:
+                await StreamController.join_call(
+                    chat_id,
+                    original_chat_id,
+                    link,
+                    video=status,
+                    image=thumbnail or None,
+                )
+            except Exception as e:
+                # لو فشل اللايف، مفيش حل غير إنه الرابط مش شغال، لأن اللايف مينفعش يتحمل
+                await safe_delete(mystic)
+                return await app.send_message(original_chat_id, f"⚠️ فشل تشغيل البث المباشر. قد يكون الرابط منتهي الصلاحية.")
 
-            await StreamController.join_call(
-                chat_id,
-                original_chat_id,
-                file_path,
-                video=status,
-                image=thumbnail or None,
-            )
             await put_queue(
                 chat_id,
                 original_chat_id,
