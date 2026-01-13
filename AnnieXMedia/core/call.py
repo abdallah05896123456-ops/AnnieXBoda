@@ -93,7 +93,6 @@ def dynamic_media_stream(path: str, video: Union[bool, str] = False, ffmpeg_para
             ffmpeg_parameters=ffmpeg_params,
         )
 
-
 async def _clear_(chat_id: int) -> None:
     popped = db.pop(chat_id, None)
     if popped:
@@ -115,9 +114,11 @@ async def ensure_local_media(path_or_url: Optional[str], kind: str, title: str =
             return None
         # if already a local file path, return it
         if isinstance(path_or_url, str) and os.path.exists(path_or_url):
+            LOGGER(__name__).info(f"ensure_local_media: local path provided -> {path_or_url} ({kind})")
             return path_or_url
         # only handle http/https
         if not (isinstance(path_or_url, str) and path_or_url.startswith("http")):
+            LOGGER(__name__).debug(f"ensure_local_media: non-http input -> returning original ({kind})")
             return path_or_url
 
         # attempt downloading/converting to local file
@@ -126,17 +127,16 @@ async def ensure_local_media(path_or_url: Optional[str], kind: str, title: str =
             try:
                 local = await yt_dlp_download(path_or_url, kind, title=title or "")
                 if local and os.path.exists(local):
-                    LOGGER(__name__).info(f"ensure_local_media: success -> {local}")
+                    LOGGER(__name__).info(f"ensure_local_media: success ({kind}) -> {local}")
                     return local
             except Exception as e:
-                LOGGER(__name__).warning(f"ensure_local_media: yt_dlp_download failed attempt {i+1}: {e}")
+                LOGGER(__name__).warning(f"ensure_local_media: yt_dlp_download failed attempt {i+1} ({kind}): {e}")
             await asyncio.sleep(0.5)
-        LOGGER(__name__).warning(f"ensure_local_media: failed to produce local file for {path_or_url}")
+        LOGGER(__name__).warning(f"ensure_local_media: failed to produce local file for {path_or_url} ({kind})")
         return path_or_url
     except Exception as e:
         LOGGER(__name__).exception(f"ensure_local_media fatal: {e}")
         return path_or_url
-
 
 class Call:
     def __init__(self):
@@ -399,6 +399,7 @@ class Call:
             if users == 1:
                 autoend[chat_id] = datetime.now() + timedelta(minutes=1)
 
+
     @capture_internal_err
     async def play(self, client, chat_id: int) -> None:
         check = db.get(chat_id)
@@ -574,7 +575,7 @@ class Call:
                     button = stream_markup(_, chat_id)
                     run = await app.send_photo(
                         chat_id=original_chat_id,
-                        photo=config.SOUNCLOUD_IMG_URL,
+                        photo=config.SOUNDCLOUD_IMG_URL,
                         caption=_["stream_1"].format(
                             config.SUPPORT_CHAT, title[:23], check[0]["dur"], user
                         ),
