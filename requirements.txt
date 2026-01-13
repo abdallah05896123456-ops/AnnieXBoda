@@ -40,5 +40,5 @@ pytgcrypto
 unidecode
 uvloop==0.21.0
 wget
-https://github.com/yt-dlp/yt-dlp/archive/master.zip
+https://github.com/yt-dlp/yt-dlp
 https://github.com/KSKOP69/youtube-search-python/archive/ksk.zip
