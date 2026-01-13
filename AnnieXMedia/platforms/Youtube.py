@@ -5,6 +5,7 @@ import json
 import os
 import re
 import time
+import requests
 from typing import Dict, List, Optional, Tuple, Union
 
 import yt_dlp
@@ -32,15 +33,36 @@ YOUTUBE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 
 
 # === Helpers ===
-def _cookiefile_path() -> Optional[str]:
+def _ensure_cookies() -> Optional[str]:
+    """
+    Ensures cookies exist. If file is missing/empty, tries to fetch from ENV URL.
+    """
     path = str(COOKIE_PATH)
-    try:
-        if path and os.path.exists(path) and os.path.getsize(path) > 0:
-            return path
-    except Exception:
-        pass
+    
+    # 1. Check existing file
+    if path and os.path.exists(path) and os.path.getsize(path) > 0:
+        return path
+    
+    # 2. Check ENV variables
+    cookie_url = os.getenv("COOKIE_URL") or os.getenv("COOKIES_URL") or os.getenv("UPSTREAM_COOKIES")
+    
+    if cookie_url:
+        try:
+            # Must be a direct RAW link
+            response = requests.get(cookie_url, timeout=10)
+            if response.status_code == 200:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(response.text)
+                return path
+        except Exception as e:
+            print(f"Failed to fetch cookies from URL: {e}")
+            pass
+            
     return None
 
+def _cookiefile_path() -> Optional[str]:
+    # Redirects to the smart checker
+    return _ensure_cookies()
 
 def _cookies_args() -> List[str]:
     path = _cookiefile_path()
@@ -299,7 +321,7 @@ class YouTubeAPI:
 
     @capture_internal_err
     async def formats(
-        self, link: str, videoid: Union[str, bool, None] = None
+        self, link: str, videoid: Union[bool, str, None] = None
     ) -> Tuple[List[Dict], str]:
         link = self._prepare_link(link, videoid)
         key = f"f:{link}"
@@ -310,6 +332,7 @@ class YouTubeAPI:
             if cached and now - cached[0] < YOUTUBE_META_TTL:
                 return cached[1], cached[2]
 
+        # Use the cookie ensured helper
         opts = {"quiet": True}
         if cf := _cookiefile_path():
             opts["cookiefile"] = cf
@@ -366,6 +389,7 @@ class YouTubeAPI:
             r.get("id", ""),
         )
 
+    # === 🚀 Nuclear Download with Auto-Cookie ===
     @capture_internal_err
     async def download(
         self,
@@ -373,32 +397,62 @@ class YouTubeAPI:
         mystic,
         *,
         video: Union[bool, str, None] = None,
-        videoid: Union[str, bool, None] = None,
+        videoid: Union[bool, str, None] = None,
     ) -> Union[Tuple[str, Optional[bool]], Tuple[None, None]]:
         link = self._prepare_link(link, videoid)
+        loop = asyncio.get_running_loop()
 
-        if video:
-            if await self.is_live(link):
-                status, stream_url = await self.video(link)
-                if status == 1:
-                    return stream_url, None
-                return None, None
+        # The Nuclear Internal Logic
+        def _nuclear_runner():
+            # Check Cookies (Fetch if missing)
+            cookie = _cookiefile_path()
+            opts = {
+                'outtmpl': 'downloads/%(id)s.%(ext)s',
+                'geo_bypass': True,
+                'nocheckcertificate': True,
+                'quiet': True,
+                'no_warnings': True,
+                'cookiefile': cookie if cookie else None,
+                # Smart Quality
+                'format': (
+                    'bestvideo[height<=720]+bestaudio/best[height<=720]' 
+                    if video else 
+                    'bestaudio[ext=m4a]/bestaudio/best'
+                ),
+            }
+            
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(link, download=False)
+                filename = ydl.prepare_filename(info)
+                if os.path.exists(filename):
+                    return filename
+                ydl.download([link])
+                return filename
 
-            if await is_on_off(1):
-                p = await yt_dlp_download(link, type="video", title=await self.title(link))
-                return (p, True) if p else (None, None)
-
-            stdout, _ = await _exec_proc(
-                "yt-dlp",
-                *(_cookies_args()),
-                "-g",
-                "-f",
-                "best[height<=?720][width<=?1280]",
-                link,
-            )
-            if stdout:
-                return stdout.decode().split("\n")[0], None
+        try:
+            downloaded_file = await loop.run_in_executor(None, _nuclear_runner)
+            if downloaded_file:
+                return downloaded_file, True
             return None, None
-
-        p = await yt_dlp_download(link, type="audio", title=await self.title(link))
-        return (p, True) if p else (None, None)
+        except Exception as e:
+            # Fallback to Old method if nuclear fails for some odd reason
+            # (Keeping your old fallback logic just in case)
+            if video:
+                 if await is_on_off(1):
+                    p = await yt_dlp_download(link, type="video", title=await self.title(link))
+                    return (p, True) if p else (None, None)
+                 
+                 stdout, _ = await _exec_proc(
+                    "yt-dlp",
+                    *(_cookies_args()),
+                    "-g",
+                    "-f",
+                    "best[height<=?720][width<=?1280]",
+                    link,
+                )
+                 if stdout:
+                     return stdout.decode().split("\n")[0], None
+                 return None, None
+            else:
+                 p = await yt_dlp_download(link, type="audio", title=await self.title(link))
+                 return (p, True) if p else (None, None)
