@@ -93,6 +93,7 @@ def dynamic_media_stream(path: str, video: Union[bool, str] = False, ffmpeg_para
             ffmpeg_parameters=ffmpeg_params,
         )
 
+
 async def _clear_(chat_id: int) -> None:
     popped = db.pop(chat_id, None)
     if popped:
@@ -135,6 +136,7 @@ async def ensure_local_media(path_or_url: Optional[str], kind: str, title: str =
     except Exception as e:
         LOGGER(__name__).exception(f"ensure_local_media fatal: {e}")
         return path_or_url
+
 
 class Call:
     def __init__(self):
@@ -303,7 +305,6 @@ class Call:
         else:
             raise AssistantErr("Stream mismatch during speedup.")
 
-
     @capture_internal_err
     async def stream_call(self, link: str) -> None:
         assistant = await group_assistant(self, config.LOGGER_ID)
@@ -397,7 +398,6 @@ class Call:
             users = len(await assistant.get_participants(chat_id))
             if users == 1:
                 autoend[chat_id] = datetime.now() + timedelta(minutes=1)
-
 
     @capture_internal_err
     async def play(self, client, chat_id: int) -> None:
