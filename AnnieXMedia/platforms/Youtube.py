@@ -1,4 +1,5 @@
 # Authored By Certified Coders © 2025
+# The "Nuclear Annie" Edition: Auto-Fix Links + Smart Validation
 import asyncio
 import contextlib
 import json
@@ -32,36 +33,56 @@ _formats_lock = asyncio.Lock()
 YOUTUBE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 
 
-# === Helpers ===
+# === Helpers & Smart Cookie Logic ===
 def _ensure_cookies() -> Optional[str]:
     """
-    Ensures cookies exist. If file is missing/empty, tries to fetch from ENV URL.
+    دالة ذكية جداً:
+    1. تصلح الرابط لو كان رابط صفحة وليس Raw.
+    2. تحمل الكوكيز وتتأكد إنها مش HTML.
     """
     path = str(COOKIE_PATH)
     
-    # 1. Check existing file
-    if path and os.path.exists(path) and os.path.getsize(path) > 0:
-        return path
-    
-    # 2. Check ENV variables
+    # جلب الرابط من السيكرتس
     cookie_url = os.getenv("COOKIE_URL") or os.getenv("COOKIES_URL") or os.getenv("UPSTREAM_COOKIES")
     
     if cookie_url:
+        # 🔥 التصحيح التلقائي للروابط (Batbin & Pastebin) 🔥
+        if "batbin.me" in cookie_url and "/raw/" not in cookie_url:
+            cookie_url = cookie_url.replace("batbin.me/", "batbin.me/raw/")
+        elif "pastebin.com" in cookie_url and "/raw/" not in cookie_url:
+            cookie_url = cookie_url.replace("pastebin.com/", "pastebin.com/raw/")
+            
         try:
-            # Must be a direct RAW link
-            response = requests.get(cookie_url, timeout=10)
+            # حذف الملف القديم لضمان التحديث
+            if os.path.exists(path):
+                os.remove(path)
+                
+            # تحميل المحتوى
+            response = requests.get(cookie_url, timeout=15)
             if response.status_code == 200:
+                content = response.text
+                
+                # فحص أخير: هل المحتوى HTML؟
+                if "<!DOCTYPE html>" in content or "<html" in content.lower():
+                    print(f"❌ Critical Error: Even after auto-fix, URL returned HTML: {cookie_url}")
+                    return None
+                
+                # حفظ الملف السليم
                 with open(path, "w", encoding="utf-8") as f:
-                    f.write(response.text)
+                    f.write(content)
+                print(f"✅ Cookies Auto-Fixed & Loaded from: {cookie_url}")
                 return path
         except Exception as e:
-            print(f"Failed to fetch cookies from URL: {e}")
+            print(f"⚠️ Cookie Fetch Error: {e}")
             pass
             
+    # استخدام الملف المحلي كخطة بديلة
+    if path and os.path.exists(path) and os.path.getsize(path) > 0:
+        return path
+        
     return None
 
 def _cookiefile_path() -> Optional[str]:
-    # Redirects to the smart checker
     return _ensure_cookies()
 
 def _cookies_args() -> List[str]:
@@ -228,34 +249,15 @@ class YouTubeAPI:
         try:
             info = await self._fetch_video_info(prepared_link)
             if not info:
-                raise ValueError(
-                    f"No results from youtubesearchpython (VideosSearch) "
-                    f"for query/URL: '{prepared_link}'"
-                )
-        except Exception as search_err:
+                raise ValueError("No results")
+        except Exception:
+            # Fallback
             stdout, stderr = await _exec_proc(
                 "yt-dlp", *(_cookies_args()), "--dump-json", "--no-warnings", prepared_link
             )
-
-            def _both_failed(details: str) -> ValueError:
-                return ValueError(
-                    f"Both methods failed for '{prepared_link}':\n"
-                    f"  1. youtubesearchpython error: {search_err}\n"
-                    f"{details}"
-                )
-
             if not stdout:
-                stderr_msg = stderr.decode().strip() if stderr else "Empty response"
-                raise _both_failed(f"  2. yt-dlp error: {stderr_msg}")
-
-            try:
-                info = json.loads(stdout.decode())
-            except json.JSONDecodeError as json_err:
-                raw = stdout.decode()[:400]
-                raise _both_failed(
-                    f"  2. yt-dlp JSON error: {json_err}\n"
-                    f"     Raw: {raw}..."
-                ) from json_err
+                raise ValueError("Track not found")
+            info = json.loads(stdout.decode())
 
         thumb = (
             info.get("thumbnail")
@@ -332,9 +334,9 @@ class YouTubeAPI:
             if cached and now - cached[0] < YOUTUBE_META_TTL:
                 return cached[1], cached[2]
 
-        # Use the cookie ensured helper
+        # Use ensured cookies
         opts = {"quiet": True}
-        if cf := _cookiefile_path():
+        if cf := _ensure_cookies():
             opts["cookiefile"] = cf
 
         out: List[Dict] = []
@@ -389,7 +391,7 @@ class YouTubeAPI:
             r.get("id", ""),
         )
 
-    # === 🚀 Nuclear Download with Auto-Cookie ===
+    # === 🚀 Nuclear Download Engine (Final) ===
     @capture_internal_err
     async def download(
         self,
@@ -402,10 +404,9 @@ class YouTubeAPI:
         link = self._prepare_link(link, videoid)
         loop = asyncio.get_running_loop()
 
-        # The Nuclear Internal Logic
         def _nuclear_runner():
-            # Check Cookies (Fetch if missing)
-            cookie = _cookiefile_path()
+            # Check Cookies (with Auto-fix)
+            cookie = _ensure_cookies()
             opts = {
                 'outtmpl': 'downloads/%(id)s.%(ext)s',
                 'geo_bypass': True,
@@ -435,8 +436,7 @@ class YouTubeAPI:
                 return downloaded_file, True
             return None, None
         except Exception as e:
-            # Fallback to Old method if nuclear fails for some odd reason
-            # (Keeping your old fallback logic just in case)
+            # Final Fallback
             if video:
                  if await is_on_off(1):
                     p = await yt_dlp_download(link, type="video", title=await self.title(link))
