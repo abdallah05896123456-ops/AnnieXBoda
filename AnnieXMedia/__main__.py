@@ -2,7 +2,7 @@
 import sys
 import os
 
-# السطر ده بيجبر البوت يستخدم مجلد pytgcalls المحلي بدل اللي نازل من النت
+# هـذا السطـر يـجـبـر الـبـوت عـلـى استخـدام مـكـتـبـة pytgcalls المـحـلـيـة
 sys.path.insert(0, os.getcwd())
 
 import asyncio
@@ -22,6 +22,7 @@ from config import BANNED_USERS
 
 
 async def init():
+    # الـتـحـقـق مـن وجـود كـود جـلـسـة (Session) واحـد عـلـى الأقـل
     if (
         not config.STRING1
         and not config.STRING2
@@ -29,19 +30,20 @@ async def init():
         and not config.STRING4
         and not config.STRING5
     ):
-        LOGGER(__name__).error("ᴀssɪsᴛᴀɴᴛ sᴇssɪᴏɴ ɴᴏᴛ ғɪʟʟᴇᴅ, ᴘʟᴇᴀsᴇ ғɪʟʟ ᴀ ᴘʏʀᴏɢʀᴀᴍ sᴇssɪᴏɴ...")
+        LOGGER(__name__).error("لـم يـتـم إدخـال كـود جـلـسـة الـمـسـاعـد (Session)، يـرجـى الـتـحـقـق...")
         exit()
 
-    # ✅ Try to fetch cookies at startup
+    # ✅ مـحـاولـة جـلـب مـلـفـات الـكـوكـيـز لـلـيـوتـيـوب
     try:
         await fetch_and_store_cookies()
-        LOGGER("AnnieXMedia").info("ʏᴏᴜᴛᴜʙᴇ ᴄᴏᴏᴋɪᴇs ʟᴏᴀᴅᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ ✅")
+        LOGGER("AnnieXMedia").info("تـم تـحـمـيـل مـلـفـات كـوكـيـز يـوتـيـوب بـنـجـاح ✅")
     except Exception as e:
-        LOGGER("AnnieXMedia").warning(f"⚠️ᴄᴏᴏᴋɪᴇ ᴇʀʀᴏʀ: {e}")
+        LOGGER("AnnieXMedia").warning(f"⚠️ خـطـأ فـي الـكـوكـيـز: {e}")
 
 
     await sudo()
 
+    # تـحـمـيـل قـوائـم الـحـظـر
     try:
         users = await get_gbanned()
         for user_id in users:
@@ -52,33 +54,44 @@ async def init():
     except:
         pass
 
+    # بـدء تـشـغـيـل الـبـوت الأسـاسـي
     await app.start()
+    
+    # تـحـمـيـل الـمـلـفـات (Plugins)
     for all_module in ALL_MODULES:
         importlib.import_module("AnnieXMedia.plugins" + all_module)
 
-    LOGGER("AnnieXMedia.plugins").info("ᴀɴɴɪᴇ's ᴍᴏᴅᴜʟᴇs ʟᴏᴀᴅᴇᴅ...")
+    LOGGER("AnnieXMedia.plugins").info("تـم تـحـمـيـل مـلـفـات الـبـوت بـنـجـاح...")
 
+    # بـدء تـشـغـيـل الـحـسـاب الـمـسـاعـد ومـتـحـكـم الـمـكـالـمـات
     await userbot.start()
     await StreamController.start()
 
+    # مـحـاولـة دخـول الـكـول وتـشـغـيـل فـيـديـو الاخـتـبـار
     try:
-        await StreamController.stream_call("http://docs.evostream.com/sample_content/assets/sintel1m720p.mp4")
+        # ✅ تـم ضـبـط الـمـسـار لـيـعـمـل عـلـى مـلـفـك الـجـديـد
+        await StreamController.stream_call("AnnieXMedia/assets/test.mp4")
     except NoActiveGroupCall:
         LOGGER("AnnieXMedia").error(
-            "ᴘʟᴇᴀsᴇ ᴛᴜʀɴ ᴏɴ ᴛʜᴇ ᴠᴏɪᴄᴇ ᴄʜᴀᴛ ᴏғ ʏᴏᴜʀ ʟᴏɢ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ.\n\nᴀɴɴɪᴇ ʙᴏᴛ sᴛᴏᴘᴘᴇᴅ..."
+            "يـرجـى فـتـح الـمـحـادثـة الـصـوتـيـة فـي مـجـمـوعـة الـسـجـل (Log Group) \n\n تـم إيـقـاف الـبـوت..."
         )
         exit()
     except:
         pass
 
     await StreamController.decorators()
+    
+    # رسـالـة الـنـجـاح الـنـهـائـيـة
     LOGGER("AnnieXMedia").info(
-        "\x41\x6e\x6e\x69\x65\x20\x4d\x75\x73\x69\x63\x20\x52\x6f\x62\x6f\x74\x20\x53\x74\x61\x72\x74\x65\x64\x20\x53\x75\x63\x63\x65\x73\x73\x66\x75\x6c\x6c\x79\x2e\x2e\x2e"
+        "تـم تـشـغـيـل بـوت الـمـيـوزك بـنـجـاح... جـاهـز لـلاسـتـخـدام ⚡️"
     )
+    
     await idle()
+    
+    # عـنـد الإيـقـاف
     await app.stop()
     await userbot.stop()
-    LOGGER("AnnieXMedia").info("sᴛᴏᴘᴘɪɴɢ ᴀɴɴɪᴇ ᴍᴜsɪᴄ ʙᴏᴛ ...")
+    LOGGER("AnnieXMedia").info("جـاري إيـقـاف الـبـوت...")
 
 
 if __name__ == "__main__":
