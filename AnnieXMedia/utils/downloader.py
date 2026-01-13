@@ -1,9 +1,11 @@
 # Authored By Certified Coders © 2025
 """
 ذكي، سريع، وعملي: downloader مدعوم بـ yt-dlp + aiohttp + ffmpeg fallback.
-صُمّم ليعمل داخل مشروع AnnieXMedia مع نفس المتغيرات (DOWNLOAD_DIR, CACHE_DIR, SEM, CHUNK_SIZE).
-التغييرات: aggressive throughput settings (concurrent fragments, large chunk),
-use CHUNK_SIZE from tuning, -threads 0 for ffmpeg conversion, safer yt-dlp opts.
+معدل لإعطاء أعلى throughput عملي على Fly.io:
+ - دعم aria2c كـ external_downloader إن وُجد
+ - زيادة concurrent_fragment_downloads و http_chunk_size اعتمادًا على tuning.CHUNK_SIZE
+ - إجبار اختيار صيغ MP4/H264 للسرعة والثبات (تجنب VP9 وm3u8 حينما يمكن)
+ - تحويل m3u8 عبر ffmpeg مع -threads 0 و flags منخفضة الكمون
 """
 
 import asyncio
@@ -12,6 +14,7 @@ import glob
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import time
 from typing import Dict, Optional
@@ -84,7 +87,13 @@ def find_cached_file(video_id: str) -> Optional[str]:
 # ---------------- yt-dlp options & utils ----------------
 
 def get_ytdlp_base_opts(verbose: bool = False) -> Dict[str, object]:
-    # خيارات مُحسّنة للسرعة والاستقرار (aggressive-friendly)
+    """
+    Aggressive-friendly base options.
+    If aria2c is available as external_downloader, enable it with strong args.
+    """
+    # ensure a sensible minimum for chunk size
+    min_chunk = max(CHUNK_SIZE, 4 * 1024 * 1024)
+
     opts = {
         "outtmpl": os.path.join(DOWNLOAD_DIR, "%(id)s.%(ext)s"),
         "quiet": not verbose,
@@ -95,41 +104,62 @@ def get_ytdlp_base_opts(verbose: bool = False) -> Dict[str, object]:
         "noprogress": True,
         "retries": 5,
         "fragment_retries": 5,
-        # عالي لكن معقـــول على Fly.io
+        # high but controlled concurrency for fragments
         "concurrent_fragment_downloads": 16,
-        # use tuning CHUNK_SIZE (should be large: 1-4MB)
-        "http_chunk_size": CHUNK_SIZE,
+        "http_chunk_size": min_chunk,
         "socket_timeout": 10,
         "cachedir": str(CACHE_DIR),
         "ignoreerrors": True,
         "merge_output_format": "mp4",
-        # Network & speed helpers
+        # network helpers
         "nocheckcertificate": True,
         "geo_bypass": True,
-        # prevent yt-dlp doing heavy postprocessing
-        "postprocessors": [], 
+        # prevent heavy postprocessing in yt-dlp
+        "postprocessors": [],
         "recodevideo": None,
         "nopostoverwrites": True,
+        # prefer ffmpeg for merges if needed
+        "prefer_ffmpeg": True,
     }
+
+    # enable aria2c if present (much faster for big files)
+    aria2_path = shutil.which("aria2c")
+    if aria2_path:
+        # tune external_downloader args for throughput
+        # piece length: try to give aria2 a chunk size in K/M (yt-dlp will pass this through)
+        piece_len_k = max(1024, min_chunk // 1024)
+        opts["external_downloader"] = "aria2c"
+        opts["external_downloader_args"] = [
+            "-x", "16",  # connections per server
+            "-s", "16",  # split
+            "-k", f"{piece_len_k}K",
+            "--file-allocation=none",
+            "--allow-overwrite=true",
+            "--max-connection-per-server=16",
+            "--min-split-size=1M",
+        ]
+        # reduce internal fragment concurrency when using aria2
+        opts["concurrent_fragment_downloads"] = 8
+
+    # add cookie file if exists
     if cookie := get_cookie_file():
         opts["cookiefile"] = cookie
+
     return opts
 
 
 def _info_to_final_path(info: Dict) -> Optional[str]:
-    """ابحث عن ملف محلي مطابق للمعلومة info التي أعادها yt-dlp"""
+    """Find local final file path reported/created by yt-dlp"""
     if not isinstance(info, dict):
         return None
     vid = info.get("id")
     if not vid:
         return None
-    # أفضل محاولة: امتداد مذكور داخل info
     ext = info.get("ext")
     if ext:
         p = os.path.join(DOWNLOAD_DIR, f"{vid}.{ext}")
         if os.path.exists(p):
             return p
-    # ابحث بأي امتداد متاح
     matches = sorted(
         glob.glob(os.path.join(DOWNLOAD_DIR, f"{vid}.*")),
         key=os.path.getmtime,
@@ -154,12 +184,11 @@ def _safe_filename(prefix: str = "tmp") -> str:
 
 def _run_ffmpeg_convert(input_src: str, out_path: str) -> bool:
     """
-    استدعي ffmpeg لتحويل مقطع (مثلاً m3u8 أو URL) إلى ملف محلي.
-    نجرب copy codecs إن أمكن ثم fallback لإعادة التكويد.
-    استخدام -threads 0 للاستفادة من كل النوى المتاحة.
+    Convert an HLS manifest or remote URL to a local file.
+    Try copy first, then fast re-encode. Use -threads 0 to utilize CPUs.
     """
     try:
-        # اعمل نسخة سريعة أولًا (ممكن تنجح على HLS إذا كان المقطع متغلف بشكل صحيح)
+        # attempt a fast copy first
         cmd_copy = (
             f'ffmpeg -y -hide_banner -loglevel error '
             f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
@@ -169,11 +198,10 @@ def _run_ffmpeg_convert(input_src: str, out_path: str) -> bool:
         if res.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
             return True
 
-        # لو فشل: اعادة ترميز سريعة مع إعدادات صوت ستيريو ومعدل عينة مناسب
+        # fallback: re-encode quickly with sane stereo audio
         _, ext = os.path.splitext(out_path)
         ext = ext.lower().lstrip(".")
         if ext in ("mp4", "mkv", "webm"):
-            # فيديو + صوت
             cmd_recode = (
                 f'ffmpeg -y -hide_banner -loglevel error '
                 f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
@@ -182,7 +210,6 @@ def _run_ffmpeg_convert(input_src: str, out_path: str) -> bool:
                 f'{shlex.quote(out_path)}'
             )
         else:
-            # على الأغلب ملف صوتي (m4a/mp3/opus)
             if ext in ("opus",):
                 cmd_recode = (
                     f'ffmpeg -y -hide_banner -loglevel error '
@@ -190,7 +217,6 @@ def _run_ffmpeg_convert(input_src: str, out_path: str) -> bool:
                     f'-threads 0 -i {shlex.quote(input_src)} -c:a libopus -b:a 160k -ac 2 -ar 48000 {shlex.quote(out_path)}'
                 )
             else:
-                # استخدام m4a (aac) كخيار آمن
                 cmd_recode = (
                     f'ffmpeg -y -hide_banner -loglevel error '
                     f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
@@ -209,7 +235,7 @@ def _run_ffmpeg_convert(input_src: str, out_path: str) -> bool:
 
 def _download_http_blocking(url: str, out_path: str, chunk_size: int = CHUNK_SIZE) -> bool:
     """
-    تحميل بسيط متزامن (يُشغل في executor) للمساعدة مع روابط مباشرة.
+    Blocking HTTP download helper (used in executor) for direct URLs.
     """
     import requests
     try:
@@ -232,18 +258,20 @@ def _download_http_blocking(url: str, out_path: str, chunk_size: int = CHUNK_SIZ
 
 def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool = False) -> Optional[str]:
     """
-    دالة متزامنة تستدعي yt-dlp وتحاول تنزيل ملف محلياً.
+    Synchronous worker for yt-dlp (runs in executor).
+    Prioritizes MP4/H264 outputs and avoids returning HLS manifests when possible.
     """
     try:
         base_opts = get_ytdlp_base_opts(verbose=verbose)
 
-        # صيغة محاولات مُحسّنة: نعطي الأفضلية لملفات mp4/H264 (أسرع للتعامل)
+        # preferred format: try mp4/h264 + m4a audio first (fast to decode & stable)
+        preferred = "bestvideo[ext=mp4][vcodec!=?vp9][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+
         candidates = []
         if fmt:
             candidates.append(fmt)
         candidates.extend([
-            # حاول mp4 h264 + m4a audio أولاً (التوازن: سرعة + جودة)
-            "bestvideo[ext=mp4][vcodec!=?vp9]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            preferred,
             "bestaudio[ext=m4a]/bestaudio/best",
             "bestaudio/best",
             "bestvideo[height<=1080]+bestaudio/best",
@@ -262,6 +290,7 @@ def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool
                     if final and os.path.exists(final):
                         return final
 
+                    # sometimes yt-dlp returns an URL (m3u8 or direct)
                     url = None
                     if isinstance(info, dict):
                         url = info.get("url") or (info.get("requested_downloads") or [{}])[0].get("url")
@@ -269,8 +298,8 @@ def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool
                             entry = info["entries"][0] if info["entries"] else {}
                             url = entry.get("url") if isinstance(entry, dict) else None
 
+                    # if url is an HLS manifest -> convert it locally (stable)
                     if url and _is_m3u8_url(url):
-                        # تحويل m3u8 إلى ملف محلي (mp4/m4a) سريع و-stereo
                         vid = info.get("id") or _safe_filename("video")
                         target_ext = "mp4" if not candidate.startswith("bestaudio") else "m4a"
                         out_path = os.path.join(DOWNLOAD_DIR, f"{vid}.{target_ext}")
@@ -278,6 +307,7 @@ def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool
                         if ok:
                             return out_path
 
+                    # if url is a direct HTTP media file -> download it (chunked)
                     if url and url.startswith("http"):
                         vid = info.get("id") or _safe_filename("direct")
                         ext = url.split("?")[0].split(".")[-1][:8] or "dat"
@@ -317,6 +347,7 @@ async def get_http_session() -> aiohttp.ClientSession:
         if _session and not _session.closed:
             return _session
         timeout = aiohttp.ClientTimeout(total=600, sock_connect=20, sock_read=60)
+        # connector limit=0 to allow many concurrent connections; Fly.io can handle multiple sockets
         connector = TCPConnector(limit=0, ttl_dns_cache=300, enable_cleanup_closed=True)
         _session = aiohttp.ClientSession(timeout=timeout, connector=connector)
         return _session
@@ -332,7 +363,7 @@ async def close_http_session() -> None:
 
 async def download_file(url: str, out_path: str) -> Optional[str]:
     """
-    تحميل عبر aiohttp (غير محظور).
+    Async download using aiohttp (used by API wrappers).
     """
     if not url:
         return None
@@ -369,7 +400,7 @@ async def api_download_audio(link: str) -> Optional[str]:
                 if r.status != 200:
                     return None
                 data = await r.json()
-                status = str(data.get("status","")).lower()
+                status = str(data.get("status", "")).lower()
                 if status == "done":
                     out = os.path.join(DOWNLOAD_DIR, f"{vid}.{data.get('format','webm')}")
                     return await download_file(data.get("link"), out)
@@ -394,7 +425,7 @@ async def api_download_video(link: str) -> Optional[str]:
                 if r.status != 200:
                     return None
                 data = await r.json()
-                status = str(data.get("status","")).lower()
+                status = str(data.get("status", "")).lower()
                 if status == "done":
                     out = os.path.join(DOWNLOAD_DIR, f"{vid}.{data.get('format','mp4')}")
                     return await download_file(data.get("link"), out)
@@ -434,7 +465,7 @@ async def deduplicate_download(key: str, runner):
 
 
 async def race_tasks(yt_task, api_task, title: str):
-    # سباق بين نتيجتين، نأخذ الأولى الصالحة
+    # race between yt-dlp and optional API; return the first successful file path
     tasks = {t for t in (yt_task, api_task) if t}
     if not tasks:
         return None
@@ -445,13 +476,13 @@ async def race_tasks(yt_task, api_task, title: str):
             if result and os.path.exists(result):
                 src = "yt-dlp" if t is yt_task else "API"
                 log_download_source(title or "Unknown", src)
-                # الغي الباقي
+                # cancel pending
                 for p in pending:
                     p.cancel()
                 return result
         except Exception:
             pass
-    # إن لم تنجح أي من أول الدوال، ننتظر البقية ونرجع أول نتيجة صحيحة
+    # if none finished immediately, await remaining and return first valid
     for p in pending:
         try:
             res = await p
@@ -470,13 +501,15 @@ async def race_tasks(yt_task, api_task, title: str):
 
 async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str]:
     """
-    الواجهة العامة: link (URL أو ID)، type in ("audio","video")
-    تُعيد مسار الملف المحفوظ محليًا أو None
+    Public async wrapper:
+      link: URL or video id
+      type: "audio" or "video"
+    Returns local file path or None.
     """
     loop = asyncio.get_running_loop()
     vid = extract_video_id(link)
 
-    # تحقق من الكاش أولاً
+    # serve from cache if present
     if cached := find_cached_file(vid):
         if title:
             LOGGER.info(f"Track '{title}' - Served from cache")
@@ -486,10 +519,9 @@ async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str
         key = f"audio:{vid}"
 
         async def run():
-            # مهمة yt-dlp في executor
             yt = asyncio.create_task(
                 run_with_semaphore(
-                    loop.run_in_executor(None, download_with_ytdlp_sync, link, "bestaudio/best", False)
+                    loop.run_in_executor(None, download_with_ytdlp_sync, link, "bestaudio[ext=m4a]/bestaudio/best", False)
                 )
             )
             api = asyncio.create_task(api_download_audio(link)) if USE_AUDIO_API else None
@@ -501,8 +533,8 @@ async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str
         key = f"video:{vid}"
 
         async def run():
-            # نُجبر yt-dlp على تنزيل ملف MP4 إن أمكن (لا نُعطي م3u8 للـ player)
-            fmt = "bestvideo[ext=mp4][vcodec!=?vp9]+bestaudio[ext=m4a]/best[ext=m4a]/best[ext=mp4]/best"
+            # force mp4/h264 + m4a when possible; avoid handing m3u8 to player
+            fmt = "bestvideo[ext=mp4][vcodec!=?vp9][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]/best"
             yt = asyncio.create_task(
                 run_with_semaphore(
                     loop.run_in_executor(None, download_with_ytdlp_sync, link, fmt, False)
