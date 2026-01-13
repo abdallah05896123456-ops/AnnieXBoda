@@ -29,6 +29,7 @@ import aiohttp
 from aiohttp import TCPConnector
 from yt_dlp import YoutubeDL
 
+# تأكد من أن هذه المسارات صحيحة في مشروعك
 from AnnieXMedia.core.dir import CACHE_DIR, DOWNLOAD_DIR
 from AnnieXMedia.utils.cookie_handler import COOKIE_PATH as _COOKIES_FILE
 from AnnieXMedia.utils.tuning import CHUNK_SIZE, SEM
@@ -68,6 +69,7 @@ _cache_lock = asyncio.Lock()
 
 
 # ---------------- Cache Manager ----------------
+
 async def register_cache(path: str) -> None:
     """
     Register/extend cached file TTL (async).
@@ -321,19 +323,15 @@ def _info_to_final_path(info: Dict, kind: str, out_dir: str) -> Optional[str]:
         return None
     ext = info.get("ext")
     if ext:
-        p = os.path.join(out_dir, f"{vid}_{kind}.{ext}") if "_" not in vid else os.path.join(out_dir, f"{vid}.{ext}")
-        # previous outputs may be saved as id.ext in out_dir
         # try common names
-        # check id.ext first
         cand1 = os.path.join(out_dir, f"{vid}.{ext}")
         if os.path.exists(cand1):
             return cand1
-        # try vid_kind.ext
         cand2 = os.path.join(out_dir, f"{vid}_{kind}.{ext}")
         if os.path.exists(cand2):
             return cand2
     # fallback: any file starting with id in out_dir
-    matches = sorted(glob.glob(os.path.join(out_dir, f"{info.get('id','') }*")), key=os.path.getmtime, reverse=True)
+    matches = sorted(glob.glob(os.path.join(out_dir, f"{info.get('id','')}*")), key=os.path.getmtime, reverse=True)
     return matches[0] if matches else None
 
 
@@ -778,6 +776,7 @@ async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str
     vid = extract_video_id(link)
     if not vid:
         try:
+            # quick check only if we really need id
             info = await loop.run_in_executor(None, lambda: YoutubeDL(get_ytdlp_base_opts()).extract_info(link, download=False))
             if isinstance(info, dict) and info.get("id"):
                 vid = info.get("id")
