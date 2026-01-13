@@ -10,7 +10,7 @@ WORKDIR /app
 # تنظيف أي ملفات قديمة
 RUN rm -rf /app/*
 
-# تثبيت المتطلبات النظامية + deno + aria2
+# تثبيت المتطلبات النظامية + deno + aria2 (aria2 مثبت لكن لن يستخدم لتحميل HLS/YouTube لتفادي أخطاء 403)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         git \
