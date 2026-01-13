@@ -10,9 +10,7 @@ from typing import Dict, List, Optional, Tuple, Union
 import yt_dlp
 from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
-
-# ✅ التعديل هنا: استدعاء المكتبة العادية بدلاً من aio
-from youtubesearchpython import VideosSearch, Playlist
+from youtubesearchpython.aio import VideosSearch, Playlist
 
 from AnnieXMedia.utils.cookie_handler import COOKIE_PATH
 from AnnieXMedia.utils.database import is_on_off
@@ -78,13 +76,7 @@ async def cached_youtube_search(query: str) -> List[Dict]:
             _cache.clear()
 
     try:
-        # ✅ تعديل: استخدام الطريقة العادية (بدون await)
-        # نستخدم run_in_executor لتجنب تعليق البوت أثناء البحث
-        loop = asyncio.get_running_loop()
-        def _search():
-            return VideosSearch(query, limit=1).result()
-        
-        data = await loop.run_in_executor(None, _search)
+        data = await VideosSearch(query, limit=1).next()
         result = data.get("result", [])
     except Exception:
         result = []
@@ -151,13 +143,7 @@ class YouTubeAPI:
         if use_cache and not q.startswith("http"):
             res = await cached_youtube_search(q)
             return res[0] if res else None
-        
-        # ✅ تعديل: بحث مباشر بدون await
-        loop = asyncio.get_running_loop()
-        def _search():
-            return VideosSearch(q, limit=1).result()
-            
-        data = await loop.run_in_executor(None, _search)
+        data = await VideosSearch(q, limit=1).next()
         result = data.get("result", [])
         return result[0] if result else None
 
@@ -290,26 +276,13 @@ class YouTubeAPI:
         link = self._prepare_link(link).split("&")[0]
 
         try:
-            # ✅ تعديل: استخدام playlist العادي
-            # بعض النسخ تدعم get وبعضها يتطلب إنشاء أوبجكت
-            # سنستخدم طريقة yt-dlp كاحتياط لأنها الأضمن في هذه الحالة
-            # ولكن سنحاول استخدام المكتبة أولاً
-            loop = asyncio.get_running_loop()
-            def _get_plist():
-                try:
-                    return Playlist.get(link) # في بعض النسخ هذا يعمل
-                except:
-                    p = Playlist(link) # الطريقة البديلة
-                    return {"videos": p.videos}
-            
-            plist = await loop.run_in_executor(None, _get_plist)
+            plist = await Playlist.get(link)
             items = [video.get("id") for video in plist.get("videos", [])[:limit] if video.get("id")]
             if items:
                 return items
         except Exception:
             pass
 
-        # Fallback to yt-dlp (الأضمن دائمًا)
         stdout, _ = await _exec_proc(
             "yt-dlp",
             *(_cookies_args()),
@@ -379,15 +352,8 @@ class YouTubeAPI:
     async def slider(
         self, link: str, query_type: int, videoid: Union[str, bool, None] = None
     ) -> Tuple[str, Optional[str], str, str]:
-        
-        # ✅ تعديل: Slider باستخدام البحث العادي
-        loop = asyncio.get_running_loop()
-        def _search():
-            return VideosSearch(self._prepare_link(link, videoid), limit=10).result()
-        
-        data = await loop.run_in_executor(None, _search)
+        data = await VideosSearch(self._prepare_link(link, videoid), limit=10).next()
         results = data.get("result", [])
-        
         if not results or query_type >= len(results):
             raise IndexError(
                 f"Query type index {query_type} out of range (found {len(results)} results)"
