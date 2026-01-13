@@ -1,6 +1,5 @@
 # Authored By Certified Coders © 2025
 import os
-import asyncio
 from random import randint
 from typing import Union
 
@@ -42,7 +41,6 @@ async def stream(
     if forceplay:
         await StreamController.force_stop_stream(chat_id)
 
-    # === Playlist ===
     if streamtype == "playlist":
         msg = f"{_['play_19']}\n\n"
         count = 0
@@ -82,18 +80,14 @@ async def stream(
             else:
                 if not forceplay:
                     db[chat_id] = []
-                
-                # الاعتماد الكلي على المحرك النووي في YouTube.py
                 try:
                     file_path, direct = await YouTube.download(
                         vidid, mystic, video=is_video, videoid=vidid
                     )
                 except Exception:
-                    # تخطي الملف التالف في القائمة
-                    continue
-                
+                    raise AssistantErr(_["play_14"])
                 if not file_path:
-                     continue
+                    raise AssistantErr(_["play_14"])
 
                 await StreamController.join_call(
                     chat_id,
@@ -119,7 +113,7 @@ async def stream(
                 run = await app.send_photo(
                     original_chat_id,
                     photo=img,
-                    caption="🧚 " + _["stream_1"].format(
+                    caption=_["stream_1"].format(
                         f"https://t.me/{app.username}?start=info_{vidid}",
                         title[:23],
                         duration_min,
@@ -147,11 +141,10 @@ async def stream(
         return await app.send_photo(
             original_chat_id,
             photo=playlist_photo,
-            caption="🧚 " + _["play_21"].format(final_position, link),
+            caption=_["play_21"].format(final_position, link),
             reply_markup=upl,
         )
 
-    # === YouTube ===
     elif streamtype == "youtube":
         link = result["link"]
         vidid = result["vidid"]
@@ -159,16 +152,14 @@ async def stream(
         duration_min = result["duration_min"]
         thumbnail = result["thumb"]
 
-        # الاعتماد الكلي على المحرك النووي في YouTube.py
         try:
             file_path, direct = await YouTube.download(
                 vidid, mystic, video=is_video, videoid=vidid
             )
         except Exception:
             raise AssistantErr(_["play_14"])
-
         if not file_path:
-             raise AssistantErr(_["play_14"])
+            raise AssistantErr(_["play_14"])
 
         if await is_active_chat(chat_id):
             await put_queue(
@@ -186,7 +177,7 @@ async def stream(
             button = aq_markup(_, chat_id)
             await app.send_message(
                 chat_id=original_chat_id,
-                text="🧚 " + _["queue_4"].format(position, title[:27], duration_min, user_name),
+                text=_["queue_4"].format(position, title[:27], duration_min, user_name),
                 reply_markup=InlineKeyboardMarkup(button),
             )
         else:
@@ -216,7 +207,7 @@ async def stream(
             run = await app.send_photo(
                 original_chat_id,
                 photo=img,
-                caption="🧚 " + _["stream_1"].format(
+                caption=_["stream_1"].format(
                     f"https://t.me/{app.username}?start=info_{vidid}",
                     title[:23],
                     duration_min,
@@ -227,7 +218,6 @@ async def stream(
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "stream"
 
-    # === SoundCloud ===
     elif streamtype == "soundcloud":
         file_path = result["filepath"]
         title = result["title"]
@@ -251,7 +241,7 @@ async def stream(
             button = aq_markup(_, chat_id)
             await app.send_message(
                 chat_id=original_chat_id,
-                text="🧚 " + _["queue_4"].format(position, title[:27], duration_min, user_name),
+                text=_["queue_4"].format(position, title[:27], duration_min, user_name),
                 reply_markup=InlineKeyboardMarkup(button),
             )
         else:
@@ -274,7 +264,7 @@ async def stream(
             run = await app.send_photo(
                 original_chat_id,
                 photo=config.SOUNCLOUD_IMG_URL,
-                caption="🧚 " + _["stream_1"].format(
+                caption=_["stream_1"].format(
                     config.SUPPORT_CHAT, title[:23], duration_min, user_name
                 ),
                 reply_markup=InlineKeyboardMarkup(button),
@@ -282,7 +272,6 @@ async def stream(
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
 
-    # === Telegram Files ===
     elif streamtype == "telegram":
         file_path = result["path"]
         link = result["link"]
@@ -307,7 +296,7 @@ async def stream(
             button = aq_markup(_, chat_id)
             await app.send_message(
                 chat_id=original_chat_id,
-                text="🧚 " + _["queue_4"].format(position, title[:27], duration_min, user_name),
+                text=_["queue_4"].format(position, title[:27], duration_min, user_name),
                 reply_markup=InlineKeyboardMarkup(button),
             )
         else:
@@ -332,13 +321,12 @@ async def stream(
             run = await app.send_photo(
                 original_chat_id,
                 photo=config.TELEGRAM_VIDEO_URL if is_video else config.TELEGRAM_AUDIO_URL,
-                caption="🧚 " + _["stream_1"].format(link, title[:23], duration_min, user_name),
+                caption=_["stream_1"].format(link, title[:23], duration_min, user_name),
                 reply_markup=InlineKeyboardMarkup(button),
             )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
 
-    # === Live Stream ===
     elif streamtype == "live":
         link = result["link"]
         vidid = result["vidid"]
@@ -362,13 +350,12 @@ async def stream(
             button = aq_markup(_, chat_id)
             await app.send_message(
                 chat_id=original_chat_id,
-                text="🧚 " + _["queue_4"].format(position, title[:27], duration_min, user_name),
+                text=_["queue_4"].format(position, title[:27], duration_min, user_name),
                 reply_markup=InlineKeyboardMarkup(button),
             )
         else:
             if not forceplay:
                 db[chat_id] = []
-            
             n, file_path = await YouTube.video(link)
             if n == 0:
                 raise AssistantErr(_["str_3"])
@@ -399,7 +386,7 @@ async def stream(
             run = await app.send_photo(
                 original_chat_id,
                 photo=img,
-                caption="🧚 " + _["stream_1"].format(
+                caption=_["stream_1"].format(
                     f"https://t.me/{app.username}?start=info_{vidid}",
                     title[:23],
                     duration_min,
@@ -410,7 +397,6 @@ async def stream(
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
 
-    # === Index/M3u8 ===
     elif streamtype == "index":
         link = result
         title = "ɪɴᴅᴇx ᴏʀ ᴍ3ᴜ8 ʟɪɴᴋ"
@@ -430,7 +416,7 @@ async def stream(
             position = len(db.get(chat_id)) - 1
             button = aq_markup(_, chat_id)
             await mystic.edit_text(
-                text="🧚 " + _["queue_4"].format(position, title[:27], duration_min, user_name),
+                text=_["queue_4"].format(position, title[:27], duration_min, user_name),
                 reply_markup=InlineKeyboardMarkup(button),
             )
         else:
@@ -457,7 +443,7 @@ async def stream(
             run = await app.send_photo(
                 original_chat_id,
                 photo=config.STREAM_IMG_URL,
-                caption="🧚 " + _["stream_2"].format(user_name),
+                caption=_["stream_2"].format(user_name),
                 reply_markup=InlineKeyboardMarkup(button),
             )
             db[chat_id][0]["mystic"] = run
