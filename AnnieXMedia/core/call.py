@@ -1,8 +1,12 @@
 # Authored By Certified Coders © 2025
 import asyncio
 import os
+import shlex
+import subprocess
+import tempfile
+import time
 from datetime import datetime, timedelta
-from typing import Union
+from typing import Union, Optional
 
 from ntgcalls import TelegramServerError, ConnectionNotFound
 from pyrogram import Client
@@ -12,6 +16,8 @@ from pytgcalls import PyTgCalls
 # ✅ تم إزالة AlreadyJoinedError لأنه غير موجود في نسختك
 from pytgcalls.exceptions import NoActiveGroupCall, NoAudioSourceFound, NoVideoSourceFound
 from pytgcalls.types import AudioQuality, ChatUpdate, MediaStream, StreamEnded, Update, VideoQuality
+
+import yt_dlp
 
 import config
 from strings import get_string
@@ -36,10 +42,249 @@ from AnnieXMedia.utils.stream.autoclear import auto_clean
 from AnnieXMedia.utils.thumbnails import get_thumb
 from AnnieXMedia.utils.errors import capture_internal_err
 
+# ---------- إعدادات تحويل/تحميل عامة ----------
+DOWNLOAD_DIR = os.path.join(os.getcwd(), "downloads")
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
+# معلمات ffmpeg الأساسية لتحسين الاستجابة وتقليل التخزين المؤقت، وضمان ستيريو
+DEFAULT_FFMPEG_PARAMS = "-ac 2 -ar 48000 -threads 0 -fflags nobuffer -flags low_delay -avioflags direct -re"
+
+# timeout للـ ffmpeg convert (بالثواني)
+FFMPEG_CONVERT_TIMEOUT = 300
+
 autoend = {}
 counter = {}
 
-def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
+# ---------- مساعدات داخلية لتحضير الوسائط ----------
+
+def _is_url(path: str) -> bool:
+    return isinstance(path, str) and path.startswith(("http://", "https://"))
+
+def _is_m3u8(path: str) -> bool:
+    return isinstance(path, str) and (path.lower().endswith(".m3u8") or "manifest" in path and "m3u8" in path)
+
+def _safe_tmpfile(suffix: str = ".mp4") -> str:
+    fd, p = tempfile.mkstemp(suffix=suffix, prefix="annie_")
+    os.close(fd)
+    return p
+
+def _run_subprocess(cmd: str, timeout: Optional[int] = None) -> bool:
+    """
+    Run shell command blocking. Returns True on success.
+    """
+    try:
+        proc = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
+        if proc.returncode == 0:
+            return True
+        # سجل الخطأ للتشخيص
+        try:
+            LOGGER(__name__).debug(f"Subprocess failed ({cmd}) rc={proc.returncode} stderr={proc.stderr.decode('utf-8', 'ignore')}")
+        except Exception:
+            print("Subprocess failed:", proc.returncode)
+            print(proc.stderr.decode('utf-8', 'ignore'))
+        return False
+    except subprocess.TimeoutExpired:
+        try:
+            LOGGER(__name__).warning(f"Subprocess timeout: {cmd}")
+        except Exception:
+            print("Subprocess timeout:", cmd)
+        return False
+    except Exception as e:
+        try:
+            LOGGER(__name__).exception(f"Subprocess exception: {e}")
+        except Exception:
+            print("Subprocess exception:", e)
+        return False
+
+def _ffmpeg_convert_to_mp4(source: str, dest: str) -> bool:
+    """
+    حاول نسخ الحزم أولًا (copy), ثم إعادة ترميز إن فشل.
+    نستخدم معلمات DEFAULT_FFMPEG_PARAMS لضمان ستيريو وتقليل التأخير.
+    """
+    # copy attempt
+    cmd_copy = f'ffmpeg -y -hide_banner -loglevel error -i {shlex.quote(source)} -c copy {shlex.quote(dest)}'
+    if _run_subprocess(cmd_copy, timeout=FFMPEG_CONVERT_TIMEOUT):
+        return True
+    # fallback recode
+    cmd_recode = (
+        f'ffmpeg -y -hide_banner -loglevel error -i {shlex.quote(source)} '
+        f'-c:v libx264 -preset veryfast -c:a aac -b:a 128k -ac 2 -ar 48000 {shlex.quote(dest)}'
+    )
+    return _run_subprocess(cmd_recode, timeout=FFMPEG_CONVERT_TIMEOUT)
+
+def _download_via_requests(url: str, dest: str, chunk_size: int = 1 << 20) -> bool:
+    """
+    تنزيل مباشر بوساطة requests (يُشغّل في executor).
+    """
+    try:
+        import requests
+        with requests.get(url, stream=True, timeout=(10, 300)) as r:
+            r.raise_for_status()
+            with open(dest, "wb") as fh:
+                for chunk in r.iter_content(chunk_size=chunk_size):
+                    if chunk:
+                        fh.write(chunk)
+        return os.path.exists(dest)
+    except Exception as e:
+        try:
+            LOGGER(__name__).debug(f"requests download failed: {e}")
+        except Exception:
+            print("requests download failed:", e)
+        return False
+
+def _yt_dlp_download_blocking(url: str, prefer_mp4: bool = True, video: bool = True) -> Optional[str]:
+    """
+    دالة blocking تعمل yt-dlp داخل الخيط (executor).
+    - تحاول تنزيل ملف محلي بصيغة MP4 إن أمكن (مرتبطة بالـ prefer_mp4).
+    - تُعيد مسار الملف المحلي أو None.
+    """
+    ydl_opts = {
+        "outtmpl": os.path.join(DOWNLOAD_DIR, "%(id)s.%(ext)s"),
+        "noplaylist": True,
+        "quiet": True,
+        "no_warnings": True,
+        "continuedl": True,
+        "retries": 2,
+        "fragment_retries": 2,
+        "concurrent_fragment_downloads": 8,
+        "merge_output_format": "mp4",
+    }
+    # لو عندنا كوكيز في المشروع فاجعل yt-dlp يستخدمها (لو متاح)
+    try:
+        from AnnieXMedia.utils.cookie_handler import COOKIE_PATH as _COOKIES_FILE
+        if _COOKIES_FILE and os.path.exists(_COOKIES_FILE):
+            ydl_opts["cookiefile"] = _COOKIES_FILE
+    except Exception:
+        pass
+
+    # صيغ ذكية: نجرب mp4 أولًا ثم fallback
+    if prefer_mp4:
+        if video:
+            ydl_opts["format"] = "bestvideo[ext=mp4]+bestaudio/best[ext=m4a]/best"
+        else:
+            ydl_opts["format"] = "bestaudio[ext=m4a]/bestaudio/best"
+    else:
+        ydl_opts["format"] = "best"
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            # حاول تحديد المسار من info
+            if isinstance(info, dict):
+                vid = info.get("id")
+                ext = info.get("ext")
+                if vid and ext:
+                    path = os.path.join(DOWNLOAD_DIR, f"{vid}.{ext}")
+                    if os.path.exists(path):
+                        return path
+            # إن لم نجد، حاول العثور بأحدث ملف مطابق للـ id إن موجود
+            if isinstance(info, dict):
+                vid = info.get("id")
+                if vid:
+                    # البحث عن أي امتداد شائع
+                    for ext in ("mp4", "mkv", "webm", "m4a", "mp3"):
+                        p = os.path.join(DOWNLOAD_DIR, f"{vid}.{ext}")
+                        if os.path.exists(p):
+                            return p
+    except Exception as e:
+        try:
+            LOGGER(__name__).debug(f"yt-dlp exception for {url}: {e}")
+        except Exception:
+            print("yt-dlp exception:", e)
+    return None
+
+async def prepare_media(path: str, video: bool = False, prefer_mp4: bool = True) -> Optional[str]:
+    """
+    تأكد أن path جاهز للتشغيل لدى PyTgCalls:
+    - إذا كان مسار محلي موجود، ارجعه.
+    - إذا كان URL: حاول تنزيله عبر yt-dlp إلى ملف محلي (مفضل mp4).
+    - إذا عاد URL م3u8، نحاول تحويله إلى mp4 محلي عبر ffmpeg.
+    ترجع مسار الملف المحلي أو None لو فشل.
+    """
+    # مسار محلي موجود
+    try:
+        if os.path.exists(path) and os.path.isfile(path):
+            return path
+    except Exception:
+        pass
+
+    # لو هو رابط مباشر
+    if not _is_url(path):
+        # non-url and not exist => فشل
+        return None
+
+    # محاولة yt-dlp أولًا (في executor لتفادي الحجب)
+    loop = asyncio.get_running_loop()
+    try:
+        result = await loop.run_in_executor(None, _yt_dlp_download_blocking, path, prefer_mp4, video)
+        if result:
+            return result
+    except Exception as e:
+        try:
+            LOGGER(__name__).debug(f"prepare_media yt-dlp exception: {e}")
+        except Exception:
+            print("prepare_media yt-dlp exception:", e)
+
+    # لو لم ينجح yt-dlp أو أعاد رابط m3u8، نحاول تنزيل أو تحويل يدويًا
+    # أولًا: احصل على رابط البث من yt-dlp بدون تنزيل (download=False) لاكتشاف URL صريح
+    try:
+        ydl_opts = {"quiet": True, "no_warnings": True, "noplaylist": True}
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(path, download=False)
+            url = None
+            if isinstance(info, dict):
+                url = info.get("url")
+                # لو entries موجودة ناخذ أول واحد
+                if not url and info.get("entries"):
+                    entry = info["entries"][0] if info["entries"] else {}
+                    if isinstance(entry, dict):
+                        url = entry.get("url")
+    except Exception:
+        url = None
+
+    # إذا حصلنا على url مباشر
+    if url:
+        # لو هو m3u8: حاول ffmpeg تحويله إلى mp4 محلي
+        if _is_m3u8(url):
+            out = _safe_tmpfile(".mp4")
+            ok = await asyncio.get_running_loop().run_in_executor(None, _ffmpeg_convert_to_mp4, url, out)
+            if ok:
+                return out
+        # إذا كان رابط مباشر لملف (mp4/mkv/webm) ننزّله عبر requests
+        ext_guess = url.split("?")[0].split(".")[-1].lower()
+        if ext_guess in ("mp4", "mkv", "webm", "m4a", "mp3"):
+            out = _safe_tmpfile("." + ext_guess)
+            ok = await asyncio.get_running_loop().run_in_executor(None, _download_via_requests, url, out)
+            if ok:
+                # لو ليس mp4 و video مطلوب: حاول تحويل لـ mp4
+                if video and ext_guess != "mp4":
+                    dest = out + ".mp4"
+                    ok2 = await asyncio.get_running_loop().run_in_executor(None, _ffmpeg_convert_to_mp4, out, dest)
+                    if ok2:
+                        try:
+                            os.remove(out)
+                        except Exception:
+                            pass
+                        return dest
+                return out
+
+    # فشل كل المحاولات
+    return None
+
+# -------------------- دوال dynamic_media_stream و Call (مع تحسينات) --------------------
+
+def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: Optional[str] = None) -> MediaStream:
+    """
+    بنبني ffmpeg params بشكل ذكي:
+    - ندمج المعلمات الافتراضية (ستيريو، تقليل buffering) مع أي ffmpeg_params ممررة.
+    - نرجع MediaStream صالح لـ PyTgCalls.
+    """
+    base = DEFAULT_FFMPEG_PARAMS
+    if ffmpeg_params:
+        ff = f"{base} {ffmpeg_params}"
+    else:
+        ff = base
+
     if video:
         return MediaStream(
             media_path=path,
@@ -47,7 +292,7 @@ def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = No
             video_parameters=VideoQuality.HD_720p,
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.REQUIRED,
-            ffmpeg_parameters=ffmpeg_params,
+            ffmpeg_parameters=ff,
         )
     else:
         return MediaStream(
@@ -55,7 +300,7 @@ def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = No
             audio_parameters=AudioQuality.HIGH,
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.IGNORE,
-            ffmpeg_parameters=ffmpeg_params,
+            ffmpeg_parameters=ff,
         )
 
 async def _clear_(chat_id: int) -> None:
@@ -156,7 +401,13 @@ class Call:
     @capture_internal_err
     async def skip_stream(self, chat_id: int, link: str, video: Union[bool, str] = None, image: Union[bool, str] = None) -> None:
         assistant = await group_assistant(self, chat_id)
-        stream = dynamic_media_stream(path=link, video=bool(video))
+        # ensure local media if needed
+        local = await prepare_media(link, video=bool(video))
+        if not local:
+            # fall back to raw link (best effort), but PyTgCalls likely fails for m3u8
+            stream = dynamic_media_stream(path=link, video=bool(video))
+        else:
+            stream = dynamic_media_stream(path=local, video=bool(video))
         await assistant.play(chat_id, stream)
 
     @capture_internal_err
@@ -170,7 +421,11 @@ class Call:
         assistant = await group_assistant(self, chat_id)
         ffmpeg_params = f"-ss {to_seek} -to {duration}"
         is_video = mode == "video"
-        stream = dynamic_media_stream(path=file_path, video=is_video, ffmpeg_params=ffmpeg_params)
+        # ensure local if it's a URL
+        local = await prepare_media(file_path, video=is_video)
+        if not local:
+            raise AssistantErr("Unable to prepare media for seek.")
+        stream = dynamic_media_stream(path=local, video=is_video, ffmpeg_params=ffmpeg_params)
         await assistant.play(chat_id, stream)
 
     @capture_internal_err
@@ -186,7 +441,7 @@ class Call:
 
         if not os.path.exists(out):
             vs = str(2.0 / float(speed))
-            cmd = f'ffmpeg -i "{file_path}" -filter:v "setpts={vs}*PTS" -filter:a atempo={speed} -y "{out}"'
+            cmd = f'ffmpeg -hide_banner -loglevel error -i "{file_path}" -filter:v "setpts={vs}*PTS" -filter:a atempo={speed} -y "{out}"'
             proc = await asyncio.create_subprocess_shell(
                 cmd,
                 stdin=asyncio.subprocess.PIPE,
@@ -219,8 +474,11 @@ class Call:
     @capture_internal_err
     async def stream_call(self, link: str) -> None:
         assistant = await group_assistant(self, config.LOGGER_ID)
+        # prepare local if needed
+        local = await prepare_media(link, video=True)
         try:
-            await assistant.play(config.LOGGER_ID, MediaStream(link))
+            src = local or link
+            await assistant.play(config.LOGGER_ID, MediaStream(src))
             await asyncio.sleep(8)
         finally:
             try:
@@ -240,7 +498,11 @@ class Call:
         assistant = await group_assistant(self, chat_id)
         lang = await get_lang(chat_id)
         _ = get_string(lang)
-        stream = dynamic_media_stream(path=link, video=bool(video))
+
+        # prepare local file when possible
+        local = await prepare_media(link, video=bool(video))
+        src = local or link
+        stream = dynamic_media_stream(path=src, video=bool(video))
 
         # ✅ FIX: Force leave first to prevent Ghost Call issues
         try:
@@ -251,25 +513,41 @@ class Call:
         # ====================================================
 
         try:
+            # محاولة تشغيل المصدر (محلي أو URL)
             await assistant.play(chat_id, stream)
         except (NoActiveGroupCall, ChatAdminRequired):
             raise AssistantErr(_["call_8"])
         except NoAudioSourceFound:
             raise AssistantErr(_["call_11"])
         except NoVideoSourceFound:
-            raise AssistantErr(_["call_12"])
+            # لو NoVideoSourceFound، نحاول إن كان مصدر URL نحوله محليًا ثم نشغّل
+            try:
+                if src.startswith("http"):
+                    converted = await prepare_media(src, video=True, prefer_mp4=True)
+                    if converted:
+                        stream2 = dynamic_media_stream(path=converted, video=True)
+                        await assistant.play(chat_id, stream2)
+                        src = converted
+                    else:
+                        raise AssistantErr(_["call_12"])
+                else:
+                    raise AssistantErr(_["call_12"])
+            except AssistantErr:
+                raise
+            except Exception:
+                raise AssistantErr(_["call_12"])
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
-        # ✅ FIX: تمت إزالة AlreadyJoinedError
         except Exception as e:
             # لو فشل بسبب إن البوت لسه معلق (رغم المحاولة الأولى)، نحاول مرة أخيرة
             try:
-                 await asyncio.sleep(1)
-                 await assistant.play(chat_id, stream)
-            except:
-                 raise AssistantErr(
-                    f"ᴜɴᴀʙʟᴇ ᴛᴏ ᴊᴏɪɴ ᴛʜᴇ ɢʀᴏᴜᴘ ᴄᴀʟʟ.\nRᴇᴀsᴏɴ: {e}"
-                )
+                await asyncio.sleep(1)
+                await assistant.play(chat_id, stream)
+            except Exception as ex:
+                raise AssistantErr(
+                    f"ᴜɴᴀʙʟᴇ ᴛᴏ ᴊᴏɪɴ ᴛʜᴇ ɢʀᴏᴜᴘ ᴄᴀʟʟ.\nRᴇᴀsᴏɴ: {ex}"
+                ) from ex
+
         self.active_calls.add(chat_id)
         await add_active_chat(chat_id)
         await music_on(chat_id)
@@ -338,7 +616,10 @@ class Call:
                 if n == 0:
                     return await app.send_message(original_chat_id, text=_["call_6"])
 
-                stream = dynamic_media_stream(path=link, video=video)
+                # prepare local when possible (for PyTgCalls stability)
+                local = await prepare_media(link, video=video)
+                src = local or link
+                stream = dynamic_media_stream(path=src, video=video)
                 try:
                     await client.play(chat_id, stream)
                 except Exception:
@@ -374,7 +655,10 @@ class Call:
                         _["call_6"], disable_web_page_preview=True
                     )
 
-                stream = dynamic_media_stream(path=file_path, video=video)
+                # prepare local if needed (YouTube.download usually returns local file)
+                local = await prepare_media(file_path, video=video)
+                src = local or file_path
+                stream = dynamic_media_stream(path=src, video=video)
                 try:
                     await client.play(chat_id, stream)
                 except:
@@ -398,7 +682,10 @@ class Call:
                 db[chat_id][0]["markup"] = "stream"
 
             elif "index_" in queued:
-                stream = dynamic_media_stream(path=videoid, video=video)
+                # index_ قد يحمل رابط مباشر - نحضر الـ media أولاً
+                local = await prepare_media(videoid, video=video)
+                src = local or videoid
+                stream = dynamic_media_stream(path=src, video=video)
                 try:
                     await client.play(chat_id, stream)
                 except:
@@ -415,10 +702,28 @@ class Call:
                 db[chat_id][0]["markup"] = "tg"
 
             else:
-                stream = dynamic_media_stream(path=queued, video=video)
+                # queued could be a local file or URL - prepare it
+                local = await prepare_media(queued, video=video)
+                src = local or queued
+                stream = dynamic_media_stream(path=src, video=video)
                 try:
                     await client.play(chat_id, stream)
-                except:
+                except NoVideoSourceFound:
+                    # try converting again if src was URL
+                    if src and src.startswith("http"):
+                        converted = await prepare_media(src, video=video, prefer_mp4=True)
+                        if converted:
+                            stream2 = dynamic_media_stream(path=converted, video=video)
+                            try:
+                                await client.play(chat_id, stream2)
+                                src = converted
+                            except Exception:
+                                return await app.send_message(original_chat_id, text=_["call_6"])
+                        else:
+                            return await app.send_message(original_chat_id, text=_["call_6"])
+                    else:
+                        return await app.send_message(original_chat_id, text=_["call_6"])
+                except Exception:
                     return await app.send_message(original_chat_id, text=_["call_6"])
 
                 if videoid == "telegram":
