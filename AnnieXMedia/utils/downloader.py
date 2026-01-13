@@ -1,16 +1,10 @@
 # Authored By Certified Coders © 2025
 """
 ذكي، سريع، وعملي: downloader مدعوم بـ yt-dlp + aiohttp + ffmpeg fallback.
-مميزات هذا الملف:
- - دعم aria2c كـ external_downloader إن كان متوفرًا
- - aggressive-friendly defaults (concurrent fragments, chunk size from tuning)
- - تحويل HLS (m3u8/manifest) إلى ملف محلي باستخدام ffmpeg عند الحاجة
- - نظام Cache مؤقت: يحفظ الملفات المحلية لمدة 8 دقائق منذ آخر استخدام، منظف خلفي يحذفها بأمان
- - تسجيل/تجديد TTL من كل نقاط الإرجاع
+تركيز هذا الإصدار: ضغط المعالجة، تجنب إعادة التكويد، تحويل HLS سريع (remux)، كاش 8 دقائق.
 """
 
 import asyncio
-import contextlib
 import glob
 import os
 import re
@@ -31,7 +25,7 @@ from AnnieXMedia.utils.tuning import CHUNK_SIZE, SEM
 from config import API_KEY, API_URL, VIDEO_API_URL
 from AnnieXMedia.logging import LOGGER
 
-# Access global db to avoid deleting files in-use
+# global queue DB to avoid deleting in-use files
 from AnnieXMedia.misc import db as _GLOBAL_DB
 
 LOGGER = LOGGER(__name__)
@@ -47,7 +41,6 @@ _session_lock = asyncio.Lock()
 
 YOUTUBE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 
-
 # ---------------- Cache Manager (8 minutes TTL) ----------------
 CACHE_TTL = 8 * 60  # seconds
 _cache_registry: Dict[str, float] = {}
@@ -55,22 +48,16 @@ _cache_lock = asyncio.Lock()
 
 
 async def register_cache(path: str) -> None:
-    """Register/extend cached file TTL (async)."""
     if not path:
         return
     try:
         async with _cache_lock:
             _cache_registry[path] = time.time() + CACHE_TTL
     except Exception:
-        # best-effort
         _cache_registry[path] = time.time() + CACHE_TTL
 
 
 def _register_cache_from_thread(path: str) -> None:
-    """
-    Called from synchronous threads (like executor).
-    Schedule the async register_cache safely if loop running, otherwise store directly.
-    """
     if not path:
         return
     try:
@@ -78,17 +65,12 @@ def _register_cache_from_thread(path: str) -> None:
         if loop.is_running():
             loop.call_soon_threadsafe(asyncio.create_task, register_cache(path))
         else:
-            # fallback: set value now; cleaner will run later
             _cache_registry[path] = time.time() + CACHE_TTL
     except Exception:
         _cache_registry[path] = time.time() + CACHE_TTL
 
 
 def _is_file_in_use(path: str) -> bool:
-    """
-    Return True if the file is referenced in the global db queue (playing/queued).
-    Safe and forgiving: if structure unexpected we assume "in use".
-    """
     try:
         for k, q in list(_GLOBAL_DB.items()):
             if not q:
@@ -104,10 +86,6 @@ def _is_file_in_use(path: str) -> bool:
 
 
 async def _cache_cleaner_loop() -> None:
-    """
-    Background loop: remove expired cached files not currently in use.
-    Runs until cancelled.
-    """
     try:
         while True:
             now = time.time()
@@ -115,11 +93,9 @@ async def _cache_cleaner_loop() -> None:
             async with _cache_lock:
                 for p, expiry in list(_cache_registry.items()):
                     if expiry <= now:
-                        # only delete if file not used in global queues
                         if not _is_file_in_use(p) and os.path.exists(p):
                             to_delete.append(p)
                         else:
-                            # extend by TTL if in use (prevents race)
                             _cache_registry[p] = now + CACHE_TTL
             for p in to_delete:
                 try:
@@ -137,17 +113,10 @@ async def _cache_cleaner_loop() -> None:
 
 
 def init_cache_cleaner() -> None:
-    """
-    Start the background cleaner if event loop is running.
-    Call this once during application startup (e.g. from core/call.py.start()).
-    """
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
             loop.create_task(_cache_cleaner_loop())
-        else:
-            # will start when loop runs; caller can call this again after event loop active
-            pass
     except Exception:
         LOGGER.exception("init_cache_cleaner failed")
 
@@ -188,7 +157,6 @@ def find_cached_file(video_id: str) -> Optional[str]:
     for ext in ("mp4", "mkv", "webm", "m4a", "mp3", "opus"):
         p = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
         if os.path.exists(p):
-            # renew TTL when file is served from cache
             _register_cache_from_thread(p)
             return p
     return None
@@ -197,11 +165,8 @@ def find_cached_file(video_id: str) -> Optional[str]:
 # ---------------- yt-dlp options & utils ----------------
 
 def get_ytdlp_base_opts(verbose: bool = False) -> Dict[str, object]:
-    """
-    Aggressive-friendly base options.
-    If aria2c is available as external_downloader, enable it with aggressive args.
-    """
-    min_chunk = max(CHUNK_SIZE, 4 * 1024 * 1024)
+    # pick a big chunk but not insane (depends on Fly.io memory)
+    min_chunk = max(CHUNK_SIZE, 2 * 1024 * 1024)
 
     opts = {
         "outtmpl": os.path.join(DOWNLOAD_DIR, "%(id)s.%(ext)s"),
@@ -211,8 +176,8 @@ def get_ytdlp_base_opts(verbose: bool = False) -> Dict[str, object]:
         "continuedl": True,
         "overwrites": False,
         "noprogress": True,
-        "retries": 5,
-        "fragment_retries": 5,
+        "retries": 4,
+        "fragment_retries": 4,
         "concurrent_fragment_downloads": 16,
         "http_chunk_size": min_chunk,
         "socket_timeout": 10,
@@ -227,20 +192,17 @@ def get_ytdlp_base_opts(verbose: bool = False) -> Dict[str, object]:
         "prefer_ffmpeg": True,
     }
 
-    # enable aria2c if present
+    # enable aria2c if available for throughput
     aria2_path = shutil.which("aria2c")
     if aria2_path:
-        piece_len_k = max(1024, min_chunk // 1024)
+        piece_len_k = max(512, min_chunk // 1024)
         opts["external_downloader"] = "aria2c"
         opts["external_downloader_args"] = [
-            "-x", "16",
-            "-s", "16",
-            "-k", f"{piece_len_k}K",
-            "--file-allocation=none",
-            "--allow-overwrite=true",
-            "--max-connection-per-server=16",
-            "--min-split-size=1M",
+            "-x", "16", "-s", "16", "-k", f"{piece_len_k}K",
+            "--file-allocation=none", "--allow-overwrite=true",
+            "--max-connection-per-server=16", "--min-split-size=1M"
         ]
+        # if using aria2, lower concurrent_fragment_downloads to avoid double-splitting
         opts["concurrent_fragment_downloads"] = 8
 
     if cookie := get_cookie_file():
@@ -250,7 +212,6 @@ def get_ytdlp_base_opts(verbose: bool = False) -> Dict[str, object]:
 
 
 def _info_to_final_path(info: Dict) -> Optional[str]:
-    """Find local final file path reported/created by yt-dlp"""
     if not isinstance(info, dict):
         return None
     vid = info.get("id")
@@ -281,94 +242,114 @@ def _safe_filename(prefix: str = "tmp") -> str:
     return f"{prefix}_{ts}"
 
 
+# ---------------- ffmpeg remux helper (fast) ----------------
+
+def force_remux_to_mp4(m3u8_url: str, video_id: str) -> Optional[str]:
+    """
+    Fast remux HLS -> mp4 using stream copy.
+    Returns path or None.
+    """
+    out = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp4")
+    # use protocol whitelist for safety; bsfa for aac ADTS -> MP4
+    cmd = (
+        f'ffmpeg -y -hide_banner -loglevel error '
+        f'-protocol_whitelist file,http,https,tcp,tls '
+        f'-i "{m3u8_url}" -c copy -bsf:a aac_adtstoasc "{out}"'
+    )
+    try:
+        res = subprocess.run(cmd, shell=True, timeout=240)
+        if res.returncode == 0 and os.path.exists(out) and os.path.getsize(out) > 0:
+            _register_cache_from_thread(out)
+            return out
+    except Exception as e:
+        LOGGER.debug(f"force_remux_to_mp4 failed: {e}")
+
+    # fallback: try a low-cost transcode (use minimal CPU)
+    try:
+        out2 = os.path.join(DOWNLOAD_DIR, f"{video_id}_re.mp4")
+        cmd2 = (
+            f'ffmpeg -y -hide_banner -loglevel error '
+            f'-protocol_whitelist file,http,https,tcp,tls '
+            f'-i "{m3u8_url}" -c:v libx264 -preset superfast -crf 28 '
+            f'-c:a aac -b:a 96k -ac 2 "{out2}"'
+        )
+        res2 = subprocess.run(cmd2, shell=True, timeout=300)
+        if res2.returncode == 0 and os.path.exists(out2) and os.path.getsize(out2) > 0:
+            _register_cache_from_thread(out2)
+            return out2
+    except Exception as e:
+        LOGGER.debug(f"force_remux_to_mp4 fallback failed: {e}")
+
+    return None
+
+
 # ---------------- blocking helpers (run in executor) ----------------
 
-def _run_ffmpeg_convert(input_src: str, out_path: str) -> bool:
-    """
-    Convert an HLS manifest or remote URL to a local file.
-    Try copy first, then fast re-encode. Use -threads 0 to utilize CPUs.
-    """
-    try:
-        cmd_copy = (
-            f'ffmpeg -y -hide_banner -loglevel error '
-            f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
-            f'-threads 0 -i {shlex.quote(input_src)} -c copy {shlex.quote(out_path)}'
-        )
-        res = subprocess.run(cmd_copy, shell=True, timeout=600)
-        if res.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
-            # register cache
-            _register_cache_from_thread(out_path)
-            return True
-
-        # fallback: re-encode quickly with stereo audio
-        _, ext = os.path.splitext(out_path)
-        ext = ext.lower().lstrip(".")
-        if ext in ("mp4", "mkv", "webm"):
-            cmd_recode = (
-                f'ffmpeg -y -hide_banner -loglevel error '
-                f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
-                f'-threads 0 -i {shlex.quote(input_src)} '
-                f'-c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 160k -ac 2 -ar 48000 '
-                f'{shlex.quote(out_path)}'
-            )
-        else:
-            if ext in ("opus",):
-                cmd_recode = (
-                    f'ffmpeg -y -hide_banner -loglevel error '
-                    f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
-                    f'-threads 0 -i {shlex.quote(input_src)} -c:a libopus -b:a 160k -ac 2 -ar 48000 {shlex.quote(out_path)}'
-                )
-            else:
-                cmd_recode = (
-                    f'ffmpeg -y -hide_banner -loglevel error '
-                    f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
-                    f'-threads 0 -i {shlex.quote(input_src)} -c:a aac -b:a 160k -ac 2 -ar 48000 {shlex.quote(out_path)}'
-                )
-
-        res2 = subprocess.run(cmd_recode, shell=True, timeout=900)
-        if res2.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
-            _register_cache_from_thread(out_path)
-            return True
-        return False
-    except Exception as e:
-        try:
-            LOGGER.debug(f"ffmpeg conversion failed: {e}")
-        except Exception:
-            print("ffmpeg conversion failed:", e)
-        return False
-
-
 def _download_http_blocking(url: str, out_path: str, chunk_size: int = CHUNK_SIZE) -> bool:
-    """
-    Blocking HTTP download helper (used in executor) for direct URLs.
-    """
     import requests
     try:
-        with requests.get(url, stream=True, timeout=(10, 180)) as r:
+        with requests.get(url, stream=True, timeout=(10, 200)) as r:
             r.raise_for_status()
             with open(out_path, "wb") as fh:
                 for chunk in r.iter_content(chunk_size=chunk_size):
                     if chunk:
                         fh.write(chunk)
-        # register cache
         if os.path.exists(out_path):
             _register_cache_from_thread(out_path)
             return True
         return False
     except Exception as e:
-        try:
-            LOGGER.debug(f"requests download failed: {e}")
-        except Exception:
-            print("requests download failed:", e)
+        LOGGER.debug(f"requests download failed: {e}")
         return False
+
+
+def _run_ffmpeg_convert(input_src: str, out_path: str) -> bool:
+    """
+    Try fast copy remux first, then minimal transcode.
+    """
+    # try copy (same as force_remux_to_mp4 but for local out_path)
+    try:
+        cmd_copy = (
+            f'ffmpeg -y -hide_banner -loglevel error '
+            f'-protocol_whitelist file,http,https,tcp,tls '
+            f'-i {shlex.quote(input_src)} -c copy -bsf:a aac_adtstoasc {shlex.quote(out_path)}'
+        )
+        res = subprocess.run(cmd_copy, shell=True, timeout=300)
+        if res.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+            _register_cache_from_thread(out_path)
+            return True
+    except Exception as e:
+        LOGGER.debug(f"ffmpeg copy failed: {e}")
+
+    # fallback to a lightweight re-encode (low CPU quality)
+    try:
+        _, ext = os.path.splitext(out_path)
+        ext = ext.lower().lstrip(".")
+        if ext in ("mp4", "mkv", "webm"):
+            cmd_recode = (
+                f'ffmpeg -y -hide_banner -loglevel error -i {shlex.quote(input_src)} '
+                f'-c:v libx264 -preset superfast -crf 28 -c:a aac -b:a 96k -ac 2 {shlex.quote(out_path)}'
+            )
+        else:
+            cmd_recode = (
+                f'ffmpeg -y -hide_banner -loglevel error -i {shlex.quote(input_src)} '
+                f'-c:a aac -b:a 96k -ac 2 {shlex.quote(out_path)}'
+            )
+        res2 = subprocess.run(cmd_recode, shell=True, timeout=420)
+        if res2.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+            _register_cache_from_thread(out_path)
+            return True
+    except Exception as e:
+        LOGGER.debug(f"ffmpeg recode failed: {e}")
+
+    return False
 
 
 # ---------------- core sync ytdlp downloader (used inside executor) ----------------
 
 def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool = False) -> Optional[str]:
     """
-    Synchronous worker for yt-dlp (runs in executor).
-    Prioritizes MP4/H264 outputs and avoids returning HLS manifests when possible.
+    Runs in executor. Tries to return a local file (mp4/m4a/opus) not an m3u8.
     """
     try:
         base_opts = get_ytdlp_base_opts(verbose=verbose)
@@ -396,7 +377,6 @@ def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool
                     info = ydl.extract_info(link, download=True)
                     final = _info_to_final_path(info)
                     if final and os.path.exists(final):
-                        # register cache
                         _register_cache_from_thread(final)
                         return final
 
@@ -407,15 +387,17 @@ def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool
                             entry = info["entries"][0] if info["entries"] else {}
                             url = entry.get("url") if isinstance(entry, dict) else None
 
+                    # If yt-dlp returned an m3u8/manifest URL -> remux it to mp4
                     if url and _is_m3u8_url(url):
                         vid = info.get("id") or _safe_filename("video")
-                        target_ext = "mp4" if not candidate.startswith("bestaudio") else "m4a"
-                        out_path = os.path.join(DOWNLOAD_DIR, f"{vid}.{target_ext}")
-                        ok = _run_ffmpeg_convert(url, out_path)
-                        if ok:
-                            return out_path
+                        remuxed = force_remux_to_mp4(url, vid)
+                        if remuxed:
+                            return remuxed
+                        # if remux failed, continue to next candidate (maybe direct file)
+                        continue
 
-                    if url and url.startswith("http"):
+                    # If yt-dlp returned a direct http URL (non-m3u8), try downloading it
+                    if url and (url.startswith("http://") or url.startswith("https://")):
                         vid = info.get("id") or _safe_filename("direct")
                         ext = url.split("?")[0].split(".")[-1][:8] or "dat"
                         out_path = os.path.join(DOWNLOAD_DIR, f"{vid}.{ext}")
@@ -468,9 +450,6 @@ async def close_http_session() -> None:
 
 
 async def download_file(url: str, out_path: str) -> Optional[str]:
-    """
-    Async download using aiohttp (used by API wrappers).
-    """
     if not url:
         return None
     try:
@@ -484,7 +463,6 @@ async def download_file(url: str, out_path: str) -> Optional[str]:
                     if not chunk:
                         break
                     await f.write(chunk)
-        # register cache
         if os.path.exists(out_path):
             await register_cache(out_path)
         return out_path if os.path.exists(out_path) else None
@@ -580,7 +558,6 @@ async def deduplicate_download(key: str, runner):
 
 
 async def race_tasks(yt_task, api_task, title: str):
-    # race between yt-dlp and optional API; return the first successful file path
     tasks = {t for t in (yt_task, api_task) if t}
     if not tasks:
         return None
@@ -591,13 +568,11 @@ async def race_tasks(yt_task, api_task, title: str):
             if result and os.path.exists(result):
                 src = "yt-dlp" if t is yt_task else "API"
                 log_download_source(title or "Unknown", src)
-                # cancel pending
                 for p in pending:
                     p.cancel()
                 return result
         except Exception:
             pass
-    # await remaining if needed and return first valid
     for p in pending:
         try:
             res = await p
@@ -615,16 +590,9 @@ async def race_tasks(yt_task, api_task, title: str):
 # ---------------- public API ----------------
 
 async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str]:
-    """
-    Public async wrapper:
-      link: URL or video id
-      type: "audio" or "video"
-    Returns local file path or None.
-    """
     loop = asyncio.get_running_loop()
     vid = extract_video_id(link)
 
-    # serve from cache if present
     if cached := find_cached_file(vid):
         if title:
             LOGGER.info(f"Track '{title}' - Served from cache")
