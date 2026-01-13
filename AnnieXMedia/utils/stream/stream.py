@@ -1,11 +1,8 @@
 # Authored By Certified Coders © 2025
-# The "Nuclear" Edition: Full Format Support + Dynamic Quality Logic
 import os
 import asyncio
-import yt_dlp
 from random import randint
 from typing import Union
-from functools import partial
 
 from pyrogram.types import InlineKeyboardMarkup
 
@@ -21,57 +18,6 @@ from AnnieXMedia.utils.stream.queue import put_queue, put_queue_index
 from AnnieXMedia.utils.thumbnails import get_thumb
 from AnnieXMedia.utils.errors import capture_internal_err
 
-# --- 🧠 المحرك النووي (Dynamic Quality Engine) ---
-def download_nuclear(vidid, is_video, duration_str="00:00"):
-    # 1. حساب مدة الفيديو بالثواني بدقة
-    try:
-        parts = str(duration_str).split(':')
-        if len(parts) == 2:
-            seconds = int(parts[0]) * 60 + int(parts[1])
-        elif len(parts) == 3:
-            seconds = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-        else:
-            seconds = 300 # لو الوقت مش معروف نعتبره متوسط
-    except:
-        seconds = 300
-
-    # 2. إعدادات أساسية للسرعة وفك الحظر
-    opts = {
-        'outtmpl': 'downloads/%(id)s.%(ext)s',
-        'geo_bypass': True,
-        'nocheckcertificate': True,
-        'quiet': True,
-        'no_warnings': True,
-        'noplaylist': True,
-        'match_filter': yt_dlp.utils.match_filter_func("!is_live"), # منع اللايف في البحث العادي
-        'concurrent_fragment_downloads': 5, # تحميل متعدد الأجزاء (سرعة x5)
-        'extractor_args': {'youtube': {'player_client': ['android', 'web']}}, # تمويه
-    }
-
-    # 3. معادلة الجودة الديناميكية (زي ما طلبت)
-    if is_video:
-        if seconds < 600: 
-            # فيديو أقل من 10 دقايق: هات أعلى جودة متاحة في الكون (حتى لو 4K)
-            # بنحاول نجيب فيديو وصوت مدموجين، لو معرفش بيجيب أفضل المتاح
-            opts['format'] = 'bestvideo+bestaudio/best'
-        elif seconds < 1800:
-            # فيديو من 10 لـ 30 دقيقة: 720p (الجودة الذهبية)
-            opts['format'] = 'bestvideo[height<=720]+bestaudio/best[height<=720]/best'
-        else:
-            # فيديو طويل (أفلام/ميكسات): 480p (عشان الاستقرار وعدم التقطيع)
-            opts['format'] = 'bestvideo[height<=480]+bestaudio/best[height<=480]/best'
-    else:
-        # وضع الصوت: هات M4A (الأسرع) ولو مش موجود هات أي صوت عالي الجودة
-        opts['format'] = 'bestaudio[ext=m4a]/bestaudio/best'
-
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(vidid, download=True)
-            filename = ydl.prepare_filename(info)
-            return filename, True
-    except Exception as e:
-        print(f"Nuclear Download Error: {e}")
-        return None, False
 
 @capture_internal_err
 async def stream(
@@ -137,21 +83,18 @@ async def stream(
                 if not forceplay:
                     db[chat_id] = []
                 
-                # تشغيل المحرك النووي
-                loop = asyncio.get_running_loop()
-                file_path, direct = await loop.run_in_executor(
-                    None, 
-                    partial(download_nuclear, vidid, is_video, str(duration_min))
-                )
-
-                if not file_path:
-                    try:
-                        file_path, direct = await YouTube.download(
-                            vidid, mystic, video=is_video, videoid=vidid
-                        )
-                    except:
-                        raise AssistantErr(_["play_14"])
+                # الاعتماد الكلي على المحرك النووي في YouTube.py
+                try:
+                    file_path, direct = await YouTube.download(
+                        vidid, mystic, video=is_video, videoid=vidid
+                    )
+                except Exception:
+                    # تخطي الملف التالف في القائمة
+                    continue
                 
+                if not file_path:
+                     continue
+
                 await StreamController.join_call(
                     chat_id,
                     original_chat_id,
@@ -216,21 +159,16 @@ async def stream(
         duration_min = result["duration_min"]
         thumbnail = result["thumb"]
 
-        # 🔥 هنا الشغل كله 🔥
-        loop = asyncio.get_running_loop()
-        file_path, direct = await loop.run_in_executor(
-            None, 
-            partial(download_nuclear, vidid, is_video, str(duration_min))
-        )
-        
+        # الاعتماد الكلي على المحرك النووي في YouTube.py
+        try:
+            file_path, direct = await YouTube.download(
+                vidid, mystic, video=is_video, videoid=vidid
+            )
+        except Exception:
+            raise AssistantErr(_["play_14"])
+
         if not file_path:
-            # لو فشل، ارجع للطريقة العادية (احتياطي)
-            try:
-                file_path, direct = await YouTube.download(
-                    vidid, mystic, video=is_video, videoid=vidid
-                )
-            except Exception:
-                raise AssistantErr(_["play_14"])
+             raise AssistantErr(_["play_14"])
 
         if await is_active_chat(chat_id):
             await put_queue(
@@ -400,7 +338,7 @@ async def stream(
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
 
-    # === Live Stream (مفعل) ===
+    # === Live Stream ===
     elif streamtype == "live":
         link = result["link"]
         vidid = result["vidid"]
