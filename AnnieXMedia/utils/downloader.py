@@ -1,12 +1,13 @@
 # Authored By Certified Coders © 2025
 """
 ذكي، سريع، وعملي: downloader مدعوم بـ yt-dlp + aiohttp + ffmpeg fallback.
-مميزات:
- - كاش مؤقت 8 دقائق (TTL) + منظف خلفي ذكي
- - دعم aria2c كـ external_downloader إن كان متوفرًا
- - إعدادات مرنة للسرعة تراعي CPU السيرفر (Fly.io)
+مميزات هذا الملف:
+ - دعم aria2c كـ external_downloader إن كان متوفرًا (لكن **لا** يُستخدم على HLS/googlevideo manifests)
+ - aggressive-friendly defaults (concurrent fragments, chunk size from tuning)
  - تحويل HLS (m3u8/manifest) إلى ملف محلي باستخدام ffmpeg عند الحاجة
- - لا يعدل ffmpeg.py بالمشروع
+ - نظام Cache مؤقت: يحفظ الملفات المحلية لمدة 8 دقائق منذ آخر استخدام، منظف خلفي يحذفها بأمان
+ - تسجيل/تجديد TTL من كل نقاط الإرجاع
+ - إصلاح dedupe key عند غياب video id (يستخدم هاش للرابط)
 """
 
 import asyncio
@@ -18,6 +19,7 @@ import shlex
 import shutil
 import subprocess
 import time
+import hashlib
 from typing import Dict, Optional
 
 import aiofiles
@@ -47,10 +49,9 @@ _session_lock = asyncio.Lock()
 
 YOUTUBE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 
-# CPU-aware tuning
-CPU = os.cpu_count() or 1
-# Limit concurrent fragment downloads to a sane value
-DEFAULT_CONCURRENT_FRAGMENTS = min(8, max(2, CPU * 2))
+# detect aria2 availability once
+ARIA2_PATH = shutil.which("aria2c")
+
 
 # ---------------- Cache Manager (8 minutes TTL) ----------------
 CACHE_TTL = 8 * 60  # seconds
@@ -81,7 +82,6 @@ def _register_cache_from_thread(path: str) -> None:
         if loop.is_running():
             loop.call_soon_threadsafe(asyncio.create_task, register_cache(path))
         else:
-            # fallback: set value now; cleaner will run later
             _cache_registry[path] = time.time() + CACHE_TTL
     except Exception:
         _cache_registry[path] = time.time() + CACHE_TTL
@@ -118,11 +118,9 @@ async def _cache_cleaner_loop() -> None:
             async with _cache_lock:
                 for p, expiry in list(_cache_registry.items()):
                     if expiry <= now:
-                        # only delete if file not used in global queues
                         if not _is_file_in_use(p) and os.path.exists(p):
                             to_delete.append(p)
                         else:
-                            # extend by TTL if in use (prevents race)
                             _cache_registry[p] = now + CACHE_TTL
             for p in to_delete:
                 try:
@@ -149,7 +147,6 @@ def init_cache_cleaner() -> None:
         if loop.is_running():
             loop.create_task(_cache_cleaner_loop())
         else:
-            # will start when loop runs; caller can call this again after event loop active
             pass
     except Exception:
         LOGGER.exception("init_cache_cleaner failed")
@@ -170,10 +167,18 @@ def extract_video_id(link: str) -> str:
     s = link.strip()
     if YOUTUBE_ID_RE.match(s):
         return s
-    if "v=" in s:
+    if "v=" in s and "youtube" in s:
         return s.split("v=")[-1].split("&")[0]
     last = s.split("/")[-1].split("?")[0]
     return last if YOUTUBE_ID_RE.match(last) else ""
+
+
+def _make_link_id(link: str) -> str:
+    """Return short deterministic id for arbitrary link (used when video id unavailable)."""
+    if not link:
+        return ""
+    h = hashlib.sha256(link.encode()).hexdigest()
+    return h[:16]
 
 
 def get_cookie_file() -> Optional[str]:
@@ -191,7 +196,6 @@ def find_cached_file(video_id: str) -> Optional[str]:
     for ext in ("mp4", "mkv", "webm", "m4a", "mp3", "opus"):
         p = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
         if os.path.exists(p):
-            # renew TTL when file is served from cache
             _register_cache_from_thread(p)
             return p
     return None
@@ -202,10 +206,9 @@ def find_cached_file(video_id: str) -> Optional[str]:
 def get_ytdlp_base_opts(verbose: bool = False) -> Dict[str, object]:
     """
     Aggressive-friendly base options.
-    If aria2c is available as external_downloader, enable it with aggressive args.
+    external_downloader may be added later per-link (we avoid enabling it globally for HLS).
     """
-    min_chunk = max(CHUNK_SIZE, 1 * 1024 * 1024)
-    concurrent_fragments = DEFAULT_CONCURRENT_FRAGMENTS
+    min_chunk = max(CHUNK_SIZE, 4 * 1024 * 1024)
 
     opts = {
         "outtmpl": os.path.join(DOWNLOAD_DIR, "%(id)s.%(ext)s"),
@@ -215,11 +218,11 @@ def get_ytdlp_base_opts(verbose: bool = False) -> Dict[str, object]:
         "continuedl": True,
         "overwrites": False,
         "noprogress": True,
-        "retries": 4,
-        "fragment_retries": 4,
-        "concurrent_fragment_downloads": concurrent_fragments,
+        "retries": 5,
+        "fragment_retries": 5,
+        "concurrent_fragment_downloads": 16,
         "http_chunk_size": min_chunk,
-        "socket_timeout": 15,
+        "socket_timeout": 10,
         "cachedir": str(CACHE_DIR),
         "ignoreerrors": True,
         "merge_output_format": "mp4",
@@ -230,23 +233,6 @@ def get_ytdlp_base_opts(verbose: bool = False) -> Dict[str, object]:
         "nopostoverwrites": True,
         "prefer_ffmpeg": True,
     }
-
-    # enable aria2c if present (optional)
-    aria2_path = shutil.which("aria2c")
-    if aria2_path:
-        piece_len_k = max(1024, min_chunk // 1024)
-        opts["external_downloader"] = "aria2c"
-        opts["external_downloader_args"] = [
-            "-x", "8",
-            "-s", "8",
-            "-k", f"{piece_len_k}K",
-            "--file-allocation=none",
-            "--allow-overwrite=true",
-            "--max-connection-per-server=8",
-            "--min-split-size=1M",
-        ]
-        # when using aria2c, reduce internal fragment concurrency
-        opts["concurrent_fragment_downloads"] = max(2, concurrent_fragments // 2)
 
     if cookie := get_cookie_file():
         opts["cookiefile"] = cookie
@@ -291,28 +277,26 @@ def _safe_filename(prefix: str = "tmp") -> str:
 def _run_ffmpeg_convert(input_src: str, out_path: str) -> bool:
     """
     Convert an HLS manifest or remote URL to a local file.
-    Try copy first, then fast re-encode. Use -threads 1 to avoid pegging all cores.
+    Try copy first, then fast re-encode. Use -threads 0 to utilize CPUs.
     """
     try:
         cmd_copy = (
             f'ffmpeg -y -hide_banner -loglevel error '
             f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
-            f'-threads 1 -i {shlex.quote(input_src)} -c copy {shlex.quote(out_path)}'
+            f'-threads 0 -i {shlex.quote(input_src)} -c copy {shlex.quote(out_path)}'
         )
-        res = subprocess.run(cmd_copy, shell=True, timeout=420)
+        res = subprocess.run(cmd_copy, shell=True, timeout=600)
         if res.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
-            # register cache
             _register_cache_from_thread(out_path)
             return True
 
-        # fallback: re-encode quickly with stereo audio
         _, ext = os.path.splitext(out_path)
         ext = ext.lower().lstrip(".")
         if ext in ("mp4", "mkv", "webm"):
             cmd_recode = (
                 f'ffmpeg -y -hide_banner -loglevel error '
                 f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
-                f'-threads 1 -i {shlex.quote(input_src)} '
+                f'-threads 0 -i {shlex.quote(input_src)} '
                 f'-c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 160k -ac 2 -ar 48000 '
                 f'{shlex.quote(out_path)}'
             )
@@ -321,13 +305,13 @@ def _run_ffmpeg_convert(input_src: str, out_path: str) -> bool:
                 cmd_recode = (
                     f'ffmpeg -y -hide_banner -loglevel error '
                     f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
-                    f'-threads 1 -i {shlex.quote(input_src)} -c:a libopus -b:a 160k -ac 2 -ar 48000 {shlex.quote(out_path)}'
+                    f'-threads 0 -i {shlex.quote(input_src)} -c:a libopus -b:a 160k -ac 2 -ar 48000 {shlex.quote(out_path)}'
                 )
             else:
                 cmd_recode = (
                     f'ffmpeg -y -hide_banner -loglevel error '
                     f'-fflags +nobuffer -flags low_delay -probesize 32 -analyzeduration 0 '
-                    f'-threads 1 -i {shlex.quote(input_src)} -c:a aac -b:a 160k -ac 2 -ar 48000 {shlex.quote(out_path)}'
+                    f'-threads 0 -i {shlex.quote(input_src)} -c:a aac -b:a 160k -ac 2 -ar 48000 {shlex.quote(out_path)}'
                 )
 
         res2 = subprocess.run(cmd_recode, shell=True, timeout=900)
@@ -355,7 +339,6 @@ def _download_http_blocking(url: str, out_path: str, chunk_size: int = CHUNK_SIZ
                 for chunk in r.iter_content(chunk_size=chunk_size):
                     if chunk:
                         fh.write(chunk)
-        # register cache
         if os.path.exists(out_path):
             _register_cache_from_thread(out_path)
             return True
@@ -374,6 +357,7 @@ def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool
     """
     Synchronous worker for yt-dlp (runs in executor).
     Prioritizes MP4/H264 outputs and avoids returning HLS manifests when possible.
+    Also disables aria2 external_downloader when link is HLS/googlevideo to avoid 403 on shards.
     """
     try:
         base_opts = get_ytdlp_base_opts(verbose=verbose)
@@ -396,12 +380,19 @@ def download_with_ytdlp_sync(link: str, fmt: Optional[str] = None, verbose: bool
             opts = dict(base_opts)
             opts["format"] = candidate
 
+            # If the original link looks like HLS/googlevideo manifest, disable external_downloader
+            try:
+                if ARIA2_PATH and ( _is_m3u8_url(link) or "googlevideo.com" in link or "manifest.googlevideo" in link ):
+                    opts.pop("external_downloader", None)
+                    opts.pop("external_downloader_args", None)
+            except Exception:
+                pass
+
             try:
                 with YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(link, download=True)
                     final = _info_to_final_path(info)
                     if final and os.path.exists(final):
-                        # register cache
                         _register_cache_from_thread(final)
                         return final
 
@@ -489,7 +480,6 @@ async def download_file(url: str, out_path: str) -> Optional[str]:
                     if not chunk:
                         break
                     await f.write(chunk)
-        # register cache
         if os.path.exists(out_path):
             await register_cache(out_path)
         return out_path if os.path.exists(out_path) else None
@@ -596,13 +586,11 @@ async def race_tasks(yt_task, api_task, title: str):
             if result and os.path.exists(result):
                 src = "yt-dlp" if t is yt_task else "API"
                 log_download_source(title or "Unknown", src)
-                # cancel pending
                 for p in pending:
                     p.cancel()
                 return result
         except Exception:
             pass
-    # await remaining if needed and return first valid
     for p in pending:
         try:
             res = await p
@@ -627,16 +615,19 @@ async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str
     Returns local file path or None.
     """
     loop = asyncio.get_running_loop()
-    vid = extract_video_id(link)
 
-    # serve from cache if present
-    if cached := find_cached_file(vid):
+    # compute a stable key id: prefer youtube id, else short hash of link
+    vid = extract_video_id(link)
+    id_key = vid if vid else _make_link_id(link)
+
+    # serve from cache if present (only works for real video id files named by id)
+    if vid and (cached := find_cached_file(vid)):
         if title:
             LOGGER.info(f"Track '{title}' - Served from cache")
         return cached
 
     if type == "audio":
-        key = f"audio:{vid}"
+        key = f"audio:{id_key}"
 
         async def run():
             yt = asyncio.create_task(
@@ -650,7 +641,7 @@ async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str
         return await deduplicate_download(key, run)
 
     if type == "video":
-        key = f"video:{vid}"
+        key = f"video:{id_key}"
 
         async def run():
             fmt = "bestvideo[ext=mp4][vcodec!=?vp9][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]/best"
