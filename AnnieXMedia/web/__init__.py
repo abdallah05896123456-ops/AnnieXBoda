@@ -1,42 +1,67 @@
-from quart import Quart, render_template, jsonify, request
+from flask import Blueprint, render_template, jsonify, request
+from AnnieXMedia import app, userbot
+from AnnieXMedia.core.call import StreamController
+from pytgcalls.exceptions import NoActiveGroupCall
 import asyncio
-from threading import Thread
 
-# 1. تعريف التطبيق وتحديد مكان ملفات التصميم
-# template_folder='templates' -> عشان يقرأ الـ HTML
-# static_folder='static' -> عشان يقرأ الـ CSS والـ JS اللي هنعملهم بعدين
-app = Quart(__name__, template_folder='templates', static_folder='static')
+web_bp = Blueprint('web', __name__, template_folder='templates', static_folder='static')
 
 # ==============================
-# 2. الصفحة الرئيسية
+# 1. API: جلب حالة البوت الحالية
 # ==============================
-@app.route('/')
-async def home():
-    """أول ما تفتح الموقع، هيعرض ملف index.html"""
-    return await render_template('index.html')
-
-# ==============================
-# 3. نقطة فحص النظام (API)
-# ==============================
-@app.route('/api/status')
-async def system_status():
-    """عشان نتأكد إن الموقع واصل بالبوت"""
+@web_bp.route('/api/status')
+def get_status():
+    """بترجع اسم الأغنية، الوقت، والصورة للواجهة"""
+    # هنا محتاجين نجيب البيانات الحقيقية من StreamController
+    # (هنفترض وجود متغيرات global أو دالة get_current_playing)
+    
+    # مثال لبيانات وهمية مؤقتاً لحد ما نربط المتغيرات:
     return jsonify({
-        "status": "online",
-        "bot_name": "AnnieX-Titan",
-        "theme": "Glassy-iOS"
+        "status": "playing",
+        "track": "AnnieX Intro Mix",
+        "artist": "DJ Titan",
+        "cover": "https://telegra.ph/file/8b3e21894d3062325c04b.jpg",
+        "position": 120, # بالثواني
+        "duration": 300,
+        "listeners": 15,
+        "ping": "42ms"
     })
 
 # ==============================
-# 4. دالة التشغيل (Run)
+# 2. API: تنفيذ الأوامر (Play, Pause, Skip)
 # ==============================
-def run_flask_app():
-    # تشغيل السيرفر على بورت 8080 (أو أي بورت تحبه)
-    # use_reloader=False مهم عشان ميعملش مشاكل مع البوت
-    app.run(host="0.0.0.0", port=8080, use_reloader=False)
+@web_bp.route('/api/control', methods=['POST'])
+def control_player():
+    data = request.json
+    action = data.get('action')
+    chat_id = data.get('chat_id') # لو مبعوتش، هنستخدم الجروب الافتراضي
 
-def start_web():
-    """الدالة دي اللي هنستدعيها في ملف البوت الرئيسي"""
-    t = Thread(target=run_flask_app)
-    t.daemon = True
-    t.start()
+    # استخدام الـ Loop الأساسي للبوت لتنفيذ الأوامر
+    loop = asyncio.get_event_loop()
+
+    try:
+        if action == 'pause':
+            # استدعاء دالة الإيقاف المؤقت من Call Controller
+            loop.create_task(StreamController.pause_stream(chat_id))
+        
+        elif action == 'resume':
+            loop.create_task(StreamController.resume_stream(chat_id))
+            
+        elif action == 'skip':
+            loop.create_task(StreamController.skip_stream(chat_id))
+            
+        elif action == 'volume':
+            vol = int(data.get('value', 100))
+            loop.create_task(StreamController.change_volume(chat_id, vol))
+
+        return jsonify({"success": True, "message": f"تم تنفيذ {action}"})
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+# ==============================
+# 3. الصفحة الرئيسية
+# ==============================
+@web_bp.route('/')
+def home():
+    return render_template('index.html')
