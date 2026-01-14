@@ -1,816 +1,208 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AnnieX OS • Titan Class</title>
-    
-    <!-- SYSTEM KERNEL LIBRARIES -->
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.4.14/ace.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
-    
-    <style>
-        /* =========================================
-           CORE SYSTEM STYLES (THEME: NEON GOD)
-           ========================================= */
-        :root {
-            --bg-deep: #030305;
-            --bg-panel: rgba(10, 10, 12, 0.85);
-            --bg-card: rgba(20, 20, 25, 0.6);
-            --neon-cyan: #00f3ff;
-            --neon-pink: #ff0055;
-            --neon-purple: #bc13fe;
-            --neon-green: #0aff00;
-            --neon-gold: #ffd700;
-            --danger: #ff2a2a;
-            --text-main: #e0e0e0;
-            --text-dim: #707070;
-            --border-glow: 0 0 10px rgba(0, 243, 255, 0.2);
-            --font-ui: 'Rajdhani', sans-serif;
-            --font-code: 'JetBrains Mono', monospace;
-            --font-head: 'Orbitron', sans-serif;
-        }
-
-        * { box-sizing: border-box; outline: none; user-select: none; }
-        body { margin: 0; padding: 0; background: var(--bg-deep); color: var(--text-main); font-family: var(--font-ui); height: 100vh; overflow: hidden; cursor: crosshair; }
-        
-        /* CRT SCANLINE EFFECT */
-        body::after {
-            content: " ";
-            display: block;
-            position: absolute;
-            top: 0; left: 0; bottom: 0; right: 0;
-            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
-            z-index: 9999;
-            background-size: 100% 2px, 3px 100%;
-            pointer-events: none;
-        }
-
-        /* SCROLLBARS */
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: #000; }
-        ::-webkit-scrollbar-thumb { background: var(--neon-cyan); border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--neon-purple); }
-
-        /* ANIMATIONS */
-        @keyframes bootLoad { 0% { width: 0; } 100% { width: 100%; } }
-        @keyframes flicker { 0% { opacity: 0.9; } 50% { opacity: 1; } 100% { opacity: 0.9; } }
-        @keyframes slideIn { from { transform: translateX(-20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-        @keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(255, 0, 85, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(255, 0, 85, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 0, 85, 0); } }
-
-        /* =========================================
-           COMPONENT: BOOT SCREEN
-           ========================================= */
-        #boot-screen {
-            position: fixed; inset: 0; background: #000; z-index: 10000;
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
-            font-family: var(--font-code); color: var(--neon-cyan);
-        }
-        .boot-log { width: 600px; height: 300px; overflow: hidden; font-size: 12px; color: var(--neon-green); margin-bottom: 20px; text-align: left; }
-        .progress-container { width: 400px; height: 4px; background: #222; position: relative; }
-        .progress-bar { height: 100%; background: var(--neon-cyan); width: 0; transition: width 0.1s; box-shadow: 0 0 10px var(--neon-cyan); }
-
-        /* =========================================
-           COMPONENT: LOGIN
-           ========================================= */
-        #login-app {
-            height: 100vh; display: flex; justify-content: center; align-items: center;
-            background: radial-gradient(circle at center, #1a1a2e 0%, #000 70%);
-        }
-        .login-card {
-            width: 450px; padding: 40px;
-            background: rgba(0,0,0,0.8); border: 1px solid var(--neon-cyan);
-            box-shadow: 0 0 30px rgba(0, 243, 255, 0.1);
-            backdrop-filter: blur(10px); text-align: center;
-            position: relative; overflow: hidden;
-            clip-path: polygon(20px 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%, 0 20px);
-        }
-        .login-card::before { content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: var(--neon-cyan); }
-        .cyber-input {
-            width: 100%; background: transparent; border: none; border-bottom: 2px solid #333;
-            color: var(--neon-cyan); font-family: var(--font-head); font-size: 1.5rem;
-            text-align: center; padding: 10px; margin: 30px 0; letter-spacing: 5px;
-            transition: 0.3s;
-        }
-        .cyber-input:focus { border-bottom-color: var(--neon-cyan); box-shadow: 0 10px 20px -10px rgba(0,243,255,0.2); }
-        .cyber-btn {
-            background: var(--neon-cyan); color: #000; font-family: var(--font-head);
-            padding: 15px 30px; border: none; font-weight: 900; letter-spacing: 2px;
-            cursor: pointer; clip-path: polygon(10px 0, 100% 0, 100% 100%, 0 100%, 0 10px);
-            transition: 0.3s; width: 100%;
-        }
-        .cyber-btn:hover { background: #fff; box-shadow: 0 0 20px var(--neon-cyan); }
-
-        /* =========================================
-           COMPONENT: DASHBOARD LAYOUT
-           ========================================= */
-        #main-app { display: flex; height: 100vh; opacity: 0; transition: opacity 1s; }
-        .sidebar {
-            width: 80px; background: rgba(0,0,0,0.9); border-right: 1px solid #222;
-            display: flex; flex-direction: column; align-items: center; padding-top: 20px;
-            z-index: 100; transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .sidebar:hover { width: 260px; }
-        .nav-btn {
-            width: 90%; height: 50px; margin: 5px 0; display: flex; align-items: center;
-            color: #666; cursor: pointer; border-radius: 8px; transition: 0.2s;
-            position: relative; overflow: hidden;
-        }
-        .nav-btn i { font-size: 1.4rem; min-width: 60px; text-align: center; transition: 0.2s; }
-        .nav-btn span { font-family: var(--font-head); opacity: 0; white-space: nowrap; transition: 0.2s; font-size: 0.9rem; letter-spacing: 1px; }
-        .sidebar:hover .nav-btn span { opacity: 1; }
-        .nav-btn:hover, .nav-btn.active { color: var(--neon-cyan); background: rgba(0, 243, 255, 0.05); text-shadow: 0 0 8px var(--neon-cyan); }
-        .nav-btn.active::before { content: ''; position: absolute; left: 0; top: 10%; height: 80%; width: 3px; background: var(--neon-cyan); box-shadow: 0 0 10px var(--neon-cyan); }
-        
-        .content-area { flex: 1; position: relative; overflow: hidden; background-image: radial-gradient(#1a1a20 1px, transparent 1px); background-size: 40px 40px; }
-        .top-bar {
-            height: 60px; border-bottom: 1px solid rgba(255,255,255,0.05);
-            display: flex; justify-content: space-between; align-items: center; padding: 0 30px;
-            background: rgba(0,0,0,0.5); backdrop-filter: blur(5px);
-        }
-        .status-pill {
-            padding: 5px 15px; border-radius: 20px; background: rgba(0,0,0,0.5); border: 1px solid #333;
-            font-family: var(--font-code); font-size: 0.8rem; color: var(--neon-green);
-            display: flex; align-items: center; gap: 8px;
-        }
-        .live-dot { width: 8px; height: 8px; background: var(--neon-green); border-radius: 50%; animation: pulse-red 2s infinite; }
-
-        /* =========================================
-           VIEW: GENERIC PANELS & GRID
-           ========================================= */
-        .view-container { padding: 30px; height: calc(100vh - 60px); overflow-y: auto; }
-        .grid-dashboard { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 20px; }
-        
-        .panel {
-            background: var(--bg-panel); border: 1px solid rgba(255,255,255,0.05);
-            border-radius: 12px; padding: 20px; position: relative; overflow: hidden;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3); transition: transform 0.2s;
-        }
-        .panel:hover { border-color: rgba(255,255,255,0.1); }
-        .panel h3 { margin: 0 0 15px 0; font-family: var(--font-head); color: var(--text-dim); font-size: 0.9rem; letter-spacing: 2px; text-transform: uppercase; border-bottom: 1px solid #222; padding-bottom: 10px; display: flex; justify-content: space-between; }
-        
-        .stat-val { font-size: 2.5rem; font-family: var(--font-head); color: #fff; font-weight: 700; }
-        .stat-sub { font-family: var(--font-code); font-size: 0.8rem; color: var(--neon-cyan); margin-top: 5px; }
-        
-        /* =========================================
-           VIEW: TERMINAL (XTERM STYLE)
-           ========================================= */
-        .term-wrapper { height: 100%; display: flex; flex-direction: column; background: #0a0a0c; border: 1px solid #333; border-radius: 8px; padding: 10px; font-family: var(--font-code); }
-        .term-output { flex: 1; overflow-y: auto; white-space: pre-wrap; color: #ccc; font-size: 14px; padding-bottom: 10px; }
-        .term-input-line { display: flex; align-items: center; color: var(--neon-green); }
-        .term-input { background: transparent; border: none; color: #fff; flex: 1; font-family: inherit; font-size: 14px; margin-left: 10px; }
-
-        /* =========================================
-           VIEW: FILE MANAGER
-           ========================================= */
-        .file-toolbar { display: flex; gap: 10px; margin-bottom: 20px; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; }
-        .path-input { flex: 1; background: #111; border: 1px solid #333; color: var(--neon-gold); padding: 8px 15px; border-radius: 4px; font-family: var(--font-code); }
-        .file-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 15px; }
-        .file-item {
-            text-align: center; padding: 15px; border-radius: 8px; cursor: pointer;
-            transition: 0.2s; border: 1px solid transparent; position: relative;
-        }
-        .file-item:hover { background: rgba(255,255,255,0.05); border-color: var(--neon-cyan); }
-        .file-icon { font-size: 2.5rem; margin-bottom: 8px; color: #555; transition: 0.2s; }
-        .file-item:hover .file-icon { color: #fff; transform: scale(1.1); }
-        .file-name { font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-        /* =========================================
-           VIEW: MIXER
-           ========================================= */
-        .mixer-deck { display: flex; gap: 30px; height: 100%; }
-        .deck-left, .deck-right { flex: 1; background: #111; border-radius: 20px; padding: 20px; display: flex; flex-direction: column; align-items: center; border: 2px solid #222; position: relative; }
-        .deck-active { border-color: var(--neon-cyan); box-shadow: 0 0 20px rgba(0, 243, 255, 0.1); }
-        .vinyl { width: 200px; height: 200px; border-radius: 50%; background: radial-gradient(#222 20%, #000 21%, #111 60%, #000 61%); border: 5px solid #333; margin: 30px 0; animation: spin 2s linear infinite; animation-play-state: paused; display: flex; align-items: center; justify-content: center; }
-        .vinyl.playing { animation-play-state: running; border-color: var(--neon-pink); }
-        .vinyl-inner { width: 80px; height: 80px; background: url('https://i.imgur.com/3QZ9X9r.png'); background-size: cover; border-radius: 50%; }
-        
-        .fader-group { display: flex; gap: 20px; height: 200px; align-items: center; }
-        .fader-track { width: 10px; height: 100%; background: #222; border-radius: 5px; position: relative; }
-        .fader-handle { width: 30px; height: 50px; background: linear-gradient(#444, #222); border: 1px solid #555; position: absolute; left: -10px; bottom: 50%; cursor: ns-resize; border-radius: 4px; box-shadow: 0 5px 10px #000; }
-        
-        @keyframes spin { 100% { transform: rotate(360deg); } }
-
-        /* =========================================
-           UTILITY CLASSES
-           ========================================= */
-        .text-neon { color: var(--neon-cyan); }
-        .text-danger { color: var(--danger); }
-        .btn-act { padding: 8px 15px; border: 1px solid #444; background: #1a1a1a; color: #fff; border-radius: 4px; cursor: pointer; transition: 0.2s; font-family: var(--font-code); font-size: 0.8rem; }
-        .btn-act:hover { border-color: var(--neon-cyan); color: var(--neon-cyan); }
-        .btn-danger:hover { border-color: var(--danger); color: var(--danger); }
-        .hidden { display: none !important; }
-
-        /* CONTEXT MENU */
-        #ctx-menu { position: absolute; background: #1a1a1a; border: 1px solid #444; width: 150px; z-index: 9999; display: none; box-shadow: 0 10px 20px #000; }
-        .ctx-item { padding: 10px; cursor: pointer; font-size: 0.9rem; color: #ccc; }
-        .ctx-item:hover { background: var(--neon-cyan); color: #000; }
-
-        /* LOADING SPINNER */
-        .loader { width: 48px; height: 48px; border: 5px solid #FFF; border-bottom-color: var(--neon-cyan); border-radius: 50%; display: inline-block; box-sizing: border-box; animation: rotation 1s linear infinite; }
-        @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DashX • Ultimate</title>
+    <!-- مكتبات الأيقونات -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
-    {% raw %}
-    <!-- SOUND ENGINE -->
-    <audio id="sfx-hover" src="https://assets.mixkit.co/sfx/preview/mixkit-sci-fi-interface-click-901.mp3"></audio>
-    <audio id="sfx-click" src="https://assets.mixkit.co/sfx/preview/mixkit-modern-technology-select-3124.mp3"></audio>
-    <audio id="sfx-alert" src="https://assets.mixkit.co/sfx/preview/mixkit-sci-fi-system-failure-2999.mp3"></audio>
-    <audio id="sfx-boot" src="https://assets.mixkit.co/sfx/preview/mixkit-sci-fi-computer-start-up-3081.mp3"></audio>
+<body class="theme-red"> <!-- الكلاس ده اللي هيتغير من الاعدادات -->
 
-    <!-- BOOT SEQUENCE (Pure Visual) -->
-    <div id="boot-screen">
-        <div style="font-size: 4rem; margin-bottom: 20px; font-weight: bold;">ANNIE-X <span style="font-size:1rem; vertical-align:middle; border:1px solid; padding:2px 5px">BIOS v4.0</span></div>
-        <div class="boot-log" id="boot-log"></div>
-        <div class="progress-container"><div class="progress-bar" id="boot-bar"></div></div>
+    <!-- 1. الخلفية العميقة (Ambient Background) -->
+    <div class="ambient-bg">
+        <div class="light-orb top-left"></div>
+        <div class="light-orb bottom-right"></div>
     </div>
 
-    <!-- MAIN VUE APP -->
-    <div id="app">
-        
-        <!-- LOGIN VIEW -->
-        <div v-if="!authenticated" id="login-app">
-            <div class="login-card">
-                <h1 style="font-family: var(--font-head); color: var(--neon-cyan); font-size: 2.5rem; margin-bottom: 0;">ANNIE-X</h1>
-                <p style="letter-spacing: 5px; color: #666; font-size: 0.8rem; margin-top: 5px;">COMMANDER ACCESS</p>
-                <form @submit.prevent="login">
-                    <input type="password" v-model="password" class="cyber-input" placeholder="ACCESS KEY" autofocus>
-                    <button type="submit" class="cyber-btn">INITIALIZE SYSTEM</button>
-                    <p v-if="loginError" style="color:var(--danger); margin-top:15px; font-family:var(--font-code)">ACCESS DENIED // INVALID KEY</p>
-                </form>
-            </div>
+    <!-- 2. الهيدر (Dynamic Island Style) -->
+    <header class="glass-header">
+        <div class="status-pill">
+            <span class="dot live"></span>
+            <span id="system-status">متصل</span>
         </div>
+        <div class="logo">DashX</div>
+        <div class="profile-pic">
+            <img src="https://telegra.ph/file/8b3e21894d3062325c04b.jpg" alt="Admin">
+        </div>
+    </header>
 
-        <!-- DASHBOARD VIEW -->
-        <div v-else id="main-app" :style="{opacity: systemReady ? 1 : 0}">
+    <!-- 3. مساحة العمل (الشاشات) -->
+    <main id="app-content">
+
+        <!-- A. شاشة المشغل (Music Player) -->
+        <section id="tab-home" class="view active">
+            <!-- كارت الأغنية الكبير -->
+            <div class="glass-panel main-player">
+                <div class="artwork-container">
+                    <img src="https://telegra.ph/file/8b3e21894d3062325c04b.jpg" class="art-img" id="track-art">
+                    <div class="vinyl-overlay"></div>
+                </div>
+                
+                <div class="track-details">
+                    <h2 id="track-title">انتظار التشغيل...</h2>
+                    <p id="track-artist">AnnieX System</p>
+                </div>
+
+                <div class="waveform-bar">
+                    <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+                </div>
+
+                <!-- شريط التقدم -->
+                <div class="progress-container">
+                    <span class="time-current">0:00</span>
+                    <input type="range" class="seek-slider" value="0">
+                    <span class="time-total">0:00</span>
+                </div>
+
+                <!-- أزرار التحكم الكاملة -->
+                <div class="player-controls">
+                    <button class="ctrl-btn sm"><i class="fas fa-random"></i></button>
+                    <button class="ctrl-btn md"><i class="fas fa-backward"></i></button>
+                    <button class="ctrl-btn lg play-glow"><i class="fas fa-play"></i></button>
+                    <button class="ctrl-btn md"><i class="fas fa-forward"></i></button>
+                    <button class="ctrl-btn sm"><i class="fas fa-redo"></i></button>
+                </div>
+            </div>
+
+            <!-- إحصائيات سريعة تحت المشغل -->
+            <div class="stats-row">
+                <div class="glass-box">
+                    <i class="fas fa-headphones"></i>
+                    <div class="num">12</div>
+                    <div class="lbl">مستمع</div>
+                </div>
+                <div class="glass-box">
+                    <i class="fas fa-satellite-dish"></i>
+                    <div class="num">48ms</div>
+                    <div class="lbl">بينج</div>
+                </div>
+                <div class="glass-box">
+                    <i class="fas fa-battery-half"></i>
+                    <div class="num">80%</div>
+                    <div class="lbl">طاقة</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- B. شاشة الخزنة (Vault) -->
+        <section id="tab-vault" class="view">
+            <div class="section-title">
+                <h1>مدير الملفات</h1>
+                <button class="glass-btn-sm"><i class="fas fa-cloud-upload"></i> رفع</button>
+            </div>
+            <div class="vault-grid">
+                <!-- عينة ملف -->
+                <div class="vault-item glass-panel">
+                    <div class="file-icon mp3"><i class="fas fa-music"></i></div>
+                    <div class="file-info">
+                        <h4>Surat_AlKahf.mp3</h4>
+                        <span>12.5 MB • منذ ساعة</span>
+                    </div>
+                    <button class="more-opt"><i class="fas fa-ellipsis-v"></i></button>
+                </div>
+                <!-- عينة 2 -->
+                <div class="vault-item glass-panel">
+                    <div class="file-icon video"><i class="fas fa-video"></i></div>
+                    <div class="file-info">
+                        <h4>Movie_Night.mp4</h4>
+                        <span>1.2 GB • البارحة</span>
+                    </div>
+                    <button class="more-opt"><i class="fas fa-ellipsis-v"></i></button>
+                </div>
+            </div>
+        </section>
+
+        <!-- C. شاشة الإعدادات والألوان (Settings) -->
+        <section id="tab-settings" class="view">
+            <h1 class="page-header">تخصيص المظهر</h1>
             
-            <!-- SIDEBAR -->
-            <div class="sidebar">
-                <div style="width:50px; height:50px; background:var(--neon-cyan); border-radius:50%; margin-bottom:30px; display:flex; justify-content:center; align-items:center; font-weight:bold; color:#000; font-family:var(--font-head)">AX</div>
-                
-                <div class="nav-btn" :class="{active: currentView === 'dashboard'}" @click="switchView('dashboard')" @mouseenter="sfxHover">
-                    <i class="fas fa-chart-pie"></i> <span>OVERVIEW</span>
-                </div>
-                <div class="nav-btn" :class="{active: currentView === 'terminal'}" @click="switchView('terminal')" @mouseenter="sfxHover">
-                    <i class="fas fa-terminal"></i> <span>CONSOLE</span>
-                </div>
-                <div class="nav-btn" :class="{active: currentView === 'files'}" @click="switchView('files')" @mouseenter="sfxHover">
-                    <i class="fas fa-folder-tree"></i> <span>DATA VAULT</span>
-                </div>
-                <div class="nav-btn" :class="{active: currentView === 'mixer'}" @click="switchView('mixer')" @mouseenter="sfxHover">
-                    <i class="fas fa-sliders"></i> <span>AUDIO DECK</span>
-                </div>
-                <div class="nav-btn" :class="{active: currentView === 'bots'}" @click="switchView('bots')" @mouseenter="sfxHover">
-                    <i class="fas fa-robot"></i> <span>BOT NET</span>
-                </div>
-                <div class="nav-btn" :class="{active: currentView === 'config'}" @click="switchView('config')" @mouseenter="sfxHover">
-                    <i class="fas fa-gear"></i> <span>KERNEL</span>
-                </div>
-                
-                <div style="flex:1"></div>
-                
-                <div class="nav-btn text-danger" @click="systemAction('restart')" @mouseenter="sfxHover">
-                    <i class="fas fa-power-off"></i> <span>REBOOT</span>
-                </div>
-                <div class="nav-btn" @click="logout" @mouseenter="sfxHover">
-                    <i class="fas fa-sign-out-alt"></i> <span>LOGOUT</span>
+            <!-- منتقي الألوان -->
+            <div class="glass-panel settings-card">
+                <h3>لون الثيم (Accent Color)</h3>
+                <div class="color-picker-row">
+                    <div class="color-dot red selected" onclick="setTheme('red')"></div>
+                    <div class="color-dot blue" onclick="setTheme('blue')"></div>
+                    <div class="color-dot green" onclick="setTheme('green')"></div>
+                    <div class="color-dot purple" onclick="setTheme('purple')"></div>
+                    <div class="color-dot gold" onclick="setTheme('gold')"></div>
                 </div>
             </div>
 
-            <!-- CONTENT -->
-            <div class="content-area">
-                <!-- TOP BAR -->
-                <div class="top-bar">
-                    <div class="status-pill">
-                        <div class="live-dot"></div> SYSTEM ONLINE
-                    </div>
-                    <div style="display:flex; gap:20px; font-family:var(--font-code); font-size:0.8rem; color:#aaa">
-                        <div><i class="fas fa-clock"></i> {{ currentTime }}</div>
-                        <div><i class="fas fa-wifi"></i> {{ latency }}ms</div>
-                        <div>CPU: <span class="text-neon">{{ stats.cpu.percent }}%</span></div>
-                    </div>
+            <div class="glass-panel settings-card">
+                <h3>النظام</h3>
+                <div class="setting-row">
+                    <span><i class="fas fa-moon"></i> الوضع الليلي العميق</span>
+                    <label class="switch">
+                        <input type="checkbox" checked>
+                        <span class="slider round"></span>
+                    </label>
                 </div>
-
-                <!-- VIEW CONTAINER -->
-                <div class="view-container">
-                    
-                    <!-- 1. DASHBOARD OVERVIEW -->
-                    <div v-if="currentView === 'dashboard'" class="fade-in">
-                        <div class="grid-dashboard">
-                            <!-- CPU CARD -->
-                            <div class="panel">
-                                <h3>Processor Load <i class="fas fa-microchip"></i></h3>
-                                <div class="stat-val">{{ stats.cpu.percent }}%</div>
-                                <div class="stat-sub">{{ stats.cpu.cores }} Cores @ {{ stats.cpu.freq_current }}</div>
-                                <canvas id="cpuChart" style="height:100px; width:100%; margin-top:10px"></canvas>
-                            </div>
-                            
-                            <!-- RAM CARD -->
-                            <div class="panel">
-                                <h3>Memory Usage <i class="fas fa-memory"></i></h3>
-                                <div class="stat-val" style="color:var(--neon-purple)">{{ stats.memory.percent }}%</div>
-                                <div class="stat-sub">Used: {{ stats.memory.used }} / {{ stats.memory.total }}</div>
-                                <div style="width:100%; height:5px; background:#333; margin-top:15px">
-                                    <div :style="{width: stats.memory.percent + '%', background: 'var(--neon-purple)', height:'100%'}"></div>
-                                </div>
-                            </div>
-                            
-                            <!-- NETWORK CARD -->
-                            <div class="panel">
-                                <h3>Network Uplink <i class="fas fa-network-wired"></i></h3>
-                                <div style="display:flex; justify-content:space-between; margin-top:10px">
-                                    <div>
-                                        <div style="font-size:0.8rem; color:#888">UPLOAD</div>
-                                        <div style="font-size:1.5rem; font-family:var(--font-head); color:var(--neon-green)">{{ stats.network.sent }}</div>
-                                    </div>
-                                    <div style="text-align:right">
-                                        <div style="font-size:0.8rem; color:#888">DOWNLOAD</div>
-                                        <div style="font-size:1.5rem; font-family:var(--font-head); color:var(--neon-cyan)">{{ stats.network.recv }}</div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                             <!-- BOT STATS -->
-                             <div class="panel" style="border-color:var(--neon-gold)">
-                                <h3>Bot Metrics <i class="fas fa-users"></i></h3>
-                                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px">
-                                    <div>
-                                        <div class="stat-val" style="font-size:1.8rem">{{ botStats.users }}</div>
-                                        <div class="stat-sub">Users Served</div>
-                                    </div>
-                                    <div>
-                                        <div class="stat-val" style="font-size:1.8rem">{{ botStats.chats }}</div>
-                                        <div class="stat-sub">Active Chats</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- PRIORITY MODE -->
-                        <div class="panel" :class="{'deck-active': botStats.priority_mode}">
-                            <h3><i class="fas fa-radiation"></i> FOCUS MODE (PRIORITY STREAMING)</h3>
-                            <div style="display:flex; align-items:center; gap:20px">
-                                <p style="flex:1; color:#aaa; font-size:0.9rem">
-                                    When active, the server will kill all other audio streams to dedicate 100% bandwidth to the target Chat ID.
-                                    <br><span v-if="botStats.priority_mode" class="text-danger">CURRENTLY ACTIVE ON TARGET.</span>
-                                </p>
-                                <input type="text" v-model="priorityTarget" placeholder="Chat ID (-100...)" class="path-input" style="width:200px">
-                                <button class="btn-act btn-danger" @click="togglePriority(true)">ACTIVATE</button>
-                                <button class="btn-act" @click="togglePriority(false)">DEACTIVATE</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 2. TERMINAL -->
-                    <div v-show="currentView === 'terminal'" style="height:100%">
-                        <div class="term-wrapper">
-                            <div class="term-output" id="term-display" ref="termDisplay">
-                                <div style="color:var(--neon-cyan)">AnnieX OS [Version 5.0.1-Titan]</div>
-                                <div style="color:#666">Logged in as root via web_interface</div>
-                                <div v-for="(line, i) in termHistory" :key="i" v-html="line"></div>
-                            </div>
-                            <div class="term-input-line">
-                                <span>root@anniex:~#</span>
-                                <input type="text" v-model="termCmd" @keydown.enter="execTerm" class="term-input" autofocus>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 3. FILE MANAGER -->
-                    <div v-if="currentView === 'files'" class="fade-in">
-                        <div class="file-toolbar">
-                            <button class="btn-act" @click="fileNav('..')"><i class="fas fa-arrow-up"></i> UP</button>
-                            <input type="text" v-model="currentPath" @keydown.enter="fetchFiles" class="path-input">
-                            <button class="btn-act" @click="fetchFiles"><i class="fas fa-sync"></i></button>
-                            <label class="btn-act" style="display:inline-block; margin:0">
-                                <i class="fas fa-upload"></i```html
-                                UPLOAD
-                                <input type="file" @change="uploadFile" hidden>
-                            </label>
-                            <button class="btn-act btn-danger" @click="createFolder"><i class="fas fa-folder-plus"></i> NEW DIR</button>
-                        </div>
-
-                        <div class="file-list">
-                            <div v-for="file in files" :key="file.name" class="file-item" @click="fileClick(file)" @contextmenu.prevent="openCtxMenu($event, file)">
-                                <i class="file-icon" :class="getFileIcon(file)"></i>
-                                <div class="file-name">{{ file.name }}</div>
-                                <div style="font-size:0.6rem; color:#666" v-if="!file.is_dir">{{ formatBytes(file.size) }}</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 4. MIXER DECK -->
-                    <div v-if="currentView === 'mixer'" class="fade-in" style="height:100%">
-                        <div class="mixer-deck">
-                            <!-- Left Deck (Controller) -->
-                            <div class="deck-left deck-active">
-                                <h2 style="font-family:var(--font-head); color:var(--neon-cyan)">MASTER CONTROL</h2>
-                                <input type="text" v-model="mixerTarget" class="path-input" placeholder="Target Chat ID" style="text-align:center; font-size:1.2rem; margin-bottom:20px">
-                                
-                                <div class="vinyl" :class="{playing: isPlaying}">
-                                    <div class="vinyl-inner"></div>
-                                </div>
-                                
-                                <div style="display:flex; gap:15px; margin-top:20px">
-                                    <button class="btn-act" style="border-radius:50%; width:50px; height:50px" @click="mixerAction('resume'); isPlaying=true"><i class="fas fa-play"></i></button>
-                                    <button class="btn-act" style="border-radius:50%; width:50px; height:50px" @click="mixerAction('pause'); isPlaying=false"><i class="fas fa-pause"></i></button>
-                                    <button class="btn-act" style="border-radius:50%; width:50px; height:50px" @click="mixerAction('skip')"><i class="fas fa-forward"></i></button>
-                                    <button class="btn-act btn-danger" style="border-radius:50%; width:50px; height:50px" @click="mixerAction('stop'); isPlaying=false"><i class="fas fa-stop"></i></button>
-                                </div>
-                            </div>
-                            
-                            <!-- Right Deck (Queue & Vol) -->
-                            <div class="deck-right">
-                                <h3 style="width:100%; border-bottom:1px solid #333; padding-bottom:10px">QUEUE LIST</h3>
-                                <div style="flex:1; width:100%; overflow-y:auto; font-size:0.9rem; color:#aaa">
-                                    <div v-for="(song, i) in queue" :key="i" style="padding:10px; border-bottom:1px solid #222; display:flex; justify-content:space-between">
-                                        <span>{{ i+1 }}. {{ song.title }}</span>
-                                        <span class="text-neon">{{ song.duration }}</span>
-                                    </div>
-                                    <div v-if="queue.length===0" style="padding:20px; text-align:center">Queue Empty</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 5. CONFIG EDITOR -->
-                    <div v-if="currentView === 'config'" class="fade-in" style="height:100%; display:flex; flex-direction:column">
-                        <div style="margin-bottom:10px; display:flex; justify-content:space-between">
-                            <span class="text-neon">CONFIG.PY EDITOR</span>
-                            <button class="btn-act" @click="saveConfig"><i class="fas fa-save"></i> SAVE CHANGES</button>
-                        </div>
-                        <div id="ace-editor" style="flex:1; border:1px solid #333"></div>
-                    </div>
+                <div class="setting-row">
+                    <span><i class="fas fa-magic"></i> تأثيرات الزجاج</span>
+                    <label class="switch">
+                        <input type="checkbox" checked>
+                        <span class="slider round"></span>
+                    </label>
                 </div>
             </div>
-        </div>
+        </section>
 
-        <!-- CONTEXT MENU (Hidden by default) -->
-        <div id="ctx-menu" :style="{top: ctxY + 'px', left: ctxX + 'px', display: showCtx ? 'block' : 'none'}" @mouseleave="showCtx=false">
-            <div class="ctx-item" @click="fileAction('download')"><i class="fas fa-download"></i> Download</div>
-            <div class="ctx-item" @click="fileAction('rename')"><i class="fas fa-edit"></i> Rename</div>
-            <div class="ctx-item text-danger" @click="fileAction('delete')"><i class="fas fa-trash"></i> Delete</div>
-        </div>
-    </div>
+    </main>
 
-    <!-- MAIN SYSTEM LOGIC -->
+    <!-- 4. شريط التنقل السفلي العريض (Dock) -->
+    <nav class="glass-dock">
+        <button class="dock-btn active" onclick="switchTab('home')">
+            <i class="fas fa-compact-disc"></i>
+            <span>المشغل</span>
+        </button>
+        
+        <button class="dock-btn" onclick="switchTab('vault')">
+            <i class="fas fa-folder-closed"></i>
+            <span>الخزنة</span>
+        </button>
+        
+        <button class="dock-btn fab-main">
+            <div class="fab-glow">
+                <i class="fas fa-microphone-lines"></i>
+            </div>
+        </button>
+        
+        <button class="dock-btn" onclick="switchTab('terminal')">
+            <i class="fas fa-terminal"></i>
+            <span>الأوامر</span>
+        </button>
+        
+        <button class="dock-btn" onclick="switchTab('settings')">
+            <i class="fas fa-sliders"></i>
+            <span>إعدادات</span>
+        </button>
+    </nav>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
     <script>
-        const { createApp, ref, onMounted, nextTick } = Vue;
+        // دالة تغيير التبويبات البسيطة (مؤقتاً لحد ما نركب ملف JS)
+        function switchTab(tabId) {
+            // إخفاء الكل
+            document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.dock-btn').forEach(el => el.classList.remove('active'));
+            
+            // إظهار المطلوب
+            const target = document.getElementById('tab-' + tabId);
+            if(target) target.classList.add('active');
+            
+            // تنشيط الزر (تحديد الزر المضغوط)
+            event.currentTarget.classList.add('active');
+        }
 
-        createApp({
-            setup() {
-                // STATE
-                const authenticated = ref(false);
-                const password = ref('');
-                const loginError = ref(false);
-                const systemReady = ref(false);
-                const currentView = ref('dashboard');
-                const currentTime = ref('');
-                const latency = ref(0);
-                
-                // DATA
-                const stats = ref({ cpu: {percent:0}, memory: {percent:0}, network: {sent:0, recv:0} });
-                const botStats = ref({ users: 0, chats: 0, priority_mode: false });
-                const termCmd = ref('');
-                const termHistory = ref([]);
-                const files = ref([]);
-                const currentPath = ref('.');
-                const showCtx = ref(false);
-                const ctxX = ref(0); 
-                const ctxY = ref(0);
-                const selectedFile = ref(null);
-                const queue = ref([]);
-                const mixerTarget = ref('');
-                const priorityTarget = ref('');
-                const isPlaying = ref(false);
-                
-                // AUDIO
-                const sfx = {
-                    hover: new Howl({ src: [document.getElementById('sfx-hover').src], volume: 0.2 }),
-                    click: new Howl({ src: [document.getElementById('sfx-click').src], volume: 0.4 }),
-                    boot: new Howl({ src: [document.getElementById('sfx-boot').src], volume: 0.5 })
-                };
-
-                // METHODS
-                const sfxHover = () => sfx.hover.play();
-                const sfxClick = () => sfx.click.play();
-                
-                // --- BOOT SEQUENCE ---
-                const runBootSequence = async () => {
-                    const logs = document.getElementById('boot-log');
-                    const bar = document.getElementById('boot-bar');
-                    const lines = [
-                        "Initializing Kernel...", 
-                        "Loading Modules [Audio, Network, Database]...",
-                        "Mounting File System...", 
-                        "Establishing Secure Uplink...", 
-                        "Starting AnnieX Daemon...",
-                        "System Ready."
-                    ];
-                    
-                    sfx.boot.play();
-                    
-                    for (let i = 0; i < lines.length; i++) {
-                        logs.innerHTML += `<div>[OK] ${lines[i]}</div>`;
-                        bar.style.width = ((i + 1) / lines.length * 100) + '%';
-                        await new Promise(r => setTimeout(r, 400));
-                    }
-                    
-                    await new Promise(r => setTimeout(r, 800));
-                    document.getElementById('boot-screen').style.display = 'none';
-                };
-
-                // --- LOGIN ---
-                const login = async () => {
-                    sfxClick();
-                    const formData = new FormData();
-                    formData.append('password', password.value);
-                    try {
-                        const res = await fetch('/login', { method: 'POST', body: formData });
-                        if (res.redirected || res.url.includes('dashboard')) {
-                            authenticated.value = true;
-                            setTimeout(() => {
-                                systemReady.value = true;
-                                initCharts();
-                                startPolling();
-                            }, 100);
-                        } else {
-                            loginError.value = true;
-                        }
-                    } catch (e) { loginError.value = true; }
-                };
-
-                const logout = () => window.location.href = '/logout';
-
-                // --- VIEW NAV ---
-                const switchView = (view) => {
-                    sfxClick();
-                    currentView.value = view;
-                    if(view === 'files') fetchFiles();
-                    if(view === 'config') loadConfig();
-                };
-
-                // --- SYSTEM MONITOR ---
-                let cpuChartInst = null;
-                const initCharts = () => {
-                    const ctx = document.getElementById('cpuChart').getContext('2d');
-                    cpuChartInst = new Chart(ctx, {
-                        type: 'line',
-                        data: { 
-                            labels: Array(20).fill(''), 
-                            datasets: [{ 
-                                data: Array(20).fill(0), 
-                                borderColor: '#00f3ff', borderWidth: 2, 
-                                backgroundColor: 'rgba(0, 243, 255, 0.1)', fill: true, tension: 0.4, pointRadius: 0 
-                            }] 
-                        },
-                        options: { 
-                            plugins: { legend: false }, scales: { x: { display: false }, y: { display: false, min: 0, max: 100 } },
-                            animation: false, responsive: true, maintainAspectRatio: false
-                        }
-                    });
-                };
-
-                const startPolling = () => {
-                    setInterval(async () => {
-                        const start = Date.now();
-                        // Sys Stats
-                        try {
-                            const r1 = await fetch('/api/system_monitor');
-                            const d1 = await r1.json();
-                            stats.value = d1;
-                            
-                            // Update Chart
-                            if(cpuChartInst) {
-                                const arr = cpuChartInst.data.datasets[0].data;
-                                arr.shift(); arr.push(d1.cpu.percent);
-                                cpuChartInst.update();
-                            }
-                        } catch(e) {}
-                        
-                        // Bot Stats
-                        try {
-                            const r2 = await fetch('/api/bot/stats');
-                            const d2 = await r2.json();
-                            botStats.value = d2;
-                        } catch(e) {}
-
-                        // Queue (if mixer view)
-                        if(currentView.value === 'mixer' && mixerTarget.value) {
-                             try {
-                                 const r3 = await fetch(`/api/queue/fetch?chat_id=${mixerTarget.value}`);
-                                 const d3 = await r3.json();
-                                 queue.value = d3.queue || [];
-                             } catch(e) {}
-                        }
-
-                        latency.value = Date.now() - start;
-                        currentTime.value = new Date().toLocaleTimeString();
-                    }, 1000);
-                };
-
-                // --- TERMINAL ---
-                const execTerm = async () => {
-                    const cmd = termCmd.value;
-                    if(!cmd) return;
-                    termHistory.value.push(`<span style="color:#0aff00">root@anniex:~#</span> ${cmd}`);
-                    termCmd.value = '';
-                    
-                    try {
-                        const r = await fetch('/api/terminal/exec', {
-                            method: 'POST', headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({cmd})
-                        });
-                        const d = await r.json();
-                        termHistory.value.push(`<pre style="color:#ccc; margin:0">${d.output}</pre>`);
-                    } catch(e) { termHistory.value.push(`<span style="color:red">Error: ${e}</span>`); }
-                    
-                    nextTick(() => {
-                        const el = document.getElementById('term-display');
-                        if(el) el.scrollTop = el.scrollHeight;
-                    });
-                };
-
-                // --- FILE MANAGER ---
-                const fetchFiles = async () => {
-                    try {
-                        const r = await fetch(`/api/files/list?path=${encodeURIComponent(currentPath.value)}`);
-                        const d = await r.json();
-                        if(d.error) return Swal.fire('Error', d.error, 'error');
-                        files.value = d.items;
-                        currentPath.value = d.path;
-                    } catch(e) {}
-                };
-
-                const fileNav = (dir) => {
-                    if (dir === '..') {
-                        // Simple go up logic
-                        const parts = currentPath.value.split(/\/|\\/);
-                        parts.pop();
-                        currentPath.value = parts.join('/') || '/';
-                    } else {
-                        currentPath.value = (currentPath.value === '/' ? '' : currentPath.value) + '/' + dir;
-                    }
-                    fetchFiles();
-                };
-
-                const fileClick = (file) => {
-                    if (file.is_dir) fileNav(file.name);
-                };
-
-                const getFileIcon = (file) => {
-                    if (file.is_dir) return 'fas fa-folder text-neon';
-                    if (file.name.endsWith('.py')) return 'fab fa-python text-gold';
-                    if (file.name.endsWith('.html')) return 'fab fa-html5 text-danger';
-                    return 'fas fa-file-code';
-                };
-                
-                const formatBytes = (bytes, decimals = 2) => {
-                    if (bytes === 0) return '0 Bytes';
-                    const k = 1024;
-                    const dm = decimals < 0 ? 0 : decimals;
-                    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-                    const i = Math.floor(Math.log(bytes) / Math.log(k));
-                    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-                };
-
-                const uploadFile = async (e) => {
-                    const file = e.target.files[0];
-                    if(!file) return;
-                    const fd = new FormData();
-                    fd.append('file', file);
-                    fd.append('path', currentPath.value);
-                    await fetch('/api/files/upload', { method:'POST', body: fd });
-                    fetchFiles();
-                };
-
-                const createFolder = async () => {
-                    const { value: name } = await Swal.fire({ title: 'New Folder', input: 'text' });
-                    if(name) {
-                        await fetch('/api/files/action', {
-                            method:'POST', headers:{'Content-Type':'application/json'},
-                            body: JSON.stringify({ action:'create_folder', path: currentPath.value, name })
-                        });
-                        fetchFiles();
-                    }
-                };
-
-                const openCtxMenu = (e, file) => {
-                    selectedFile.value = file;
-                    ctxX.value = e.clientX; ctxY.value = e.clientY;
-                    showCtx.value = true;
-                };
-
-                const fileAction = async (act) => {
-                    showCtx.value = false;
-                    const path = selectedFile.value.path;
-                    if(act === 'delete') {
-                        await fetch('/api/files/action', {
-                            method:'POST', headers:{'Content-Type':'application/json'},
-                            body: JSON.stringify({ action:'delete', path })
-                        });
-                    } else if (act === 'rename') {
-                         const { value: name } = await Swal.fire({title: 'Rename', input: 'text', inputValue: selectedFile.value.name});
-                         if(name) {
-                             await fetch('/api/files/action', {
-                                method:'POST', headers:{'Content-Type':'application/json'},
-                                body: JSON.stringify({action:'rename', path, new_name: name})
-                             });
-                         }
-                    } else if (act === 'download') {
-                        window.open(`/api/files/download?path=${encodeURIComponent(path)}`);
-                    }
-                    fetchFiles();
-                };
-
-                // --- CONFIG EDITOR ---
-                let editor = null;
-                const loadConfig = async () => {
-                    try {
-                        const r = await fetch('/api/config/io');
-                        const d = await r.json();
-                        if(!editor) {
-                            editor = ace.edit("ace-editor");
-                            editor.setTheme("ace/theme/twilight");
-                            editor.session.setMode("ace/mode/python");
-                        }
-                        editor.setValue(d.content || '# Config File');
-                    } catch(e) {}
-                };
-
-                const saveConfig = async () => {
-                    if(!editor) return;
-                    const content = editor.getValue();
-                    await fetch('/api/config/io', {
-                        method:'POST', headers:{'Content-Type':'application/json'},
-                        body: JSON.stringify({content})
-                    });
-                    Swal.fire({title: 'Saved', icon: 'success', timer: 1500, showConfirmButton: false});
-                };
-                
-                const mixerAction = async (action) => {
-                     await fetch('/api/mixer/control', {
-                        method:'POST', headers:{'Content-Type':'application/json'},
-                        body: JSON.stringify({action, chat_id: mixerTarget.value, val:0})
-                    });
-                };
-
-                const togglePriority = async (enable) => {
-                    await fetch('/api/priority/toggle', {
-                        method:'POST', headers:{'Content-Type':'application/json'},
-                        body: JSON.stringify({chat_id: enable ? priorityTarget.value : 'OFF'})
-                    });
-                    const r = await fetch('/api/bot/stats');
-                    botStats.value = await r.json();
-                };
-
-                const systemAction = async (act) => {
-                    if(act === 'restart') {
-                         await Swal.fire({title:'Rebooting System...', timer: 2000, showConfirmButton:false});
-                         await fetch('/api/maintenance', {
-                            method:'POST', headers:{'Content-Type':'application/json'},
-                            body: JSON.stringify({action:'restart'})
-                        });
-                        location.reload();
-                    }
-                };
-
-                // INIT
-                onMounted(() => {
-                    runBootSequence();
-                    // Check initial auth state
-                    fetch('/login').then(r => {
-                        if(r.redirected || r.url.includes('dashboard')) {
-                            authenticated.value = true;
-                            setTimeout(() => { 
-                                systemReady.value = true; 
-                                initCharts(); 
-                                startPolling(); 
-                            }, 100);
-                        }
-                    });
-                });
-
-                return {
-                    authenticated, password, login, loginError, logout,
-                    systemReady, currentView, switchView,
-                    stats, botStats, currentTime, latency,
-                    termCmd, termHistory, execTerm,
-                    files, currentPath, fetchFiles, fileNav, fileClick, getFileIcon, formatBytes, uploadFile, createFolder,
-                    showCtx, ctxX, ctxY, openCtxMenu, fileAction,
-                    queue, mixerTarget, mixerAction, isPlaying, priorityTarget, togglePriority,
-                    saveConfig, systemAction, sfxHover, loadConfig
-                }
-            }
-        }).mount('#app');
+        // دالة تغيير الثيم
+        function setTheme(color) {
+            document.body.className = 'theme-' + color;
+            document.querySelectorAll('.color-dot').forEach(el => el.classList.remove('selected'));
+            event.currentTarget.classList.add('selected');
+        }
     </script>
-{% endraw %}
 </body>
 </html>
