@@ -8,14 +8,8 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>نظام تايتان | Titan OS</title>
     
-    <!-- ================================================================= -->
-    <!-- 🧠 مكتبات التشغيل الأساسية (Core Libraries)                       -->
-    <!-- ================================================================= -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
     
-    <!-- Babel: عشان المتصفح يفهم كود الـ React JSX -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <!-- Import Map: خريطة عشان نربط الملفات ببعضها -->
     <script type="importmap">
     {
       "imports": {
@@ -23,33 +17,29 @@
         "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
         "framer-motion": "https://esm.sh/framer-motion@10.16.4",
         "lucide-react": "https://esm.sh/lucide-react@0.292.0",
-        
-        /* ربط الملفات الداخلية ببعضها */
         "./Interactive_Player": "/components/Interactive_Player.jsx",
-        "/components/iOS_Dashboard.jsx": "/components/iOS_Dashboard.jsx"
+        "./Interactive_Player.jsx": "/components/Interactive_Player.jsx",
+        "/components/Interactive_Player": "/components/Interactive_Player.jsx",
+        "/components/iOS_Dashboard.jsx": "/components/iOS_Dashboard.jsx",
+        "./iOS_Dashboard.jsx": "/components/iOS_Dashboard.jsx",
+        "./components/iOS_Dashboard.jsx": "/components/iOS_Dashboard.jsx"
       }
     }
     </script>
     
-    <!-- ================================================================= -->
-    <!-- 🎨 تصميم الواجهة (CSS - Glassmorphism)                            -->
-    <!-- ================================================================= -->
     <style>
-        /* تعريف المتغيرات والألوان */
         :root {
             --glass-border: rgba(255, 255, 255, 0.1);
             --glass-bg: rgba(255, 255, 255, 0.05);
             --ios-blur: blur(30px);
-            --accent-glow: rgba(0, 255, 136, 0.6); /* لون تايتان الأخضر */
+            --accent-glow: rgba(0, 255, 136, 0.6);
             --font-main: "Tajawal", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
             --text-primary: #ffffff;
             --text-secondary: rgba(255, 255, 255, 0.6);
         }
 
-        /* استيراد خط عربي شيك (Tajawal) */
         @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;700&display=swap');
 
-        /* إعدادات الصفحة الأساسية */
         body, html {
             margin: 0; padding: 0;
             background-color: #000;
@@ -60,13 +50,11 @@
             direction: rtl;
         }
 
-        /* 1. الخلفية الحية (Aurora Background) */
         .aurora-bg {
             position: fixed; inset: 0; z-index: -1;
             background: radial-gradient(circle at 50% 10%, #111 0%, #000 80%);
         }
         
-        /* الكرات المضيئة في الخلفية */
         .orb {
             position: absolute; border-radius: 50%;
             filter: blur(80px); opacity: 0.3;
@@ -74,16 +62,15 @@
         }
         .orb-1 { 
             top: -10%; left: -10%; width: 50vw; height: 50vw; 
-            background: #00ff88; /* أخضر */
+            background: #00ff88;
             animation-delay: 0s; 
         }
         .orb-2 { 
             bottom: -20%; right: -10%; width: 60vw; height: 60vw; 
-            background: #0072ff; /* أزرق */
+            background: #0072ff;
             animation-delay: -5s; 
         }
 
-        /* 2. شاشة التحميل الزجاجية (Boot Screen) */
         #boot-screen {
             position: fixed; inset: 0;
             display: flex; flex-direction: column;
@@ -92,7 +79,6 @@
             transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s ease;
         }
 
-        /* الكارت الزجاجي */
         .glass-card {
             background: var(--glass-bg);
             backdrop-filter: var(--ios-blur);
@@ -107,7 +93,6 @@
             position: relative; overflow: hidden;
         }
 
-        /* تأثير اللمعة الخفيفة */
         .glass-card::before {
             content: ''; position: absolute; top: 0; left: -50%; width: 100%; height: 100%;
             background: linear-gradient(to right, transparent, rgba(255,255,255,0.05), transparent);
@@ -115,7 +100,6 @@
             animation: shine 6s infinite;
         }
 
-        /* الشعار */
         .logo-icon {
             margin-bottom: 25px;
             filter: drop-shadow(0 0 10px rgba(0, 255, 136, 0.3));
@@ -128,7 +112,6 @@
             text-shadow: 0 2px 10px rgba(0,0,0,0.5);
         }
 
-        /* شريط التحميل */
         .loader-track {
             width: 100%; height: 4px;
             background: rgba(255,255,255,0.1);
@@ -150,7 +133,6 @@
             font-weight: 300;
         }
 
-        /* 3. شاشة الخطأ (Crash Screen) */
         #crash-screen {
             display: none; position: fixed; inset: 0;
             background: rgba(20, 0, 0, 0.95);
@@ -192,7 +174,6 @@
         }
         .btn-restart:hover { transform: scale(1.05); box-shadow: 0 0 20px rgba(255,255,255,0.4); }
 
-        /* الأنيميشن */
         @keyframes float {
             0%, 100% { transform: translate(0, 0); }
             50% { transform: translate(20px, 40px); }
@@ -204,16 +185,13 @@
 </head>
 <body>
 
-    <!-- الخلفية المتحركة -->
     <div class="aurora-bg">
         <div class="orb orb-1"></div>
         <div class="orb orb-2"></div>
     </div>
 
-    <!-- شاشة التحميل (Boot Loader) -->
     <div id="boot-screen">
         <div class="glass-card">
-            <!-- أيقونة النظام -->
             <div class="logo-icon">
                 <svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5">
                     <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -222,7 +200,6 @@
             
             <div class="logo-text">نظام تايتان</div>
             
-            <!-- شريط التقدم -->
             <div class="loader-track">
                 <div class="loader-bar" id="progress"></div>
             </div>
@@ -231,64 +208,55 @@
         </div>
     </div>
 
-    <!-- المكان اللي React هيعرض فيه الموقع -->
     <div id="root"></div>
 
-    <!-- شاشة الخطأ (Crash Reporter) -->
     <div id="crash-screen">
         <div class="crash-box">
             <div class="crash-title">⚠️ توقف النظام</div>
-            <div class="crash-desc">
+            <div class="crash-desc" id="crash-hint">
                 واجه النظام مشكلة غير متوقعة أثناء محاولة تحميل واجهة المستخدم.
-                <br>يرجى التأكد من رفع جميع الملفات بشكل صحيح.
             </div>
             <div class="crash-code" id="crash-trace">جاري جلب تفاصيل الخطأ...</div>
             <button class="btn-restart" onclick="location.reload()">إعادة المحاولة</button>
         </div>
     </div>
 
-    <!-- ================================================================= -->
-    <!-- ⚙️ كود النواة (Kernel Script - JavaScript)                        -->
-    <!-- ================================================================= -->
     <script>
-        /**
-         * Titan Kernel Bootloader v9.0
-         * المسؤول عن فحص الملفات وتشغيل النظام بأمان
-         */
         const Kernel = {
-            // عناصر الواجهة
             ui: {
                 boot: document.getElementById('boot-screen'),
                 progress: document.getElementById('progress'),
                 status: document.getElementById('boot-status'),
                 crash: document.getElementById('crash-screen'),
-                trace: document.getElementById('crash-trace')
+                trace: document.getElementById('crash-trace'),
+                hint: document.getElementById('crash-hint')
             },
 
-            // تحديث شريط التقدم
             setProgress: function(percent) { 
                 if(this.ui.progress) this.ui.progress.style.width = percent + '%'; 
             },
 
-            // تحديث رسالة الحالة
             setStatus: function(text) { 
                 if(this.ui.status) this.ui.status.innerText = text; 
             },
 
-            // عرض شاشة الخطأ (Panic Mode)
             panic: function(error) {
                 console.error("Titan Kernel Panic:", error);
-                
-                // إخفاء شاشة التحميل وعرض شاشة الخطأ
                 this.ui.boot.style.display = 'none';
                 this.ui.crash.style.display = 'flex';
                 
-                // عرض تفاصيل الخطأ للمطور
-                const errorMsg = error.stack || error.message || "Unknown Error";
+                let errorMsg = error.stack || error.message || "Unknown Error";
+                
+                if (errorMsg === "Script error.") {
+                    errorMsg = "Critical Load Error (CORS/404)\nBrowser blocked script access.";
+                    if (this.ui.hint) {
+                        this.ui.hint.innerHTML = "فشل تحميل الملفات (Script Error).<br>1. تأكد أن ملف 'iOS_Dashboard.jsx' موجود داخل مجلد 'components'.<br>2. تأكد من أن حالة الأحرف (Capital/Small) صحيحة.";
+                    }
+                }
+                
                 this.ui.trace.innerText = `Error Details:\n${errorMsg}`;
             },
 
-            // دالة للتأكد من وجود الملفات قبل تشغيلها
             checkFile: async function(url) {
                 try { 
                     const res = await fetch(url, {method: 'HEAD'});
@@ -296,25 +264,22 @@
                 } catch { return false; }
             },
 
-            // بدء عملية الإقلاع
             ignite: async function() {
                 try {
                     this.setStatus("جاري التحقق من الملفات...");
                     this.setProgress(20);
 
-                    // 1. التأكد من وجود ملف الداشبورد الرئيسي
                     const mainComponent = "/components/iOS_Dashboard.jsx";
                     const isFound = await this.checkFile(mainComponent);
 
                     if (!isFound) {
-                        throw new Error(`الملف المفقود:\n${mainComponent}\n\nالحل:\nتأكد من وجود ملف 'iOS_Dashboard.jsx' داخل مجلد 'web/components/'`);
+                        throw new Error(`الملف المفقود: ${mainComponent}\nتأكد من وجود ملف iOS_Dashboard.jsx داخل مجلد web/components/`);
                     }
 
-                    // 2. محاكاة تحميل المعالج العصبي
                     this.setStatus("جاري تحميل المحرك العصبي...");
                     this.setProgress(60);
                     
-                    await new Promise(r => setTimeout(r, 600)); // تأخير بسيط للجمالية
+                    await new Promise(r => setTimeout(r, 600));
 
                     this.setStatus("جاري تشغيل الواجهة...");
                     this.setProgress(90);
@@ -324,17 +289,13 @@
                 }
             },
 
-            // إنهاء الإقلاع (لما React يشتغل)
             complete: function() {
                 this.setProgress(100);
                 this.setStatus("تم التشغيل بنجاح");
                 
-                // تأثير خروج أنيق لشاشة التحميل
                 setTimeout(() => {
                     this.ui.boot.style.opacity = '0';
-                    this.ui.boot.style.transform = 'scale(1.1)'; // زووم خفيف للخارج
-                    
-                    // إخفاء العنصر نهائياً بعد انتهاء الأنيميشن
+                    this.ui.boot.style.transform = 'scale(1.1)';
                     setTimeout(() => { 
                         this.ui.boot.style.display = 'none'; 
                     }, 800);
@@ -342,30 +303,21 @@
             }
         };
 
-        // التقاط أي أخطاء عامة في الصفحة
-        window.onerror = (msg, url, l, c, err) => { 
-            Kernel.panic(err || new Error(msg)); 
-            return true; 
-        };
+        window.addEventListener('error', function(e) {
+            if (e.message && e.message.includes('ResizeObserver')) return;
+            Kernel.panic(e.error || new Error(e.message));
+        });
 
-        // بدء النظام
         Kernel.ignite();
     </script>
 
-    <!-- ================================================================= -->
-    <!-- ⚛️ مشغل التطبيق (React App Launcher)                               -->
-    <!-- ================================================================= -->
     <script type="text/babel" data-type="module" data-presets="react">
         import React, { useEffect, useState } from "react";
         import { createRoot } from "react-dom/client";
-        
-        // استيراد الداشبورد
         import IOS_Dashboard from "/components/iOS_Dashboard.jsx";
 
-        // حاوية التطبيق الرئيسية
         function App() {
             useEffect(() => {
-                // إبلاغ الكيرنل بإنهاء التحميل
                 Kernel.complete();
             }, []);
 
@@ -374,13 +326,11 @@
             );
         }
 
-        // محاولة تركيب التطبيق في الصفحة
         try {
             const container = document.getElementById("root");
             const root = createRoot(container);
             root.render(<App />);
         } catch(e) {
-            // لو فشل التركيب، بلغ الكيرنل
             Kernel.panic(e);
         }
     </script>
