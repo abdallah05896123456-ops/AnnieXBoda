@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Titan OS Dashboard</title>
+    
+    <!-- 1. Babel Standalone for JSX Parsing -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- 2. Import Map: Maps imports in your JSX to CDN URLs + Maps Interactive_Player -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "framer-motion": "https://esm.sh/framer-motion@10.16.4",
+        "lucide-react": "https://esm.sh/lucide-react@0.292.0",
+        "./Interactive_Player": "/components/Interactive_Player.jsx" 
+      }
+    }
+    </script>
+    
+    <style>
+        body, html { margin: 0; padding: 0; background-color: #000; height: 100%; overflow: hidden; }
+        #root { height: 100%; width: 100%; }
+        /* Reset defaults for better dashboard view */
+        * { box-sizing: border-box; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <!-- 3. Load Main Dashboard -->
+    <script type="text/babel" data-type="module">
+        import React from "react";
+        import { createRoot } from "react-dom/client";
+        
+        // This pulls your exact file from the components folder
+        import IOS_Dashboard from "/components/iOS_Dashboard.jsx";
+
+        const container = document.getElementById("root");
+        const root = createRoot(container);
+        root.render(<IOS_Dashboard />);
+    </script>
+</body>
+</html>
