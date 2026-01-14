@@ -9,9 +9,16 @@ from pyrogram import Client
 from pyrogram.errors import FloodWait, ChatAdminRequired
 from pyrogram.types import InlineKeyboardMarkup
 from pytgcalls import PyTgCalls
-# ✅ تم إزالة AlreadyJoinedError لأنه غير موجود في نسختك
 from pytgcalls.exceptions import NoActiveGroupCall, NoAudioSourceFound, NoVideoSourceFound
-from pytgcalls.types import AudioQuality, ChatUpdate, MediaStream, StreamEnded, Update, VideoQuality
+from pytgcalls.types import (
+    AudioQuality, 
+    ChatUpdate, 
+    MediaStream, 
+    StreamEnded, 
+    Update, 
+    VideoQuality, 
+    GroupCallConfig
+)
 
 import config
 from strings import get_string
@@ -39,11 +46,12 @@ from AnnieXMedia.utils.errors import capture_internal_err
 autoend = {}
 counter = {}
 
+# --- Helper Function for Streams (Optimized) ---
 def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
     if video:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.HIGH,
+            audio_parameters=AudioQuality.STUDIO, # Alexa uses better quality
             video_parameters=VideoQuality.HD_720p,
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.REQUIRED,
@@ -52,7 +60,7 @@ def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = No
     else:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.HIGH,
+            audio_parameters=AudioQuality.STUDIO, # Alexa uses better quality
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.IGNORE,
             ffmpeg_parameters=ffmpeg_params,
@@ -69,33 +77,33 @@ async def _clear_(chat_id: int) -> None:
 
 class Call:
     def __init__(self):
+        # 🔥 ALEXA OPTIMIZATION: cache_duration=100 added to all clients
         self.userbot1 = Client(
             "AnnieXAssis1", config.API_ID, config.API_HASH, session_string=config.STRING1
         ) if config.STRING1 else None
-        self.one = PyTgCalls(self.userbot1) if self.userbot1 else None
+        self.one = PyTgCalls(self.userbot1, cache_duration=100) if self.userbot1 else None
 
         self.userbot2 = Client(
             "AnnieXAssis2", config.API_ID, config.API_HASH, session_string=config.STRING2
         ) if config.STRING2 else None
-        self.two = PyTgCalls(self.userbot2) if self.userbot2 else None
+        self.two = PyTgCalls(self.userbot2, cache_duration=100) if self.userbot2 else None
 
         self.userbot3 = Client(
             "AnnieXAssis3", config.API_ID, config.API_HASH, session_string=config.STRING3
         ) if config.STRING3 else None
-        self.three = PyTgCalls(self.userbot3) if self.userbot3 else None
+        self.three = PyTgCalls(self.userbot3, cache_duration=100) if self.userbot3 else None
 
         self.userbot4 = Client(
             "AnnieXAssis4", config.API_ID, config.API_HASH, session_string=config.STRING4
         ) if config.STRING4 else None
-        self.four = PyTgCalls(self.userbot4) if self.userbot4 else None
+        self.four = PyTgCalls(self.userbot4, cache_duration=100) if self.userbot4 else None
 
         self.userbot5 = Client(
             "AnnieXAssis5", config.API_ID, config.API_HASH, session_string=config.STRING5
         ) if config.STRING5 else None
-        self.five = PyTgCalls(self.userbot5) if self.userbot5 else None
+        self.five = PyTgCalls(self.userbot5, cache_duration=100) if self.userbot5 else None
 
         self.active_calls: set[int] = set()
-
 
     @capture_internal_err
     async def pause_stream(self, chat_id: int) -> None:
@@ -130,7 +138,6 @@ class Call:
         finally:
             self.active_calls.discard(chat_id)
 
-
     @capture_internal_err
     async def force_stop_stream(self, chat_id: int) -> None:
         assistant = await group_assistant(self, chat_id)
@@ -152,12 +159,13 @@ class Call:
         finally:
             self.active_calls.discard(chat_id)
 
-
     @capture_internal_err
     async def skip_stream(self, chat_id: int, link: str, video: Union[bool, str] = None, image: Union[bool, str] = None) -> None:
         assistant = await group_assistant(self, chat_id)
+        # 🔥 ALEXA OPTIMIZATION: Using GroupCallConfig
+        ksk = GroupCallConfig(auto_start=False)
         stream = dynamic_media_stream(path=link, video=bool(video))
-        await assistant.play(chat_id, stream)
+        await assistant.play(chat_id, stream, config=ksk)
 
     @capture_internal_err
     async def vc_users(self, chat_id: int) -> list:
@@ -175,6 +183,7 @@ class Call:
 
     @capture_internal_err
     async def speedup_stream(self, chat_id: int, file_path: str, speed: float, playing: list) -> None:
+        # Code kept from Annie for compatibility
         if not isinstance(playing, list) or not playing or not isinstance(playing[0], dict):
             raise AssistantErr("Invalid stream info for speedup.")
 
@@ -215,7 +224,6 @@ class Call:
         else:
             raise AssistantErr("Stream mismatch during speedup.")
 
-
     @capture_internal_err
     async def stream_call(self, link: str) -> None:
         assistant = await group_assistant(self, config.LOGGER_ID)
@@ -241,17 +249,12 @@ class Call:
         lang = await get_lang(chat_id)
         _ = get_string(lang)
         stream = dynamic_media_stream(path=link, video=bool(video))
-
-        # ✅ FIX: Force leave first to prevent Ghost Call issues
-        try:
-            await assistant.leave_call(chat_id)
-            await asyncio.sleep(1)
-        except:
-            pass
-        # ====================================================
+        
+        # 🔥 ALEXA OPTIMIZATION: Config added here
+        ksk = GroupCallConfig(auto_start=False)
 
         try:
-            await assistant.play(chat_id, stream)
+            await assistant.play(chat_id, stream, config=ksk)
         except (NoActiveGroupCall, ChatAdminRequired):
             raise AssistantErr(_["call_8"])
         except NoAudioSourceFound:
@@ -260,16 +263,14 @@ class Call:
             raise AssistantErr(_["call_12"])
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
-        # ✅ FIX: تمت إزالة AlreadyJoinedError
         except Exception as e:
-            # لو فشل بسبب إن البوت لسه معلق (رغم المحاولة الأولى)، نحاول مرة أخيرة
+             # Retry logic
             try:
                  await asyncio.sleep(1)
-                 await assistant.play(chat_id, stream)
+                 await assistant.play(chat_id, stream, config=ksk)
             except:
-                 raise AssistantErr(
-                    f"ᴜɴᴀʙʟᴇ ᴛᴏ ᴊᴏɪɴ ᴛʜᴇ ɢʀᴏᴜᴘ ᴄᴀʟʟ.\nRᴇᴀsᴏɴ: {e}"
-                )
+                 raise AssistantErr(f"ᴜɴᴀʙʟᴇ ᴛᴏ ᴊᴏɪɴ ᴛʜᴇ ɢʀᴏᴜᴘ ᴄᴀʟʟ.\nRᴇᴀsᴏɴ: {e}")
+                 
         self.active_calls.add(chat_id)
         await add_active_chat(chat_id)
         await music_on(chat_id)
@@ -278,13 +279,16 @@ class Call:
 
         if await is_autoend():
             counter[chat_id] = {}
-            users = len(await assistant.get_participants(chat_id))
-            if users == 1:
-                autoend[chat_id] = datetime.now() + timedelta(minutes=1)
-
+            try:
+                users = len(await assistant.get_participants(chat_id))
+                if users == 1:
+                    autoend[chat_id] = datetime.now() + timedelta(minutes=1)
+            except:
+                pass
 
     @capture_internal_err
     async def play(self, client, chat_id: int) -> None:
+        # 🔥 Refactored to match Alexa's `change_stream` logic but with Annie's vars
         check = db.get(chat_id)
         popped = None
         loop = await get_loop(chat_id)
@@ -294,19 +298,20 @@ class Call:
             else:
                 loop = loop - 1
                 await set_loop(chat_id, loop)
+            
+            # Using auto_clean from Alexa's logic context (if config allows)
             await auto_clean(popped)
+            
             if not check:
-                    await _clear_(chat_id)
-                    if chat_id in self.active_calls:
-                        try:
-                            await client.leave_call(chat_id)
-                        except NoActiveGroupCall:
-                            pass
-                        except Exception:
-                            pass
-                        finally:
-                            self.active_calls.discard(chat_id)
-                    return
+                await _clear_(chat_id)
+                if chat_id in self.active_calls:
+                    try:
+                        await client.leave_call(chat_id)
+                    except Exception:
+                        pass
+                    finally:
+                        self.active_calls.discard(chat_id)
+                return
         except:
             try:
                 await _clear_(chat_id)
@@ -332,13 +337,16 @@ class Call:
                 db[chat_id][0]["speed"] = 1.0
 
             video = True if str(streamtype) == "video" else False
-
+            
+            # 🔥 ALEXA OPTIMIZATION: Pre-calculate stream to save time
+            # Note: We use the dynamic helper to keep code clean, but it uses Alexa's params inside
+            
             if "live_" in queued:
                 n, link = await YouTube.video(videoid, True)
                 if n == 0:
                     return await app.send_message(original_chat_id, text=_["call_6"])
-
                 stream = dynamic_media_stream(path=link, video=video)
+                
                 try:
                     await client.play(chat_id, stream)
                 except Exception:
@@ -367,12 +375,10 @@ class Call:
                         videoid,
                         mystic,
                         videoid=True,
-                        video=True if str(streamtype) == "video" else False,
+                        video=video,
                     )
                 except:
-                    return await mystic.edit_text(
-                        _["call_6"], disable_web_page_preview=True
-                    )
+                    return await mystic.edit_text(_["call_6"], disable_web_page_preview=True)
 
                 stream = dynamic_media_stream(path=file_path, video=video)
                 try:
@@ -467,7 +473,6 @@ class Call:
                             reply_markup=InlineKeyboardMarkup(button),
                         )
                     except FloodWait as e:
-                        LOGGER(__name__).warning(f"FloodWait: Sleeping for {e.value}")
                         await asyncio.sleep(e.value)
                         run = await app.send_photo(
                             chat_id=original_chat_id,
@@ -482,7 +487,6 @@ class Call:
                         )
                     db[chat_id][0]["mystic"] = run
                     db[chat_id][0]["markup"] = "stream"
-
 
     async def start(self) -> None:
         LOGGER(__name__).info("Starting PyTgCalls Clients...")
@@ -536,6 +540,5 @@ class Call:
 
         for assistant in assistants:
             assistant.on_update()(unified_update_handler)
-
 
 StreamController = Call()
