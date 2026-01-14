@@ -7,7 +7,7 @@ cachetools
 deepai
 edge-tts
 ffmpeg-python
-Flask
+fastapi
 future
 gitpython
 google-api-python-client
@@ -31,6 +31,7 @@ pyfiglet
 pyshorteners
 pytgcrypto
 python-dotenv
+python-multipart
 python-whois
 pyyaml
 qrcode
@@ -41,6 +42,7 @@ speedtest-cli
 spotipy
 telegraph
 unidecode
+uvicorn
 uvloop==0.21.0
 wget
 pymongo
