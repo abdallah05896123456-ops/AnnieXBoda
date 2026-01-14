@@ -160,7 +160,12 @@
     <script>
         // --- CONFIGURATION ---
         const CREDENTIALS = { u: "Abdallah", p: "asdfghjkl05896" };
-        const FILES = { dashboard: "iOS_Dashboard.html", player: "Interactive_Player.html" };
+        
+        // ⚠️ UPDATED PATHS FOR DOCKER STRUCTURE:
+        const FILES = { 
+            dashboard: "components/iOS_Dashboard.html", 
+            player: "components/Interactive_Player.html" 
+        };
         
         // --- SYSTEM CORE ---
         const System = {
@@ -186,14 +191,14 @@
             verifyFiles: async function() {
                 this.log("Checking filesystem integrity...");
                 try {
+                    // This fetch will now look in /components/iOS_Dashboard.html
                     const req = await fetch(FILES.dashboard, { method: 'HEAD' });
-                    if (!req.ok) throw new Error(`Missing: ${FILES.dashboard}`);
+                    if (!req.ok) throw new Error(`Missing: ${FILES.dashboard} (Status: ${req.status})`);
                     this.log(`${FILES.dashboard} ... OK`);
                     return true;
                 } catch (e) {
-                    // Try to proceed anyway but warn, or panic if strict
                     this.log(`WARNING: ${e.message}`);
-                    return false; // Return false to indicate issue, but we might let them try
+                    return false;
                 }
             },
 
@@ -232,7 +237,7 @@
                     bar.style.backgroundColor = "red";
                     status.innerText = "خطأ في ملفات النظام!";
                     status.style.color = "red";
-                    setTimeout(() => this.panic(`CRITICAL: ${FILES.dashboard} not found in directory. Ensure all files are in the same folder.`), 1500);
+                    setTimeout(() => this.panic(`CRITICAL: ${FILES.dashboard} not found. Check 'components' folder mapping.`), 1500);
                 }
             },
 
