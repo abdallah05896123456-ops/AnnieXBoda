@@ -1,9 +1,11 @@
-# Authored By Certified Coders © 2025
+# __main__.py
 import sys
 import os
 
-# السطر ده بيجبر البوت يستخدم مجلد pytgcalls المحلي بدل اللي نازل من النت
+# إجبار البوت يستخدم مجلد pytgcalls المحلي
 sys.path.insert(0, os.getcwd())
+# إضافة مجلد web للـ imports
+sys.path.insert(0, os.path.join(os.getcwd(), "web"))
 
 import asyncio
 import importlib
@@ -20,6 +22,10 @@ from AnnieXMedia.utils.database import get_banned_users, get_gbanned
 from AnnieXMedia.utils.cookie_handler import fetch_and_store_cookies
 from config import BANNED_USERS
 
+# استيراد ملفات web مباشرة
+import Resource_Optimizer
+import backend_bridge
+import security_gate
 
 async def init():
     if (
@@ -39,7 +45,6 @@ async def init():
     except Exception as e:
         LOGGER("AnnieXMedia").warning(f"⚠️ᴄᴏᴏᴋɪᴇ ᴇʀʀᴏʀ: {e}")
 
-
     await sudo()
 
     try:
@@ -52,16 +57,20 @@ async def init():
     except:
         pass
 
+    # Start backend FastAPI apps
     await app.start()
+    LOGGER("AnnieXMedia").info("FastAPI backend started ✅")
+
+    # Load all plugins
     for all_module in ALL_MODULES:
         importlib.import_module("AnnieXMedia.plugins" + all_module)
-
     LOGGER("AnnieXMedia.plugins").info("ᴀɴɴɪᴇ's ᴍᴏᴅᴜʟᴇs ʟᴏᴀᴅᴇᴅ...")
 
     await userbot.start()
     await StreamController.start()
 
     try:
+        # تشغيل مثال صوتي للتأكد من اتصال الـ Voice Chat
         await StreamController.stream_call("http://docs.evostream.com/sample_content/assets/sintel1m720p.mp4")
     except NoActiveGroupCall:
         LOGGER("AnnieXMedia").error(
@@ -71,15 +80,16 @@ async def init():
     except:
         pass
 
+    # Decorators and idle loop
     await StreamController.decorators()
-    LOGGER("AnnieXMedia").info(
-        "\x41\x6e\x6e\x69\x65\x20\x4d\x75\x73\x69\x63\x20\x52\x6f\x62\x6f\x74\x20\x53\x74\x61\x72\x74\x65\x64\x20\x53\x75\x63\x63\x65\x73\x73\x66\x75\x6c\x6c\x79\x2e\x2e\x2e"
-    )
+    LOGGER("AnnieXMedia").info("Annie Music Robot Started Successfully...")
     await idle()
+
+    # Stop everything on exit
     await app.stop()
     await userbot.stop()
-    LOGGER("AnnieXMedia").info("sᴛᴏᴘᴘɪɴɢ ᴀɴɴɪᴇ ᴍᴜsɪᴄ ʙᴏᴛ ...")
-
+    LOGGER("AnnieXMedia").info("Stopping Annie Music Bot...")
+    
 
 if __name__ == "__main__":
     asyncio.get_event_loop().run_until_complete(init())
