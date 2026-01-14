@@ -1,10 +1,6 @@
-import logging
-from flask import Flask, Blueprint, render_template, jsonify, request
-from werkzeug.exceptions import HTTPException
+from flask import Blueprint, render_template
 
-# =========================================================
-# 1. إعداد البلوبرينت (Blueprint Setup)
-# =========================================================
+# 1. إعداد البلوبرينت
 web_bp = Blueprint(
     'web', 
     __name__, 
@@ -13,29 +9,16 @@ web_bp = Blueprint(
     url_prefix=''
 )
 
-# =========================================================
-# 2. استيراد المكونات (Module Loading)
-# =========================================================
-# الترتيب مهم جداً هنا لتجنب Circular Import
-
+# 2. استيراد الصفحات (بدون utils)
 try:
-    # النقطة (.) تعني الاستيراد من نفس المجلد الحالي
-    from . import utils
     from . import system
-    from . import vault
     from . import player
-    print("[INFO] Web Modules Loaded Successfully ✅")
-
+    from . import vault
+    print("[INFO] Web Dashboard Routes Loaded ✅")
 except ImportError as e:
-    # هنا كان الخطأ: لازم نكتب حاجة تحت الـ except
-    print(f"❌ [WEB CRITICAL ERROR] Failed to load dashboard modules: {e}")
-    # ممكن نضيف traceback عشان نعرف تفاصيل أكتر لو الخطأ صعب
-    import traceback
-    traceback.print_exc()
+    print(f"❌ [WEB ERROR] {e}")
 
-# =========================================================
-# 3. معالج الأخطاء (Error Handlers) - اختياري
-# =========================================================
+# 3. توجيه الأخطاء للصفحة الرئيسية
 @web_bp.errorhandler(404)
 def not_found(e):
-    return render_template('index.html'), 200  # بنرجعه للصفحة الرئيسية بدل صفحة الخطأ
+    return render_template('index.html'), 404
