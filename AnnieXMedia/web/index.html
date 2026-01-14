@@ -3,336 +3,316 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#000000">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>نظام تايتان | Titan OS</title>
-    
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
-    
-    <script type="importmap">
-    {
-      "imports": {
-        "react": "https://esm.sh/react@18.2.0",
-        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-        "framer-motion": "https://esm.sh/framer-motion@10.16.4",
-        "lucide-react": "https://esm.sh/lucide-react@0.292.0",
-        "./Interactive_Player": "/components/Interactive_Player.jsx",
-        "./Interactive_Player.jsx": "/components/Interactive_Player.jsx",
-        "/components/Interactive_Player": "/components/Interactive_Player.jsx",
-        "/components/iOS_Dashboard.jsx": "/components/iOS_Dashboard.jsx",
-        "./iOS_Dashboard.jsx": "/components/iOS_Dashboard.jsx",
-        "./components/iOS_Dashboard.jsx": "/components/iOS_Dashboard.jsx"
-      }
-    }
-    </script>
-    
+    <title>Titan OS | Kernel Loader</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Fonts (Cairo for Arabic match) -->
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;800&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+
     <style>
-        :root {
-            --glass-border: rgba(255, 255, 255, 0.1);
-            --glass-bg: rgba(255, 255, 255, 0.05);
-            --ios-blur: blur(30px);
-            --accent-glow: rgba(0, 255, 136, 0.6);
-            --font-main: "Tajawal", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-            --text-primary: #ffffff;
-            --text-secondary: rgba(255, 255, 255, 0.6);
+        /* --- Performance & Reset --- */
+        body { 
+            margin: 0; 
+            background-color: #000; 
+            color: #fff; 
+            font-family: 'Cairo', sans-serif; 
+            overflow: hidden; 
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
         }
 
-        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;700&display=swap');
-
-        body, html {
-            margin: 0; padding: 0;
-            background-color: #000;
-            height: 100%; width: 100%;
-            overflow: hidden;
-            font-family: var(--font-main);
-            color: var(--text-primary);
-            direction: rtl;
+        /* --- GPU Accelerated Glass --- */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            transform: translateZ(0); /* Force GPU */
+            will-change: transform, opacity;
+            transition: all 0.6s cubic-bezier(0.22, 1, 0.36, 1);
         }
 
-        .aurora-bg {
-            position: fixed; inset: 0; z-index: -1;
-            background: radial-gradient(circle at 50% 10%, #111 0%, #000 80%);
+        /* --- Input Fields Style --- */
+        .glass-input {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            transition: all 0.3s ease;
         }
-        
-        .orb {
-            position: absolute; border-radius: 50%;
-            filter: blur(80px); opacity: 0.3;
-            animation: float 10s infinite ease-in-out;
-        }
-        .orb-1 { 
-            top: -10%; left: -10%; width: 50vw; height: 50vw; 
-            background: #00ff88;
-            animation-delay: 0s; 
-        }
-        .orb-2 { 
-            bottom: -20%; right: -10%; width: 60vw; height: 60vw; 
-            background: #0072ff;
-            animation-delay: -5s; 
+        .glass-input:focus {
+            background: rgba(0, 0, 0, 0.5);
+            border-color: #06b6d4; /* Cyan */
+            outline: none;
+            box-shadow: 0 0 15px rgba(6, 182, 212, 0.2);
         }
 
-        #boot-screen {
-            position: fixed; inset: 0;
-            display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
-            z-index: 9999;
-            transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s ease;
-        }
-
-        .glass-card {
-            background: var(--glass-bg);
-            backdrop-filter: var(--ios-blur);
-            -webkit-backdrop-filter: var(--ios-blur);
-            border: 1px solid var(--glass-border);
-            padding: 50px 40px;
-            border-radius: 35px;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
-            text-align: center;
-            width: 320px;
-            display: flex; flex-direction: column; align-items: center;
-            position: relative; overflow: hidden;
-        }
-
-        .glass-card::before {
-            content: ''; position: absolute; top: 0; left: -50%; width: 100%; height: 100%;
-            background: linear-gradient(to right, transparent, rgba(255,255,255,0.05), transparent);
-            transform: skewX(-25deg);
-            animation: shine 6s infinite;
-        }
-
-        .logo-icon {
-            margin-bottom: 25px;
-            filter: drop-shadow(0 0 10px rgba(0, 255, 136, 0.3));
-        }
-        
-        .logo-text {
-            font-size: 18px; letter-spacing: 2px; 
-            font-weight: 700; color: var(--text-primary);
-            margin-bottom: 40px;
-            text-shadow: 0 2px 10px rgba(0,0,0,0.5);
-        }
-
+        /* --- Loading Bar Animation --- */
         .loader-track {
-            width: 100%; height: 4px;
-            background: rgba(255,255,255,0.1);
-            border-radius: 10px; overflow: hidden;
-            position: relative;
+            background: rgba(255, 255, 255, 0.1);
+            overflow: hidden;
+            border-radius: 99px;
+        }
+        .loader-fill {
+            background: white;
+            height: 100%;
+            width: 0%;
+            border-radius: 99px;
+            transition: width 0.1s linear;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
         }
 
-        .loader-bar {
-            position: absolute; right: 0; top: 0; height: 100%; width: 0%;
-            background: #fff;
-            box-shadow: 0 0 15px var(--accent-glow);
-            border-radius: 10px;
-            transition: width 0.5s cubic-bezier(0.33, 1, 0.68, 1);
-        }
-
-        .status-text {
-            margin-top: 20px; font-size: 12px;
-            color: var(--text-secondary);
-            font-weight: 300;
-        }
-
-        #crash-screen {
-            display: none; position: fixed; inset: 0;
-            background: rgba(20, 0, 0, 0.95);
-            backdrop-filter: blur(20px);
-            z-index: 10000; padding: 20px;
-            align-items: center; justify-content: center; flex-direction: column;
-            text-align: center;
-        }
+        /* --- Utilities --- */
+        .hidden-opacity { opacity: 0; pointer-events: none; position: absolute; }
+        .visible-opacity { opacity: 1; pointer-events: auto; position: relative; }
         
-        .crash-box {
-            border: 1px solid rgba(255, 80, 80, 0.3);
-            background: rgba(50, 0, 0, 0.5);
-            padding: 40px; border-radius: 25px;
-            max-width: 600px; width: 100%;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+        /* Iframe Fullscreen */
+        #os-frame {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            border: none; z-index: 10; opacity: 0; transition: opacity 1s ease;
+            background: #000;
         }
 
-        .crash-title { 
-            color: #ff5555; font-size: 24px; margin-bottom: 15px; font-weight: bold; 
-        }
-        
-        .crash-desc {
-            color: #ccc; font-size: 14px; margin-bottom: 25px; line-height: 1.6;
-        }
-
-        .crash-code {
-            background: rgba(0,0,0,0.3); padding: 15px; border-radius: 10px;
-            font-family: monospace; font-size: 11px; color: #ffaaaa;
-            text-align: left; direction: ltr; white-space: pre-wrap;
-            max-height: 200px; overflow-y: auto; margin-bottom: 30px;
-            border: 1px solid rgba(255,0,0,0.1);
-        }
-
-        .btn-restart {
-            background: #fff; color: #000; border: none;
-            padding: 12px 30px; border-radius: 50px;
-            font-family: var(--font-main); font-weight: bold;
-            cursor: pointer; transition: 0.3s;
-        }
-        .btn-restart:hover { transform: scale(1.05); box-shadow: 0 0 20px rgba(255,255,255,0.4); }
-
-        @keyframes float {
-            0%, 100% { transform: translate(0, 0); }
-            50% { transform: translate(20px, 40px); }
-        }
-        @keyframes shine {
-            0% { left: -150%; } 100% { left: 150%; }
+        /* Logs Console */
+        #console-log {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            line-height: 1.4;
+            color: #00ffaa;
+            text-shadow: 0 0 2px rgba(0, 255, 170, 0.5);
+            direction: ltr; /* Logs always LTR */
         }
     </style>
 </head>
 <body>
 
-    <div class="aurora-bg">
-        <div class="orb orb-1"></div>
-        <div class="orb orb-2"></div>
-    </div>
+    <!-- 1. MAIN CONTAINER (Centered) -->
+    <div id="kernel-layer" class="fixed inset-0 z-50 flex flex-col items-center justify-center p-6">
+        
+        <!-- Background Ambient Glow (Static for performance) -->
+        <div class="absolute inset-0 z-[-1] overflow-hidden">
+            <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] bg-cyan-500/10 rounded-full blur-[80px]"></div>
+        </div>
 
-    <div id="boot-screen">
-        <div class="glass-card">
-            <div class="logo-icon">
-                <svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5">
-                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
+        <!-- THE GLASS CARD -->
+        <div id="main-card" class="glass-panel w-full max-w-sm rounded-[30px] p-8 flex flex-col items-center text-center relative overflow-hidden min-h-[350px] justify-center">
+            
+            <!-- A. BOOT STATE -->
+            <div id="boot-view" class="w-full flex flex-col items-center transition-all duration-500">
+                <div class="mb-6 relative">
+                    <div class="absolute inset-0 bg-white/20 blur-xl rounded-full animate-pulse"></div>
+                    <i data-lucide="layers" class="w-16 h-16 text-white relative z-10"></i>
+                </div>
+                
+                <h1 class="text-2xl font-bold mb-2 tracking-wide">نظام تايتان</h1>
+                <p id="boot-text" class="text-white/50 text-xs mb-8 font-mono">جاري تهيئة النواة...</p>
+                
+                <!-- Loading Bar -->
+                <div class="w-full h-1.5 loader-track mb-2">
+                    <div id="progress-bar" class="loader-fill"></div>
+                </div>
             </div>
-            
-            <div class="logo-text">نظام تايتان</div>
-            
-            <div class="loader-track">
-                <div class="loader-bar" id="progress"></div>
+
+            <!-- B. LOGIN STATE (Hidden Initially) -->
+            <div id="login-view" class="w-full flex flex-col items-center hidden-opacity transition-all duration-500 transform scale-95">
+                <div class="w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mb-6 shadow-lg">
+                    <i data-lucide="shield-check" class="w-8 h-8 text-cyan-400"></i>
+                </div>
+                <h2 class="text-xl font-bold mb-1 text-white">تسجيل الدخول</h2>
+                <p class="text-white/40 text-xs mb-6">مطلوب تصريح أمني - المستوى 10</p>
+
+                <form id="login-form" class="w-full space-y-3">
+                    <input type="text" id="user" placeholder="اسم المستخدم" class="glass-input w-full rounded-xl py-3 px-4 text-sm text-center font-bold" autocomplete="off">
+                    <input type="password" id="pass" placeholder="كلمة المرور" class="glass-input w-full rounded-xl py-3 px-4 text-sm text-center font-mono tracking-widest">
+                    
+                    <div id="error-msg" class="h-4 text-[10px] text-red-400 font-bold opacity-0 transition-opacity"></div>
+
+                    <button type="submit" class="w-full bg-white text-black font-bold py-3 rounded-xl hover:bg-cyan-50 active:scale-95 transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)] mt-2">
+                        فتح النظام
+                    </button>
+                </form>
             </div>
-            
-            <div class="status-text" id="boot-status">جاري تهيئة النظام...</div>
+
+        </div>
+
+        <!-- CONSOLE LOGGER (Bottom) -->
+        <div id="console-wrapper" class="absolute bottom-8 w-[90%] max-w-md h-24 bg-black/40 border border-white/5 rounded-xl backdrop-blur-md overflow-hidden p-3 transition-opacity duration-1000 opacity-0">
+            <div id="console-log" class="h-full overflow-y-auto flex flex-col justify-end"></div>
         </div>
     </div>
 
-    <div id="root"></div>
+    <!-- 2. THE OS FRAME (Where iOS_Dashboard loads) -->
+    <iframe id="os-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
 
-    <div id="crash-screen">
-        <div class="crash-box">
-            <div class="crash-title">⚠️ توقف النظام</div>
-            <div class="crash-desc" id="crash-hint">
-                واجه النظام مشكلة غير متوقعة أثناء محاولة تحميل واجهة المستخدم.
-            </div>
-            <div class="crash-code" id="crash-trace">جاري جلب تفاصيل الخطأ...</div>
-            <button class="btn-restart" onclick="location.reload()">إعادة المحاولة</button>
+    <!-- 3. ERROR OVERLAY (Panic Screen) -->
+    <div id="panic-screen" class="fixed inset-0 z-[999] bg-black hidden flex-col items-center justify-center text-red-500 p-8 font-mono text-left" dir="ltr">
+        <h1 class="text-4xl font-bold mb-4">KERNEL_PANIC</h1>
+        <p class="text-white/70 mb-8 border-b border-white/20 pb-4 w-full">System halted due to a fatal error.</p>
+        <div class="bg-red-900/10 border border-red-500/30 p-4 rounded w-full text-xs break-all" id="panic-details">
+            Error details will appear here.
         </div>
+        <button onclick="location.reload()" class="mt-8 px-6 py-2 border border-red-500 text-red-500 hover:bg-red-500 hover:text-white transition">REBOOT SYSTEM</button>
     </div>
 
     <script>
-        const Kernel = {
-            ui: {
-                boot: document.getElementById('boot-screen'),
-                progress: document.getElementById('progress'),
-                status: document.getElementById('boot-status'),
-                crash: document.getElementById('crash-screen'),
-                trace: document.getElementById('crash-trace'),
-                hint: document.getElementById('crash-hint')
+        // --- CONFIGURATION ---
+        const CREDENTIALS = { u: "Abdallah", p: "asdfghjkl05896" };
+        const FILES = { dashboard: "iOS_Dashboard.html", player: "Interactive_Player.html" };
+        
+        // --- SYSTEM CORE ---
+        const System = {
+            logs: [],
+            
+            // Fast Logger (Non-blocking)
+            log: function(msg) {
+                const consoleEl = document.getElementById('console-log');
+                const line = document.createElement('div');
+                line.textContent = `> ${msg}`;
+                consoleEl.appendChild(line);
+                consoleEl.scrollTop = consoleEl.scrollHeight;
             },
 
-            setProgress: function(percent) { 
-                if(this.ui.progress) this.ui.progress.style.width = percent + '%'; 
+            // Panic Handler
+            panic: function(msg) {
+                document.getElementById('panic-screen').style.display = 'flex';
+                document.getElementById('panic-details').innerText = msg;
+                console.error(msg);
             },
 
-            setStatus: function(text) { 
-                if(this.ui.status) this.ui.status.innerText = text; 
-            },
-
-            panic: function(error) {
-                console.error("Titan Kernel Panic:", error);
-                this.ui.boot.style.display = 'none';
-                this.ui.crash.style.display = 'flex';
-                
-                let errorMsg = error.stack || error.message || "Unknown Error";
-                
-                if (errorMsg === "Script error.") {
-                    errorMsg = "Critical Load Error (CORS/404)\nBrowser blocked script access.";
-                    if (this.ui.hint) {
-                        this.ui.hint.innerHTML = "فشل تحميل الملفات (Script Error).<br>1. تأكد أن ملف 'iOS_Dashboard.jsx' موجود داخل مجلد 'components'.<br>2. تأكد من أن حالة الأحرف (Capital/Small) صحيحة.";
-                    }
-                }
-                
-                this.ui.trace.innerText = `Error Details:\n${errorMsg}`;
-            },
-
-            checkFile: async function(url) {
-                try { 
-                    const res = await fetch(url, {method: 'HEAD'});
-                    return res.ok; 
-                } catch { return false; }
-            },
-
-            ignite: async function() {
+            // File Check (Smart)
+            verifyFiles: async function() {
+                this.log("Checking filesystem integrity...");
                 try {
-                    this.setStatus("جاري التحقق من الملفات...");
-                    this.setProgress(20);
-
-                    const mainComponent = "/components/iOS_Dashboard.jsx";
-                    const isFound = await this.checkFile(mainComponent);
-
-                    if (!isFound) {
-                        throw new Error(`الملف المفقود: ${mainComponent}\nتأكد من وجود ملف iOS_Dashboard.jsx داخل مجلد web/components/`);
-                    }
-
-                    this.setStatus("جاري تحميل المحرك العصبي...");
-                    this.setProgress(60);
-                    
-                    await new Promise(r => setTimeout(r, 600));
-
-                    this.setStatus("جاري تشغيل الواجهة...");
-                    this.setProgress(90);
-
+                    const req = await fetch(FILES.dashboard, { method: 'HEAD' });
+                    if (!req.ok) throw new Error(`Missing: ${FILES.dashboard}`);
+                    this.log(`${FILES.dashboard} ... OK`);
+                    return true;
                 } catch (e) {
-                    this.panic(e);
+                    // Try to proceed anyway but warn, or panic if strict
+                    this.log(`WARNING: ${e.message}`);
+                    return false; // Return false to indicate issue, but we might let them try
                 }
             },
 
-            complete: function() {
-                this.setProgress(100);
-                this.setStatus("تم التشغيل بنجاح");
+            // The Boot Sequence
+            boot: async function() {
+                lucide.createIcons();
+                document.getElementById('console-wrapper').style.opacity = '0.7';
+
+                const bar = document.getElementById('progress-bar');
+                const status = document.getElementById('boot-text');
+
+                // 1. Simulate fast loading logs (The "500 lines" effect)
+                let progress = 0;
+                const modules = ["Kernel", "Memory", "GPU_Driver", "Audio_Engine", "Security_Matrix", "React_Core", "FileSystem"];
+                
+                const interval = setInterval(() => {
+                    progress += Math.random() * 5;
+                    if(progress > 100) progress = 100;
+                    bar.style.width = `${progress}%`;
+                    
+                    if(Math.random() > 0.5) {
+                        const mod = modules[Math.floor(Math.random() * modules.length)];
+                        this.log(`Loading ${mod}... OK [${Math.random().toFixed(3)}ms]`);
+                    }
+
+                    if(progress === 100) {
+                        clearInterval(interval);
+                        this.finishBoot();
+                    }
+                }, 50);
+
+                // Check files in parallel
+                const filesOk = await this.verifyFiles();
+                if(!filesOk) {
+                    clearInterval(interval);
+                    bar.style.backgroundColor = "red";
+                    status.innerText = "خطأ في ملفات النظام!";
+                    status.style.color = "red";
+                    setTimeout(() => this.panic(`CRITICAL: ${FILES.dashboard} not found in directory. Ensure all files are in the same folder.`), 1500);
+                }
+            },
+
+            finishBoot: function() {
+                const bootView = document.getElementById('boot-view');
+                const loginView = document.getElementById('login-view');
+                const card = document.getElementById('main-card');
+
+                document.getElementById('boot-text').innerText = "النظام جاهز.";
                 
                 setTimeout(() => {
-                    this.ui.boot.style.opacity = '0';
-                    this.ui.boot.style.transform = 'scale(1.1)';
-                    setTimeout(() => { 
-                        this.ui.boot.style.display = 'none'; 
-                    }, 800);
-                }, 500);
+                    // Smooth Morph Transition
+                    bootView.style.opacity = '0';
+                    bootView.style.transform = 'scale(0.9)';
+                    
+                    setTimeout(() => {
+                        bootView.style.display = 'none';
+                        
+                        loginView.classList.remove('hidden-opacity', 'scale-95');
+                        loginView.classList.add('visible-opacity', 'scale-100');
+                        
+                        // Focus user input
+                        document.getElementById('user').focus();
+                    }, 500);
+                }, 800);
+            },
+
+            launch: function() {
+                // Fade out kernel layer
+                const layer = document.getElementById('kernel-layer');
+                layer.style.opacity = '0';
+                layer.style.transform = 'scale(1.1)';
+                layer.style.pointerEvents = 'none';
+
+                // Fade in OS
+                const frame = document.getElementById('os-frame');
+                frame.src = FILES.dashboard;
+                frame.style.opacity = '1';
+                
+                // Show floating logger after delay
+                setTimeout(() => {
+                    layer.style.display = 'none';
+                }, 1000);
             }
         };
 
-        window.addEventListener('error', function(e) {
-            if (e.message && e.message.includes('ResizeObserver')) return;
-            Kernel.panic(e.error || new Error(e.message));
+        // --- AUTHENTICATION HANDLER ---
+        document.getElementById('login-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const u = document.getElementById('user').value;
+            const p = document.getElementById('pass').value;
+            const err = document.getElementById('error-msg');
+            const card = document.getElementById('main-card');
+
+            System.log(`Auth request: ${u}`);
+
+            if (u === CREDENTIALS.u && p === CREDENTIALS.p) {
+                System.log("Access Granted.");
+                System.launch();
+            } else {
+                System.log("Access Denied.");
+                err.innerText = "بيانات الدخول غير صحيحة";
+                err.style.opacity = '1';
+                
+                // Shake Animation
+                card.style.transform = "translateX(10px)";
+                setTimeout(() => card.style.transform = "translateX(-10px)", 100);
+                setTimeout(() => card.style.transform = "translateX(0)", 200);
+            }
         });
 
-        Kernel.ignite();
-    </script>
+        // --- GLOBAL ERROR TRAP ---
+        window.onerror = function(message, source, lineno, colno, error) {
+            System.panic(`SCRIPT_ERROR: ${message}\nAt: ${source}:${lineno}`);
+            return true;
+        };
 
-    <script type="text/babel" data-type="module" data-presets="react">
-        import React, { useEffect, useState } from "react";
-        import { createRoot } from "react-dom/client";
-        import IOS_Dashboard from "/components/iOS_Dashboard.jsx";
+        // Start
+        window.onload = () => System.boot();
 
-        function App() {
-            useEffect(() => {
-                Kernel.complete();
-            }, []);
-
-            return (
-                <IOS_Dashboard />
-            );
-        }
-
-        try {
-            const container = document.getElementById("root");
-            const root = createRoot(container);
-            root.render(<App />);
-        } catch(e) {
-            Kernel.panic(e);
-        }
     </script>
 </body>
 </html>
