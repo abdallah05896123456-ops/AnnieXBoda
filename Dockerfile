@@ -38,8 +38,8 @@ RUN pip install --upgrade pip setuptools wheel && \
         pip install --no-cache-dir -r /app/filtered-requirements.txt; \
     fi
 
-# 🔥 (مهم جداً) تثبيت مكتبات الداشبورد يدوياً لضمان عمل الموقع
-RUN pip install flask psutil
+# 🔥 (مهم جداً) تثبيت مكتبات الداشبورد يدوياً لضمان عمل الموقع وقاعدة البيانات
+RUN pip install flask psutil pymongo
 
 # نسخ باقي سورس AnnieXMedia
 COPY . /app
@@ -49,6 +49,9 @@ RUN python - <<'PY'
 import pytgcalls
 print('PYTGCALLS_FROM=', getattr(pytgcalls,'__file__','<not found>'))
 PY
+
+# 🌐 فتح البورت 8080 عشان الموقع يشتغل
+EXPOSE 8080
 
 # نقطة الدخول
 CMD ["python3", "-m", "AnnieXMedia"]
