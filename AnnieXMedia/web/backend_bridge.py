@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # ==============================================================================
-# TITAN OS KERNEL BRIDGE - VERSION 9.0 (GOD MODE)
-# Architected for: High Performance, Zero-Latency, Self-Healing Systems
-# Integrates: React JSX, Resource Optimization, Security Gate, Real-time Telemetry
+# TITAN OS KERNEL BRIDGE - VERSION 9.1 (GENIUS MODE)
+# Architected for: Fly.io, Heroku, Docker Environments
+# Features: Recursive File Discovery, Auto-Healing, Zero-Config Deployment
 # ==============================================================================
 
 import asyncio
@@ -35,9 +35,6 @@ from pydantic import BaseModel, Field
 # ==============================================================================
 # 🧠 LEVEL 1: INTELLIGENT IMPORT SYSTEM (NEURAL LINK)
 # ==============================================================================
-# This system detects the environment and adapts the imports dynamically.
-# It prevents the server from crashing even if critical modules are missing.
-
 class SystemStatus:
     CALLS = False
     USERBOT = False
@@ -83,14 +80,12 @@ except ImportError:
 
 # 4. Titan Modules (Resource Optimizer & Security Gate)
 try:
-    # Try Local Import First (Priority)
     import Resource_Optimizer as RO
     import security_gate
     SystemStatus.RO = True
     SystemStatus.SECURITY = True
 except ImportError:
     try:
-        # Try Package Import
         from AnnieXMedia.web import Resource_Optimizer as RO
         from AnnieXMedia.web import security_gate
         SystemStatus.RO = True
@@ -105,51 +100,32 @@ except ImportError:
 # ==============================================================================
 class KernelConfig:
     APP_TITLE = "Titan OS Kernel"
-    VERSION = "9.0.0-GodMode"
+    VERSION = "9.1.0-Genius"
     HOST = "0.0.0.0"
     PORT = 8080
-    
-    # Adaptive Defaults
     WS_INTERVAL = getattr(config, "WS_STATUS_INTERVAL", 1.0)
     LOG_FILE = getattr(config, "LOG_FILE", "titan_kernel.log")
-    CORS_ORIGINS = getattr(config, "CORS_ORIGINS", ["*"])
     
-    # Performance Tuning
-    MAX_WORKERS = (os.cpu_count() or 1) * 2
-    KEEPALIVE = 60
-    
-    # Paths
-    WEB_DIR = "web" if os.path.exists("web") else "."
-    COMPONENTS_DIR = os.path.join(WEB_DIR, "components")
+    # Smart Directory Resolution
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    ROOT_DIR = os.getcwd()
 
-# Logging System (Non-blocking)
 logging.basicConfig(
     format="%(asctime)s - [%(levelname)s] - %(name)s - %(message)s",
     datefmt="%H:%M:%S",
     level=logging.INFO,
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(KernelConfig.LOG_FILE, mode="a", encoding="utf-8")
-    ]
+    handlers=[logging.StreamHandler(sys.stdout), logging.FileHandler(KernelConfig.LOG_FILE, mode="a", encoding="utf-8")]
 )
 logger = logging.getLogger("TitanKernel")
 
 # ==============================================================================
-# 🛡️ LEVEL 3: SERVER INITIALIZATION
+# 🛡️ LEVEL 3: SERVER INITIALIZATION & SMART MOUNTING
 # ==============================================================================
-app = FastAPI(
-    title=KernelConfig.APP_TITLE,
-    version=KernelConfig.VERSION,
-    docs_url=None, 
-    redoc_url=None
-)
+app = FastAPI(title=KernelConfig.APP_TITLE, version=KernelConfig.VERSION, docs_url=None, redoc_url=None)
 
-# 🔒 Mount Security Gate if available
 if SystemStatus.SECURITY:
     app.include_router(security_gate.router)
-    logger.info("🛡️ [SECURITY] Gate Active & Monitoring.")
 
-# 🌐 CORS Policy
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -158,75 +134,78 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 📂 Frontend File Serving (The Bridge to JSX)
-if os.path.exists(KernelConfig.COMPONENTS_DIR):
-    app.mount("/components", StaticFiles(directory=KernelConfig.COMPONENTS_DIR), name="components")
-    logger.info(f"📂 [FILESYSTEM] Serving JSX components from: {KernelConfig.COMPONENTS_DIR}")
+# --- INTELLIGENT COMPONENT DISCOVERY ---
+# This loop finds the 'components' folder wherever it is hiding
+found_components = False
+search_paths = [
+    os.path.join(KernelConfig.BASE_DIR, "components"),
+    os.path.join(KernelConfig.ROOT_DIR, "components"),
+    os.path.join(KernelConfig.ROOT_DIR, "web", "components"),
+    "components",
+    "web/components"
+]
+
+for path in search_paths:
+    if os.path.exists(path) and os.path.isdir(path):
+        app.mount("/components", StaticFiles(directory=path), name="components")
+        logger.info(f"📂 [FILESYSTEM] Linked 'components' from: {path}")
+        found_components = True
+        break
+
+if not found_components:
+    # Deep Search Fallback
+    logger.warning("⚠️ [FILESYSTEM] Components not found in standard paths. Initiating Deep Search...")
+    for root, dirs, files in os.walk(KernelConfig.ROOT_DIR):
+        if "components" in dirs:
+            full_path = os.path.join(root, "components")
+            # Verify it contains JSX files
+            if any(f.endswith(".jsx") for f in os.listdir(full_path)):
+                app.mount("/components", StaticFiles(directory=full_path), name="components")
+                logger.info(f"📂 [FILESYSTEM] Deep Link Established: {full_path}")
+                found_components = True
+                break
 
 # ==============================================================================
 # 🧠 LEVEL 4: ARTIFICIAL SYSTEM INTELLIGENCE (A.S.I)
 # ==============================================================================
 class ArtificialSystemIntelligence:
-    """
-    The Brain of Titan OS. Manages resources, monitors health, 
-    and auto-heals connections.
-    """
     def __init__(self):
         self._running = False
-        self._shutdown_event = Event()
         self._focused_group = None
         self._start_time = time.time()
-        self._metrics = {
-            "requests": 0,
-            "healed": 0,
-            "zombies": 0
-        }
+        self._metrics = {"requests": 0, "healed": 0, "zombies": 0}
 
     async def ignite(self):
         self._running = True
         logger.info("🧠 [ASI] Neural Core Online.")
-        
-        # 1. Activate Resource Optimizer
         if SystemStatus.RO:
             Thread(target=RO.monitor_loop, args=(2.0,), daemon=True, name="TitanRO").start()
-            logger.info("⚡ [ASI] Resource Optimizer Engaged.")
-
-        # 2. Start Background Processes
         asyncio.create_task(self._watchdog_protocol())
         asyncio.create_task(self._auto_healer())
 
     async def terminate(self):
         self._running = False
-        if SystemStatus.RO:
-            RO.unfocus_all()
+        if SystemStatus.RO: RO.unfocus_all()
         logger.info("🧠 [ASI] Neural Core Hibernating.")
 
     async def _watchdog_protocol(self):
-        """Kills zombie FFmpeg processes to free RAM."""
         while self._running:
             try:
                 for proc in psutil.process_iter(['pid', 'name', 'create_time']):
                     if proc.info['name'] and 'ffmpeg' in proc.info['name'].lower():
-                        if time.time() - proc.info['create_time'] > 600: # 10 mins limit
+                        if time.time() - proc.info['create_time'] > 600:
                             proc.kill()
                             self._metrics["zombies"] += 1
             except: pass
             await asyncio.sleep(60)
 
     async def _auto_healer(self):
-        """Checks userbot clients and reconnects them if they drop."""
         while self._running and SystemStatus.USERBOT:
             try:
-                clients = [
-                    getattr(userbot, "one", None), getattr(userbot, "two", None),
-                    getattr(userbot, "three", None), getattr(userbot, "four", None),
-                    getattr(userbot, "five", None)
-                ]
+                clients = [getattr(userbot, "one", None), getattr(userbot, "two", None), getattr(userbot, "three", None), getattr(userbot, "four", None), getattr(userbot, "five", None)]
                 for c in clients:
                     if c and not c.is_connected:
-                        try: 
-                            await c.start()
-                            self._metrics["healed"] += 1
+                        try: await c.start(); self._metrics["healed"] += 1
                         except: pass
             except: pass
             await asyncio.sleep(300)
@@ -238,22 +217,19 @@ ASI = ArtificialSystemIntelligence()
 # ==============================================================================
 class WebSocketHub:
     def __init__(self):
-        self.active_connections: List[WebSocket] = []
+        self.active_connections = []
         self._lock = asyncio.Lock()
 
     async def connect(self, ws: WebSocket):
         await ws.accept()
-        async with self._lock:
-            self.active_connections.append(ws)
+        async with self._lock: self.active_connections.append(ws)
 
     def disconnect(self, ws: WebSocket):
-        if ws in self.active_connections:
-            self.active_connections.remove(ws)
+        if ws in self.active_connections: self.active_connections.remove(ws)
 
     async def broadcast(self, message: dict):
         if not self.active_connections: return
         payload = json.dumps(message)
-        # Fire and forget strategy for speed
         for ws in self.active_connections:
             try: await ws.send_text(payload)
             except: self.disconnect(ws)
@@ -261,75 +237,35 @@ class WebSocketHub:
 Hub = WebSocketHub()
 
 async def telemetry_stream():
-    """
-    Generates a unified state object for the frontend every X seconds.
-    Compatible with BOTH iOS_Dashboard.jsx and Interactive_Player.jsx
-    """
     while ASI._running:
         try:
-            # 1. Hardware Stats
             cpu = psutil.cpu_percent()
             mem = psutil.virtual_memory()
-            
-            # 2. Call Stats
             active_chats = []
             if SystemStatus.CALLS and hasattr(StreamController, "active_calls"):
                 active_chats = list(StreamController.active_calls)
             
-            # 3. Assistants Stats
             assistants = []
             if SystemStatus.USERBOT:
-                clients = [
-                    getattr(userbot, "one", None), getattr(userbot, "two", None),
-                    getattr(userbot, "three", None), getattr(userbot, "four", None),
-                    getattr(userbot, "five", None)
-                ]
+                clients = [getattr(userbot, "one", None), getattr(userbot, "two", None), getattr(userbot, "three", None), getattr(userbot, "four", None), getattr(userbot, "five", None)]
                 for i, c in enumerate(clients):
-                    if c:
-                        assistants.append({
-                            "id": i + 1,
-                            "online": c.is_connected,
-                            "groups": 0, # Placeholder for performance
-                            "group_id": None
-                        })
+                    if c: assistants.append({"id": i + 1, "online": c.is_connected, "groups": 0, "group_id": None})
 
-            # 4. The Payload
             data = {
-                # Section: iOS Dashboard
-                "stats": {
-                    "cpu": cpu,
-                    "ram": int(mem.used / 1024 / 1024),
-                    "groups": len(active_chats)
-                },
+                "stats": {"cpu": cpu, "ram": int(mem.used / 1024 / 1024), "groups": len(active_chats)},
                 "focused_group": ASI._focused_group,
                 "dominant_color": "#00ff88" if ASI._focused_group else "#00ffff",
                 "assistants": assistants,
-
-                # Section: Interactive Player
                 "type": "status_snapshot",
-                "payload": {
-                    "current": {
-                        "title": "System Active",
-                        "artist": f"Titan OS v{KernelConfig.VERSION}",
-                        "duration": 0,
-                        "dominant_color": "#00ff88"
-                    },
-                    "listeners": {}
-                }
+                "payload": {"current": {"title": "System Active", "artist": f"Titan OS v{KernelConfig.VERSION}", "duration": 0}, "listeners": {}}
             }
-            
             await Hub.broadcast(data)
             await asyncio.sleep(KernelConfig.WS_INTERVAL)
-            
-        except Exception as e:
-            logger.error(f"Telemetry Error: {e}")
-            await asyncio.sleep(1)
+        except: await asyncio.sleep(1)
 
 # ==============================================================================
-# 🎮 LEVEL 6: API BRIDGE (THE COMMAND CENTER)
+# 🎮 LEVEL 6: API BRIDGE
 # ==============================================================================
-
-# --- Data Models ---
 class ChatReq(BaseModel): chat_id: int
 class PlayReq(ChatReq): query: Optional[str] = None; video: bool = False
 class SkipReq(ChatReq): link: str = ""; video: bool = False
@@ -339,21 +275,15 @@ class FocusReq(BaseModel): group_id: int
 class EqReq(ChatReq): bands: Dict[str, float]; input_path: str
 class UserReq(BaseModel): user_id: str; action: str
 
-# --- Helper ---
 def get_assistant(chat_id):
     if not SystemStatus.USERBOT: raise HTTPException(503, "Userbot Offline")
     return group_assistant(StreamController, chat_id)
 
 def safe_run(func):
-    """Decorator to prevent API crashes"""
     async def wrapper(*args, **kwargs):
         try: return await func(*args, **kwargs)
-        except Exception as e:
-            logger.error(f"API Error: {e}")
-            raise HTTPException(500, str(e))
+        except Exception as e: raise HTTPException(500, str(e))
     return wrapper
-
-# --- Endpoints ---
 
 @app.post("/bridge/play")
 @safe_run
@@ -384,7 +314,6 @@ async def skip(p: SkipReq):
 @app.post("/bridge/seek")
 @safe_run
 async def seek(p: SeekReq):
-    # Handles string input like "00:30" or "+10" from frontend
     await StreamController.seek_stream(p.chat_id, p.file_path, p.to_seek, p.duration, p.mode)
     return {"status": "seeked"}
 
@@ -393,17 +322,14 @@ async def seek(p: SeekReq):
 async def volume(p: VolReq):
     assistant = await get_assistant(p.chat_id)
     try:
-        if hasattr(assistant, "change_volume_call"): 
-            await assistant.change_volume_call(p.chat_id, p.volume)
-        else: 
-            await assistant.group_call.set_my_volume(p.volume)
+        if hasattr(assistant, "change_volume_call"): await assistant.change_volume_call(p.chat_id, p.volume)
+        else: await assistant.group_call.set_my_volume(p.volume)
     except: pass
     return {"status": "ok", "vol": p.volume}
 
 @app.post("/bridge/eq")
 @safe_run
 async def equalizer(p: EqReq):
-    # Generates FFmpeg command for Equalizer
     if not os.path.exists(p.input_path): return {"status": "simulated"}
     out = f"downloads/eq_{p.chat_id}_{int(time.time())}.opus"
     os.makedirs("downloads", exist_ok=True)
@@ -427,7 +353,6 @@ async def unfocus():
 
 @app.post("/assistants/restart_all")
 async def restart_assistants():
-    # Signals userbot clients to restart (Handled by ASI auto-healer)
     return {"status": "restart_sequence_initiated"}
 
 @app.post("/logs/tail")
@@ -443,36 +368,58 @@ async def db_cols():
 
 @app.get("/health")
 async def health():
-    return {
-        "status": "healthy",
-        "asi": "active",
-        "uptime": int(time.time() - ASI._start_time),
-        "modules": {
-            "ro": SystemStatus.RO,
-            "security": SystemStatus.SECURITY,
-            "calls": SystemStatus.CALLS
-        }
-    }
+    return {"status": "healthy", "asi": "active", "uptime": int(time.time() - ASI._start_time)}
 
 # ==============================================================================
-# 🚪 LEVEL 7: FRONTEND ENTRY POINT (INDEX.HTML)
+# 🚪 LEVEL 7: FRONTEND ENTRY POINT (GENIUS LOCATOR)
 # ==============================================================================
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():
     """
-    Serves the index.html that bootstraps the React application.
-    Checks multiple locations to ensure it works in any deployment structure.
+    Finds index.html using a multi-stage search strategy.
+    Guaranteed to find the file if it exists anywhere in the build.
     """
-    paths = [
-        os.path.join(KernelConfig.WEB_DIR, "index.html"),
-        "index.html"
+    # 1. Priority Paths (Most common locations)
+    priority_paths = [
+        "index.html",
+        "web/index.html",
+        "AnnieXMedia/web/index.html",
+        "/app/web/index.html",
+        "/app/AnnieXMedia/web/index.html",
+        os.path.join(KernelConfig.BASE_DIR, "index.html")
     ]
-    for path in paths:
+
+    for path in priority_paths:
         if os.path.exists(path):
+            logger.info(f"🎯 [UI] Found UI via Priority: {path}")
             return FileResponse(path)
+
+    # 2. Deep Search (Last Resort - Recursive Scan)
+    logger.warning("⚠️ [UI] Priority search failed. Scanning filesystem...")
+    for root, dirs, files in os.walk(KernelConfig.ROOT_DIR):
+        if "index.html" in files:
+            found_path = os.path.join(root, "index.html")
+            # Sanity check: ensure it's not inside node_modules or something weird
+            if "node_modules" not in found_path:
+                logger.info(f"🔍 [UI] Found UI via Deep Search: {found_path}")
+                return FileResponse(found_path)
+
+    # 3. Emergency Debug View
+    current_files = []
+    for root, dirs, files in os.walk("."):
+        for f in files: current_files.append(os.path.join(root, f))
+        if len(current_files) > 20: break # Show only first 20
+
     return HTMLResponse(
-        """<html style='background:#000;color:#0f0;font-family:monospace;display:flex;justify-content:center;align-items:center;height:100vh;'>
-        <div><h1>⚠️ TITAN KERNEL: NO UI FOUND</h1><p>Please upload 'index.html' to the 'web/' folder.</p></div></html>"""
+        f"""<html style='background:#000;color:#ff4444;font-family:monospace;padding:20px;'>
+        <div>
+            <h1>⚠️ TITAN KERNEL: UI NOT FOUND</h1>
+            <p>Could not locate 'index.html' in any standard or deep path.</p>
+            <hr>
+            <p><strong>Debug Info:</strong></p>
+            <p>CWD: {os.getcwd()}</p>
+            <p>Sample Files: {current_files}</p>
+        </div></html>"""
     )
 
 # ==============================================================================
@@ -484,7 +431,6 @@ async def websocket_endpoint(ws: WebSocket):
     await Hub.connect(ws)
     try:
         while True:
-            # Keep connection alive with heartbeat
             data = await ws.receive_text()
             if data == "ping": await ws.send_json({"type": "pong"})
     except WebSocketDisconnect:
@@ -519,20 +465,11 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    logger.info("🛑 [TITAN] Shutdown Sequence Initiated.")
     await ASI.terminate()
 
 def launch():
-    """Entry point for the thread launcher"""
-    uvicorn.run(
-        app, 
-        host=KernelConfig.HOST, 
-        port=KernelConfig.PORT, 
-        log_level="error", 
-        loop="asyncio"
-    )
+    uvicorn.run(app, host=KernelConfig.HOST, port=KernelConfig.PORT, log_level="error", loop="asyncio")
 
 if __name__ != "__main__":
-    # When imported by the bot's main script, run in a daemon thread
     t = Thread(target=launch, name="TitanKernelThread", daemon=True)
     t.start()
