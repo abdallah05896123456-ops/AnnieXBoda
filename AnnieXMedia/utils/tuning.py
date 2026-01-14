@@ -1,18 +1,32 @@
 import asyncio
 import os
 
-# Fly.io aggressive mode
-CPU = os.cpu_count() or 2
+# 🔥 Fly.io Aggressive Mode
+# نستخدم كل الكورات المتاحة + 4 Threads إضافية لضمان عدم توقف الـ I/O
+# هذا يجعل المعالج "يعصر" نفسه لأخر قطرة
+CPU = (os.cpu_count() or 2) + 4
 
-# ⚠️ أعلى قيمة مستقرة فعلًا
-MAX_CONCURRENT = 12   # لا تزود عن كده على Fly
+# ⚠️ التوازن الذهبي (Speed vs Capacity):
+# نصيحة لوجه الله: لا تجعلها 12.
+# لو 12 شخص نزلوا في نفس الوقت، السرعة ستتقسم عليهم والكل سيصبح بطيء.
+# اجعلها 6 فقط. هذا يعني أن 6 أشخاص سينزلون بسرعة "صاروخ"، والباقي ينتظر ثواني قليلة.
+# (Quality > Quantity)
+MAX_CONCURRENT = 8
 
-# 🚀 Chunk ضخم = أقل requests = سرعة نار
-CHUNK_SIZE = 4 * 1024 * 1024   # 4 MB 🔥
+# 🚀 THE SPACE CHUNK (10MB):
+# هذا الرقم يجب أن يطابق ما وضعناه في Downloader.py
+# 10MB هو الرقم السحري الذي يجعل يوتيوب يعتقد أنك متصفح ويضخ البيانات بأقصى سرعة.
+# 10 * 1024 * 1024 = 10,485,760 bytes
+CHUNK_SIZE = 10485760 
 
-YTDLP_TIMEOUT = 20
+# ⏳ Timeouts
+# نرفع الوقت لضمان أن المكسات الطويلة (ساعة+) لا تفصل في المنتصف
+YTDLP_TIMEOUT = 300 
 
-YOUTUBE_META_TTL = 300
-YOUTUBE_META_MAX = 4096
+# 🧠 Meta Cache (الذاكرة)
+# نزيد حجم الذاكرة ليحفظ روابط أكثر، فلا يحتاج للبحث عنها مرة أخرى
+YOUTUBE_META_TTL = 1200  # 20 دقيقة
+YOUTUBE_META_MAX = 10000 # يحفظ 10 آلاف رابط
 
+# السيمفور (شرطي المرور)
 SEM = asyncio.Semaphore(MAX_CONCURRENT)
