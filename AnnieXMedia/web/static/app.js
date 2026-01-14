@@ -243,3 +243,73 @@ function formatTime(seconds) {
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
 }
+/* ============================================================
+   7. نظام مراقبة السيرفر والترمينال (DashX Ultimate Extras)
+   ============================================================ */
+
+// تحديث بيانات السيرفر (CPU/RAM)
+async function updateSystemStats() {
+    try {
+        const res = await fetch(`${API_BASE}/system`);
+        const data = await res.json();
+        
+        // تحديث النصوص
+        document.getElementById('cpu-val').innerText = data.cpu + '%';
+        document.getElementById('ram-val').innerText = data.ram + '%';
+        document.getElementById('disk-val').innerText = data.disk + '%';
+        document.getElementById('uptime-val').innerText = data.uptime;
+        document.getElementById('ram-text').innerText = data.ram_txt;
+
+        // تحديث الشرائط
+        document.getElementById('cpu-bar').style.width = data.cpu + '%';
+        document.getElementById('ram-bar').style.width = data.ram + '%';
+        document.getElementById('disk-bar').style.width = data.disk + '%';
+        
+        // تغيير لون الشريط لو الاستهلاك عالي
+        if(data.cpu > 80) document.getElementById('cpu-bar').style.background = '#ff3b30';
+        else document.getElementById('cpu-bar').style.background = 'var(--accent)';
+
+    } catch (e) {
+        console.error("Stats Error:", e);
+    }
+}
+
+// تشغيل تحديث النظام كل 2 ثانية (فقط لو التبويب مفتوح)
+setInterval(() => {
+    if(document.getElementById('tab-stats').style.display === 'block') {
+        updateSystemStats();
+    }
+}, 2000);
+
+
+// منطق الطرفية (Terminal)
+async function handleTerm(e) {
+    if(e.key === 'Enter') {
+        const input = document.getElementById('term-input');
+        const output = document.getElementById('term-output');
+        const cmd = input.value;
+        
+        if(!cmd) return;
+
+        // إضافة الأمر للشاشة
+        output.innerHTML += `<div><span style="color:var(--accent)">$</span> ${cmd}</div>`;
+        input.value = '';
+        output.scrollTop = output.scrollHeight;
+
+        try {
+            const res = await fetch(`${API_BASE}/terminal`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ command: cmd })
+            });
+            const data = await res.json();
+            
+            // إضافة النتيجة للشاشة
+            output.innerHTML += `<div style="color:#ccc; margin-bottom:10px; white-space:pre-wrap;">${data.output}</div>`;
+            output.scrollTop = output.scrollHeight;
+
+        } catch (err) {
+            output.innerHTML += `<div style="color:red">Error: ${err}</div>`;
+        }
+    }
+}
