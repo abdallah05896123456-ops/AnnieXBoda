@@ -1,66 +1,88 @@
+import time
 import logging
 import traceback
-from flask import Blueprint, render_template, jsonify
+from flask import Blueprint, render_template, jsonify, g, request
 
 # =========================================================
-# 🔥 نظام كشف الأخطاء وتشغيل الموقع
+# 1. إعداد البلوبرينت (The Core)
 # =========================================================
+web_bp = Blueprint(
+    'web', 
+    __name__, 
+    template_folder='templates', # مكان ملفات HTML
+    static_folder='static',      # مكان CSS و JS (مهم جداً!)
+    url_prefix=''                # عشان يفتح على الدومين الرئيسي
+)
+
+# =========================================================
+# 2. مراقب الأداء (Performance Monitor)
+# لو أي صفحة أخدت أكتر من 5 ثواني، هيطبع إنذار في اللوجز
+# =========================================================
+@web_bp.before_request
+def start_timer():
+    """تسجيل وقت بداية الطلب"""
+    g.start = time.time()
+
+@web_bp.after_request
+def log_slow_request(response):
+    """حساب الوقت المستغرق قبل الرد"""
+    if hasattr(g, 'start'):
+        duration = time.time() - g.start
+        
+        # إذا تجاوز الوقت 5 ثواني
+        if duration > 5:
+            print(f"\n❌ [TIMEOUT WARNING] Page: {request.path} took {duration:.2f}s")
+            print(f"⚠️  Possible causes: Slow internet, heavy loop, or missing file.\n")
+            
+    return response
+
+# =========================================================
+# 3. ربط الموديلات (Linking Modules)
+# هنا بنربط كل ملفات البايثون ببعض عشان الموقع يشوف كل الأكواد
+# =========================================================
+print("[INFO] Initializing Web Dashboard...")
 
 try:
-    # 1. إعداد البلوبرينت
-    web_bp = Blueprint(
-        'web', 
-        __name__, 
-        template_folder='templates', 
-        static_folder='static',
-        url_prefix=''
-    )
+    # استدعاء الملفات الفرعية (يجب أن يكون بعد تعريف web_bp)
+    from . import utils    # الأدوات المساعدة
+    from . import system   # إحصائيات الرامات والمعالج
+    from . import player   # التحكم في الموسيقى
+    from . import vault    # إدارة الملفات
+    
+    print("[INFO] ✅ All Modules Linked Successfully (Utils, System, Player, Vault)")
 
-    # 2. استيراد الصفحات الداخلية
-    # (بنستخدم try داخلية عشان لو ملف واحد باظ، الباقي يكمل)
-    try:
-        from . import system
-        from . import player
-        from . import vault
-    except ImportError as e:
-        print(f"⚠️ [تحذير] بعض الملفات لم يتم استيرادها: {e}")
-
-    # 3. الصفحة الرئيسية (عشان نحل مشكلة Not Found)
-    @web_bp.route('/')
-    def home():
-        return render_template('index.html')
-
-    # 4. صفحة الحالة (Status Check)
-    # دي ميزة زيادة عشان تتأكد إن الموقع شغال حتى لو الصفحة الرئيسية فيها مشكلة
-    @web_bp.route('/status')
-    def status():
-        return jsonify({
-            "status": "online", 
-            "message": "Titan OS is Running 💎", 
-            "heartbeat": "Alive 🫶"
-        }), 200
-
-    # 5. معالج الأخطاء
-    @web_bp.errorhandler(404)
-    def not_found(e):
-        return render_template('index.html'), 404
-
-    # =========================================================
-    # ✅ رسالة النجاح (لو وصل هنا يبقى مفيش أخطاء قاتلة)
-    # =========================================================
-    print("\n")
-    print("==================================================")
-    print("✅ الموقع اشتغل وزي الفل 🫶 (Dashboard Loaded)")
-    print("💎 TITAN OS WEB: ONLINE")
-    print("==================================================")
-    print("\n")
-
-except Exception as e:
-    # ❌ رسالة الفشل (لو حصلت مصيبة)
-    print("\n")
-    print("==================================================")
-    print("❌ خطأ قاتل في تشغيل الموقع (CRITICAL WEB ERROR)")
-    print(f"Details: {e}")
-    print("==================================================")
+except ImportError as e:
+    # لو فيه ملف ناقص أو فيه خطأ، هيطبعلك هو مين بالظبط
+    print(f"\n❌ [CRITICAL ERROR] Failed to link modules: {e}")
+    print("👉 Please check that 'system.py', 'player.py', and 'vault.py' exist in 'AnnieXMedia/web/' folder.\n")
     traceback.print_exc()
-    print("\n")
+
+# =========================================================
+# 4. الراوتات الأساسية (Basic Routes)
+# =========================================================
+
+@web_bp.route('/')
+def home():
+    """الصفحة الرئيسية"""
+    return render_template('index.html')
+
+@web_bp.route('/status')
+def status():
+    """فحص حالة السيرفر"""
+    return jsonify({
+        "status": "online", 
+        "system": "Titan OS v3.0", 
+        "modules_loaded": True
+    }), 200
+
+# =========================================================
+# 5. معالجة الأخطاء (Error Handlers)
+# =========================================================
+@web_bp.errorhandler(404)
+def not_found(e):
+    # لو اليوزر طلب صفحة مش موجودة، نرجعه للرئيسية بدل ما يشوف Error
+    return render_template('index.html'), 404
+
+@web_bp.errorhandler(500)
+def server_error(e):
+    return jsonify({"error": "Internal Server Error", "details": str(e)}), 500
