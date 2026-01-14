@@ -1,5 +1,6 @@
 aiofiles
 aiohttp
+argon2
 apscheduler
 bing_image_downloader
 bs4
