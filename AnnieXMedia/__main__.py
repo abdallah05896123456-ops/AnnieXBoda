@@ -1,24 +1,64 @@
 # ================================
-# __main__.py (Linked with web_dashboard)
+# __main__.py (All-in-One: Bot + TitanOS)
 # ================================
 
 import sys
 import os
 import asyncio
 import importlib
+import logging
+from threading import Thread
+from flask import Flask, render_template, jsonify
 from pyrogram import idle
 from pytgcalls.exceptions import NoActiveGroupCall
 
 # ------------------------
-# Paths: أهم سطر عشان يشوف الملف اللي بره
+# إعدادات السيرفر (Flask) داخل البوت
 # ------------------------
-sys.path.insert(0, os.getcwd())
+# تحديد مكان فولدر TitanOS (بنفترض إنه في الروت جنب requirements.txt)
+BASE_DIR = os.getcwd()
+TITAN_DIR = os.path.join(BASE_DIR, 'TitanOS')
+
+# تأكد إن الفولدر موجود، لو مش موجود حاول تدور عليه جوه AnnieXMedia
+if not os.path.exists(TITAN_DIR):
+    TITAN_DIR = os.path.join(BASE_DIR, 'AnnieXMedia', 'TitanOS')
+
+app = Flask(__name__, template_folder=TITAN_DIR, static_folder=TITAN_DIR)
+app.secret_key = "Titan_Integrated_Secret"
+
+# إخفاء رسائل اللوج المزعجة للفلاسك
+logging.getLogger('werkzeug').setLevel(logging.ERROR)
+
+@app.route('/')
+def home():
+    return render_template('login.html')
+
+@app.route('/dashboard')
+def dashboard():
+    return render_template('dashboard.html')
+
+@app.route('/logs')
+def logs():
+    return render_template('logs.html')
+
+@app.route('/api/<action>/<chat_id>', methods=['POST'])
+def api_handler(action, chat_id):
+    # هنا ممكن نربط مستقبلاً مع أوامر البوت الحقيقية
+    return jsonify({"status": "Success", "msg": f"Command {action} executed"})
+
+def run_flask_server():
+    try:
+        # تشغيل السيرفر على بورت 8080
+        app.run(host="0.0.0.0", port=8080, use_reloader=False)
+    except Exception as e:
+        print(f"❌ TitanOS Port Error: {e}")
 
 # ------------------------
-# Imports
+# إعدادات البوت
 # ------------------------
+sys.path.insert(0, os.getcwd())
 import config
-from AnnieXMedia import LOGGER, app, userbot
+from AnnieXMedia import LOGGER, app as bot_app, userbot
 from AnnieXMedia.core.call import StreamController
 from AnnieXMedia.misc import sudo
 from AnnieXMedia.plugins import ALL_MODULES
@@ -26,23 +66,17 @@ from AnnieXMedia.utils.database import get_banned_users, get_gbanned
 from AnnieXMedia.utils.cookie_handler import fetch_and_store_cookies
 from config import BANNED_USERS
 
-# ------------------------
-# 🔥 تشغيل TitanOS Dashboard 🔥
-# ------------------------
-try:
-    # استدعاء الملف من الروت
-    from web_dashboard import start_titan
-    start_titan()
-    LOGGER("TitanOS").info("✅ Dashboard Running on Port 8080")
-except ImportError:
-    LOGGER("TitanOS").warning("⚠️ web_dashboard.py not found in root!")
-except Exception as e:
-    LOGGER("TitanOS").error(f"❌ Dashboard Error: {e}")
-
-# ========================
-# Init Function
-# ========================
 async def init():
+    # 1. تشغيل سيرفر الموقع في الخلفية
+    try:
+        t = Thread(target=run_flask_server)
+        t.daemon = True
+        t.start()
+        LOGGER("TitanOS").info(f"✅ Dashboard Integrated & Running on Port 8080 (Dir: {TITAN_DIR})")
+    except Exception as e:
+        LOGGER("TitanOS").error(f"❌ Failed to start Dashboard: {e}")
+
+    # 2. فحوصات البوت المعتادة
     if (
         not config.STRING1
         and not config.STRING2
@@ -70,7 +104,8 @@ async def init():
     except:
         pass
 
-    await app.start()
+    # 3. تشغيل البوت
+    await bot_app.start()
     LOGGER("AnnieXMedia").info("✅ Bot Client Started")
 
     for all_module in ALL_MODULES:
@@ -95,7 +130,7 @@ async def init():
     
     await idle()
 
-    await app.stop()
+    await bot_app.stop()
     await userbot.stop()
 
 if __name__ == "__main__":
