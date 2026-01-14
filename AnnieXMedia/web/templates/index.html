@@ -3,125 +3,141 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>DashX • Ultimate</title>
-    <!-- مكتبات الأيقونات -->
+    <title>DashX Ultimate</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('web.static', filename='style.css') }}">
 </head>
-<body class="theme-red"> <!-- الكلاس ده اللي هيتغير من الاعدادات -->
-
-    <!-- 1. الخلفية العميقة (Ambient Background) -->
+<body class="theme-red">
     <div class="ambient-bg">
         <div class="light-orb top-left"></div>
         <div class="light-orb bottom-right"></div>
     </div>
 
-    <!-- 2. الهيدر (Dynamic Island Style) -->
+    <!-- Header -->
     <header class="glass-header">
         <div class="status-pill">
-            <span class="dot live"></span>
-            <span id="system-status">متصل</span>
+            <div class="dot"></div>
+            <span id="system-status">جاري الاتصال...</span>
         </div>
-        <div class="logo">DashX</div>
+        <div class="logo">DASH<span style="color:var(--accent)">X</span></div>
         <div class="profile-pic">
-            <img src="https://telegra.ph/file/8b3e21894d3062325c04b.jpg" alt="Admin">
+            <img src="https://telegra.ph/file/8b3e21894d3062325c04b.jpg" alt="User">
         </div>
     </header>
 
-    <!-- 3. مساحة العمل (الشاشات) -->
-    <main id="app-content">
-
-        <!-- A. شاشة المشغل (Music Player) -->
-        <section id="tab-home" class="view active">
-            <!-- كارت الأغنية الكبير -->
-            <div class="glass-panel main-player">
+    <!-- Main Content -->
+    <main>
+        <!-- 1. تبويب المشغل (الرئيسي) -->
+        <div id="tab-home" class="view active">
+            <div class="main-player glass-panel">
                 <div class="artwork-container">
-                    <img src="https://telegra.ph/file/8b3e21894d3062325c04b.jpg" class="art-img" id="track-art">
-                    <div class="vinyl-overlay"></div>
+                    <img id="track-art" src="" class="art-img" alt="Art">
+                </div>
+                <div class="track-details">
+                    <h2 id="track-title">Loading...</h2>
+                    <p id="track-artist">Please wait</p>
                 </div>
                 
-                <div class="track-details">
-                    <h2 id="track-title">انتظار التشغيل...</h2>
-                    <p id="track-artist">AnnieX System</p>
-                </div>
-
                 <div class="waveform-bar">
-                    <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+                    <span></span><span></span><span></span><span></span><span></span>
                 </div>
 
-                <!-- شريط التقدم -->
-                <div class="progress-container">
-                    <span class="time-current">0:00</span>
-                    <input type="range" class="seek-slider" value="0">
-                    <span class="time-total">0:00</span>
+                <div class="progress-area">
+                    <input type="range" class="seek-slider" value="0" min="0" max="100">
+                    <div class="time-info">
+                        <span class="time-current">0:00</span>
+                        <span class="time-total">0:00</span>
+                    </div>
                 </div>
 
-                <!-- أزرار التحكم الكاملة -->
                 <div class="player-controls">
-                    <button class="ctrl-btn sm"><i class="fas fa-random"></i></button>
-                    <button class="ctrl-btn md"><i class="fas fa-backward"></i></button>
+                    <button class="ctrl-btn"><i class="fas fa-random"></i></button>
+                    <button class="ctrl-btn" onclick="sendCommand('prev')"><i class="fas fa-backward"></i></button>
                     <button class="ctrl-btn lg play-glow"><i class="fas fa-play"></i></button>
-                    <button class="ctrl-btn md"><i class="fas fa-forward"></i></button>
-                    <button class="ctrl-btn sm"><i class="fas fa-redo"></i></button>
+                    <button class="ctrl-btn" onclick="sendCommand('skip')"><i class="fas fa-forward"></i></button>
+                    <button class="ctrl-btn"><i class="fas fa-redo"></i></button>
                 </div>
             </div>
 
-            <!-- إحصائيات سريعة تحت المشغل -->
             <div class="stats-row">
                 <div class="glass-box">
-                    <i class="fas fa-headphones"></i>
-                    <div class="num">12</div>
+                    <i class="fas fa-users"></i>
+                    <div class="num">0</div>
                     <div class="lbl">مستمع</div>
                 </div>
                 <div class="glass-box">
-                    <i class="fas fa-satellite-dish"></i>
-                    <div class="num">48ms</div>
-                    <div class="lbl">بينج</div>
-                </div>
-                <div class="glass-box">
-                    <i class="fas fa-battery-half"></i>
-                    <div class="num">80%</div>
-                    <div class="lbl">طاقة</div>
+                    <i class="fas fa-wifi"></i>
+                    <div class="num">0ms</div>
+                    <div class="lbl">Ping</div>
                 </div>
             </div>
-        </section>
+        </div>
 
-        <!-- B. شاشة الخزنة (Vault) -->
-        <section id="tab-vault" class="view">
-            <div class="section-title">
-                <h1>مدير الملفات</h1>
-                <button class="glass-btn-sm"><i class="fas fa-cloud-upload"></i> رفع</button>
+        <!-- 2. تبويب الخزنة (Vault) -->
+        <div id="tab-vault" class="view">
+            <div class="glass-panel" style="padding:15px; margin-bottom:10px;">
+                <h3><i class="fas fa-hdd"></i> الخزنة المحلية</h3>
             </div>
             <div class="vault-grid">
-                <!-- عينة ملف -->
-                <div class="vault-item glass-panel">
-                    <div class="file-icon mp3"><i class="fas fa-music"></i></div>
-                    <div class="file-info">
-                        <h4>Surat_AlKahf.mp3</h4>
-                        <span>12.5 MB • منذ ساعة</span>
+                <!-- سيتم ملؤها بالجافاسكريبت -->
+            </div>
+        </div>
+
+        <!-- 3. تبويب مراقبة النظام (Sudo Stats) -->
+        <div id="tab-stats" class="view">
+            <div class="glass-panel settings-card">
+                <h3><i class="fas fa-server"></i> حالة السيرفر</h3>
+                <br>
+                <!-- CPU -->
+                <div class="setting-row" style="display:block;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                        <span>CPU Load</span>
+                        <span id="cpu-val">0%</span>
                     </div>
-                    <button class="more-opt"><i class="fas fa-ellipsis-v"></i></button>
+                    <div class="progress-bar-bg"><div id="cpu-bar" class="progress-bar-fill" style="width:0%"></div></div>
                 </div>
-                <!-- عينة 2 -->
-                <div class="vault-item glass-panel">
-                    <div class="file-icon video"><i class="fas fa-video"></i></div>
-                    <div class="file-info">
-                        <h4>Movie_Night.mp4</h4>
-                        <span>1.2 GB • البارحة</span>
+                <!-- RAM -->
+                <div class="setting-row" style="display:block;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                        <span>RAM Usage</span>
+                        <span id="ram-val">0%</span>
                     </div>
-                    <button class="more-opt"><i class="fas fa-ellipsis-v"></i></button>
+                    <div class="progress-bar-bg"><div id="ram-bar" class="progress-bar-fill" style="width:0%"></div></div>
+                    <small id="ram-text" style="color:var(--text-secondary)">0 / 0 GB</small>
+                </div>
+                <!-- Disk -->
+                <div class="setting-row" style="display:block;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                        <span>Disk Space</span>
+                        <span id="disk-val">0%</span>
+                    </div>
+                    <div class="progress-bar-bg"><div id="disk-bar" class="progress-bar-fill" style="width:0%"></div></div>
+                </div>
+                
+                <div class="stats-row">
+                    <div class="glass-box">
+                        <i class="fas fa-clock"></i>
+                        <div id="uptime-val" class="num">00:00</div>
+                        <div class="lbl">Uptime</div>
+                    </div>
                 </div>
             </div>
-        </section>
-
-        <!-- C. شاشة الإعدادات والألوان (Settings) -->
-        <section id="tab-settings" class="view">
-            <h1 class="page-header">تخصيص المظهر</h1>
             
-            <!-- منتقي الألوان -->
+            <!-- Terminal Widget -->
             <div class="glass-panel settings-card">
-                <h3>لون الثيم (Accent Color)</h3>
+                <h3><i class="fas fa-terminal"></i> Terminal (Sudo)</h3>
+                <div id="term-output" class="terminal-output">Welcome to DashX Terminal...</div>
+                <div class="terminal-input-row">
+                    <span>$</span>
+                    <input type="text" id="term-input" placeholder="Type command..." onkeypress="handleTerm(event)">
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. تبويب الإعدادات -->
+        <div id="tab-settings" class="view">
+            <div class="glass-panel settings-card">
+                <h3>تخصيص المظهر</h3>
                 <div class="color-picker-row">
                     <div class="color-dot red selected" onclick="setTheme('red')"></div>
                     <div class="color-dot blue" onclick="setTheme('blue')"></div>
@@ -130,79 +146,36 @@
                     <div class="color-dot gold" onclick="setTheme('gold')"></div>
                 </div>
             </div>
-
-            <div class="glass-panel settings-card">
-                <h3>النظام</h3>
-                <div class="setting-row">
-                    <span><i class="fas fa-moon"></i> الوضع الليلي العميق</span>
-                    <label class="switch">
-                        <input type="checkbox" checked>
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-                <div class="setting-row">
-                    <span><i class="fas fa-magic"></i> تأثيرات الزجاج</span>
-                    <label class="switch">
-                        <input type="checkbox" checked>
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-            </div>
-        </section>
-
+        </div>
     </main>
 
-    <!-- 4. شريط التنقل السفلي العريض (Dock) -->
+    <!-- Dock (Bottom Navigation) -->
     <nav class="glass-dock">
         <button class="dock-btn active" onclick="switchTab('home')">
-            <i class="fas fa-compact-disc"></i>
-            <span>المشغل</span>
+            <i class="fas fa-home"></i>
+            <span>الرئيسية</span>
         </button>
-        
         <button class="dock-btn" onclick="switchTab('vault')">
-            <i class="fas fa-folder-closed"></i>
+            <i class="fas fa-folder-open"></i>
             <span>الخزنة</span>
         </button>
         
-        <button class="dock-btn fab-main">
-            <div class="fab-glow">
-                <i class="fas fa-microphone-lines"></i>
+        <div class="fab-main">
+            <div class="fab-glow" onclick="sendCommand('play')">
+                <i class="fas fa-microphone"></i>
             </div>
+        </div>
+
+        <button class="dock-btn" onclick="switchTab('stats')">
+            <i class="fas fa-chart-pie"></i>
+            <span>النظام</span>
         </button>
-        
-        <button class="dock-btn" onclick="switchTab('terminal')">
-            <i class="fas fa-terminal"></i>
-            <span>الأوامر</span>
-        </button>
-        
         <button class="dock-btn" onclick="switchTab('settings')">
-            <i class="fas fa-sliders"></i>
+            <i class="fas fa-cog"></i>
             <span>إعدادات</span>
         </button>
     </nav>
 
-    <script src="{{ url_for('static', filename='app.js') }}"></script>
-    <script>
-        // دالة تغيير التبويبات البسيطة (مؤقتاً لحد ما نركب ملف JS)
-        function switchTab(tabId) {
-            // إخفاء الكل
-            document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.dock-btn').forEach(el => el.classList.remove('active'));
-            
-            // إظهار المطلوب
-            const target = document.getElementById('tab-' + tabId);
-            if(target) target.classList.add('active');
-            
-            // تنشيط الزر (تحديد الزر المضغوط)
-            event.currentTarget.classList.add('active');
-        }
-
-        // دالة تغيير الثيم
-        function setTheme(color) {
-            document.body.className = 'theme-' + color;
-            document.querySelectorAll('.color-dot').forEach(el => el.classList.remove('selected'));
-            event.currentTarget.classList.add('selected');
-        }
-    </script>
+    <script src="{{ url_for('web.static', filename='app.js') }}"></script>
 </body>
 </html>
