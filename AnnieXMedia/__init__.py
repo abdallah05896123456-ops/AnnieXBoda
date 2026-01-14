@@ -1,4 +1,4 @@
-﻿# Authored By Certified Coders © 2025
+# Authored By Certified Coders © 2025
 from AnnieXMedia.core.bot import MusicBotClient
 from AnnieXMedia.core.dir import StorageManager
 from AnnieXMedia.core.git import git
@@ -8,7 +8,7 @@ from AnnieXMedia.misc import dbb, heroku
 from .logging import LOGGER
 
 StorageManager()
-git()
+# git()
 dbb()
 heroku()
 
