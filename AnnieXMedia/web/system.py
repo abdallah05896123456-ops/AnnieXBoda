@@ -6,273 +6,304 @@ import psutil
 import subprocess
 import socket
 import gc
+import json
 from datetime import datetime
-from flask import jsonify, request, session
+from flask import jsonify, request, session, Response
 from . import web_bp
 from .utils import (
-    LOG_FILE, 
+    Config, 
     sudo_required, 
     get_readable_size, 
-    log_activity,
-    Config,
-    db
+    log_activity, 
+    logger, 
+    APIResponse,
+    CacheManager
 )
 
-# بداية تشغيل البوت لحساب الـ Uptime
-BOOT_TIME = time.time()
+# الثوابت
+BOOT_TIME = psutil.boot_time()
+PROCESS_FILTER = ['python', 'java', 'ffmpeg', 'node', 'bash']
 
 # =========================================================
-# 1. لوحة المراقبة الشاملة (Full System Monitor)
+# 1. كلاس مراقبة النظام (System Monitor Class)
+# =========================================================
+class SystemMonitor:
+    """
+    فئة مسؤولة عن تجميع كافة إحصائيات النظام.
+    """
+    
+    @staticmethod
+    def get_cpu_info():
+        """تفاصيل دقيقة للمعالج"""
+        try:
+            return {
+                "percent": psutil.cpu_percent(interval=0.1),
+                "cores_logical": psutil.cpu_count(logical=True),
+                "cores_physical": psutil.cpu_count(logical=False),
+                "frequency": psutil.cpu_freq()._asdict() if psutil.cpu_freq() else {},
+                "load_avg": [x / psutil.cpu_count() * 100 for x in psutil.getloadavg()] if hasattr(psutil, "getloadavg") else []
+            }
+        except Exception as e:
+            logger.error("CPU Info Error", e)
+            return {"percent": 0}
+
+    @staticmethod
+    def get_memory_info():
+        """تفاصيل الذاكرة والـ Swap"""
+        vm = psutil.virtual_memory()
+        sw = psutil.swap_memory()
+        return {
+            "ram": {
+                "total": get_readable_size(vm.total),
+                "available": get_readable_size(vm.available),
+                "used": get_readable_size(vm.used),
+                "percent": vm.percent
+            },
+            "swap": {
+                "total": get_readable_size(sw.total),
+                "used": get_readable_size(sw.used),
+                "percent": sw.percent
+            }
+        }
+
+    @staticmethod
+    def get_disk_info():
+        """تفاصيل جميع الأقراص المتصلة"""
+        partitions_data = []
+        try:
+            for part in psutil.disk_partitions(all=False):
+                if 'snap' in part.mountpoint: continue # تجاهل ملفات snap في لينكس
+                try:
+                    usage = psutil.disk_usage(part.mountpoint)
+                    partitions_data.append({
+                        "device": part.device,
+                        "mount": part.mountpoint,
+                        "fstype": part.fstype,
+                        "total": get_readable_size(usage.total),
+                        "used": get_readable_size(usage.used),
+                        "free": get_readable_size(usage.free),
+                        "percent": usage.percent
+                    })
+                except PermissionError:
+                    continue
+        except Exception as e:
+            logger.error("Disk Info Error", e)
+
+        # الإجمالي (للبارتيشن الرئيسي فقط /)
+        root_usage = psutil.disk_usage('/')
+        return {
+            "root": {
+                "total": get_readable_size(root_usage.total),
+                "used": get_readable_size(root_usage.used),
+                "percent": root_usage.percent
+            },
+            "partitions": partitions_data
+        }
+
+    @staticmethod
+    def get_network_info():
+        """مراقبة تدفق البيانات"""
+        io = psutil.net_io_counters()
+        return {
+            "bytes_sent": get_readable_size(io.bytes_sent),
+            "bytes_recv": get_readable_size(io.bytes_recv),
+            "packets_sent": io.packets_sent,
+            "packets_recv": io.packets_recv,
+            "errin": io.errin,
+            "errout": io.errout
+        }
+
+    @staticmethod
+    def get_system_details():
+        """معلومات نظام التشغيل الثابتة"""
+        return {
+            "os": platform.system(),
+            "release": platform.release(),
+            "version": platform.version(),
+            "arch": platform.machine(),
+            "hostname": socket.gethostname(),
+            "python_version": platform.python_version(),
+            "uptime_sec": int(time.time() - BOOT_TIME),
+            "uptime_str": str(timedelta(seconds=int(time.time() - BOOT_TIME)))
+        }
+
+# =========================================================
+# 2. واجهات API المراقبة (Monitor Endpoints)
 # =========================================================
 
 @web_bp.route('/api/system/stats')
 @sudo_required
-def system_monitor():
-    """
-    جلب إحصائيات دقيقة جداً عن السيرفر.
-    يغطي المعالج (أنوية)، الرام، السواب، الشبكة، والهارد.
-    """
-    # 1. المعالج (CPU)
-    cpu_percent = psutil.cpu_percent(interval=None)
-    cpu_cores = psutil.cpu_percent(interval=None, percpu=True) # استهلاك كل نواة
-    cpu_freq = psutil.cpu_freq()
-    
-    # 2. الذاكرة (Memory)
-    vm = psutil.virtual_memory()
-    swap = psutil.swap_memory()
-    
-    # 3. التخزين (Disk)
-    disk = psutil.disk_usage('/')
-    # جلب كل الأقراص المتصلة
-    partitions = []
+def api_system_stats():
+    """الراوت المجمع لكل الإحصائيات"""
     try:
-        for part in psutil.disk_partitions():
-            usage = psutil.disk_usage(part.mountpoint)
-            partitions.append({
-                "device": part.device,
-                "mount": part.mountpoint,
-                "total": get_readable_size(usage.total),
-                "used": get_readable_size(usage.used),
-                "percent": usage.percent
-            })
-    except: pass
+        # استخدام الكاش لتخفيف الضغط لو الطلبات سريعة
+        cached = CacheManager.get("sys_stats")
+        if cached: return jsonify(cached)
 
-    # 4. الشبكة (Network I/O)
-    net_io = psutil.net_io_counters()
-    
-    # 5. وقت التشغيل (Uptime)
-    uptime_sec = int(time.time() - BOOT_TIME)
-    uptime_str = str(datetime.utcfromtimestamp(uptime_sec).strftime('%H:%M:%S'))
-    
-    # 6. معلومات النظام (OS Info)
-    sys_info = {
-        "os": platform.system(),
-        "release": platform.release(),
-        "version": platform.version(),
-        "machine": platform.machine(),
-        "hostname": socket.gethostname(),
-        "python": platform.python_version(),
-        "cores_count": psutil.cpu_count(logical=True)
-    }
-
-    return jsonify({
-        "cpu": {
-            "total": cpu_percent,
-            "cores": cpu_cores,
-            "freq": f"{cpu_freq.current:.0f}Mhz" if cpu_freq else "N/A"
-        },
-        "memory": {
-            "percent": vm.percent,
-            "used": get_readable_size(vm.used),
-            "total": get_readable_size(vm.total),
-            "free": get_readable_size(vm.available),
-            "swap_percent": swap.percent
-        },
-        "disk": {
-            "percent": disk.percent,
-            "used": get_readable_size(disk.used),
-            "total": get_readable_size(disk.total),
-            "partitions": partitions
-        },
-        "network": {
-            "sent": get_readable_size(net_io.bytes_sent),
-            "recv": get_readable_size(net_io.bytes_recv),
-            "packets_sent": net_io.packets_sent,
-            "packets_recv": net_io.packets_recv
-        },
-        "uptime": uptime_str,
-        "system": sys_info
-    })
+        data = {
+            "cpu": SystemMonitor.get_cpu_info(),
+            "memory": SystemMonitor.get_memory_info(),
+            "disk": SystemMonitor.get_disk_info(),
+            "network": SystemMonitor.get_network_info(),
+            "system": SystemMonitor.get_system_details(),
+            "timestamp": time.time()
+        }
+        
+        CacheManager.set("sys_stats", data, ttl=1) # كاش لمدة ثانية واحدة
+        return jsonify(data)
+    except Exception as e:
+        return APIResponse.error("Failed to fetch system stats", details=e)
 
 # =========================================================
-# 2. مدير العمليات (Process Manager / Task Manager)
+# 3. مدير العمليات (Process Manager)
 # =========================================================
 
 @web_bp.route('/api/system/processes')
 @sudo_required
-def process_manager():
-    """
-    عرض العمليات الحالية (مثل Top في لينكس).
-    يركز على بايثون و ffmpeg.
-    """
+def api_processes():
+    """عرض العمليات النشطة مع الفلترة"""
     procs = []
-    for proc in psutil.process_iter(['pid', 'name', 'username', 'cpu_percent', 'memory_percent']):
-        try:
-            # فلترة العمليات المهمة بس عشان منغرقش الواجهة
-            if proc.info['name'] in ['python', 'python3', 'ffmpeg', 'mpv', 'bash']:
-                procs.append(proc.info)
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            pass
-            
+    try:
+        for p in psutil.process_iter(['pid', 'name', 'username', 'cpu_percent', 'memory_percent', 'status']):
+            try:
+                # تصفية العمليات حسب الاسم أو الاستهلاك العالي
+                p_info = p.info
+                if (p_info['cpu_percent'] > 0.1 or 
+                    p_info['name'] in PROCESS_FILTER or 
+                    'python' in p_info['name']):
+                    
+                    procs.append({
+                        "pid": p_info['pid'],
+                        "name": p_info['name'],
+                        "user": p_info['username'],
+                        "cpu": round(p_info['cpu_percent'], 1),
+                        "mem": round(p_info['memory_percent'], 1),
+                        "status": p_info['status']
+                    })
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+    except Exception as e:
+        logger.error("Process Iteration Error", e)
+
     # ترتيب حسب استهلاك المعالج
-    procs = sorted(procs, key=lambda p: p['cpu_percent'], reverse=True)
-    return jsonify({"processes": procs[:20]}) # رجع اعلى 20 عملية بس
+    procs.sort(key=lambda x: x['cpu'], reverse=True)
+    return jsonify({"count": len(procs), "processes": procs[:50]})
+
+@web_bp.route('/api/system/kill_process', methods=['POST'])
+@sudo_required
+def kill_process():
+    """إنهاء عملية معينة (Kill PID)"""
+    pid = request.json.get('pid')
+    if not pid: return APIResponse.error("PID required")
+    
+    try:
+        p = psutil.Process(int(pid))
+        p.terminate()
+        log_activity("KILL_PROCESS", f"PID: {pid}")
+        return APIResponse.success(message=f"Process {pid} terminated")
+    except psutil.NoSuchProcess:
+        return APIResponse.error("Process not found", 404)
+    except psutil.AccessDenied:
+        return APIResponse.error("Access denied", 403)
+    except Exception as e:
+        return APIResponse.error("Kill failed", details=e)
 
 # =========================================================
-# 3. الطرفية (Web Terminal / Shell) ☢️
+# 4. الطرفية التفاعلية (Web Terminal)
 # =========================================================
-
 @web_bp.route('/api/system/terminal', methods=['POST'])
 @sudo_required
-def web_terminal():
+def execute_terminal():
     """
-    تنفيذ أوامر النظام مباشرة (Root Access Simulation).
+    محاكي طرفية (Shell Executor).
+    يحتوي على نظام حماية من الأوامر الكارثية.
     """
-    command = request.json.get('command')
+    command = request.json.get('command', '').strip()
     if not command: return jsonify({"output": ""})
-    
-    # قائمة سوداء للأوامر المدمرة (حماية)
-    BLACKLIST = [
+
+    # 1. نظام الحماية (Safety Net)
+    FORBIDDEN_COMMANDS = [
         'rm -rf /', ':(){ :|:& };:', 'mkfs', 'dd if=/dev/zero', 
-        'shutdown', 'reboot', 'init 0'
+        'shutdown', 'reboot', 'init 0', '> /dev/sda'
     ]
     
-    if any(cmd in command for cmd in BLACKLIST):
-        log_activity("DANGEROUS_CMD_BLOCKED", f"Command: {command}")
-        return jsonify({"output": "⛔ SECURITY PROTOCOL: Command Blocked for safety."})
+    for ban in FORBIDDEN_COMMANDS:
+        if ban in command:
+            log_activity("SECURITY_ALERT", f"Blocked Command: {command}")
+            return jsonify({
+                "output": f"\033[1;31m[SECURITY BLOCK] Command '{command}' is blacklisted.\033[0m",
+                "cwd": os.getcwd()
+            })
 
-    log_activity("TERMINAL_EXEC", f"Command: {command}")
+    # 2. تنفيذ الأمر
+    log_activity("TERMINAL_EXEC", command)
+    
+    # التعامل مع أوامر تغيير المسار cd
+    if command.startswith('cd '):
+        try:
+            target_dir = command[3:].strip()
+            os.chdir(os.path.expanduser(target_dir))
+            return jsonify({"output": "", "cwd": os.getcwd()})
+        except FileNotFoundError:
+            return jsonify({"output": f"cd: {target_dir}: No such file or directory", "cwd": os.getcwd()})
 
     try:
-        # تنفيذ الأمر والتقاط المخرجات
-        result = subprocess.check_output(
-            command, 
-            shell=True, 
-            stderr=subprocess.STDOUT,
-            timeout=10 # مهلة 10 ثواني عشان السيرفر ميعلقش
+        # تشغيل الأمر والتقاط المخرجات
+        process = subprocess.Popen(
+            command,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=os.getcwd()
         )
-        output = result.decode('utf-8')
-    except subprocess.CalledProcessError as e:
-        output = e.output.decode('utf-8')
+        stdout, stderr = process.communicate(timeout=15) # مهلة 15 ثانية
+        
+        output = stdout + stderr
+        if not output: output = "Done."
+        
     except subprocess.TimeoutExpired:
-        output = "⏱️ Error: Command timed out (took > 10s)."
+        process.kill()
+        output = "\033[1;33m[TIMEOUT] Command execution timed out > 15s.\033[0m"
     except Exception as e:
         output = str(e)
 
     return jsonify({"output": output, "cwd": os.getcwd()})
 
 # =========================================================
-# 4. قارئ السجلات الحي (Live Log Streamer)
+# 5. إدارة ملفات اللوج (Log Management)
 # =========================================================
-
 @web_bp.route('/api/system/logs')
 @sudo_required
-def get_logs():
-    """
-    قراءة آخر 100 سطر من ملف اللوج.
-    """
-    if not os.path.exists(LOG_FILE):
-        return jsonify({"logs": [f"❌ Log file '{LOG_FILE}' not found."]})
+def stream_logs():
+    """قراءة ملف اللوج وعرض آخر السطور"""
+    log_path = Config.LOG_FILE
+    lines_count = request.args.get('lines', 100, type=int)
+    
+    if not os.path.exists(log_path):
+        return jsonify({"logs": ["Log file not found."]})
 
     try:
-        # قراءة الملف من الآخر (Tail)
-        with open(LOG_FILE, 'r', encoding='utf-8', errors='ignore') as f:
-            # طريقة سريعة لقراءة آخر السطور بدون تحميل الملف كله في الرام
-            lines = f.readlines()
-            last_lines = lines[-100:] # هات آخر 100 سطر
+        with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
+            # قراءة ذكية (Seek to end)
+            f.seek(0, os.SEEK_END)
+            file_size = f.tell()
             
-            # تنظيف السطور
-            clean_lines = [l.strip() for l in last_lines if l.strip()]
-            return jsonify({"logs": clean_lines})
+            # قراءة آخر 50 كيلوبايت لو الملف كبير
+            read_size = min(file_size, 50000) 
+            f.seek(file_size - read_size)
+            content = f.read()
+            
+            lines = content.splitlines()
+            return jsonify({"logs": lines[-lines_count:]})
     except Exception as e:
         return jsonify({"logs": [f"Error reading logs: {e}"]})
 
-@web_bp.route('/api/system/logs/clear', methods=['POST'])
+@web_bp.route('/api/system/logs/action', methods=['POST'])
 @sudo_required
-def clear_logs():
-    """مسح ملف اللوج"""
-    try:
-        open(LOG_FILE, 'w').close()
-        log_activity("LOGS_CLEARED", "System logs wiped by admin")
-        return jsonify({"success": True})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
-
-# =========================================================
-# 5. محرر البيئة (.env Editor) ⚠️
-# =========================================================
-
-@web_bp.route('/api/system/env', methods=['GET', 'POST'])
-@sudo_required
-def manage_env():
-    """
-    قراءة وتعديل متغيرات البوت (.env).
-    خطير جداً ومحتاج صلاحيات Sudo.
-    """
-    env_path = ".env"
-    
-    # أ) قراءة المتغيرات
-    if request.method == 'GET':
-        if not os.path.exists(env_path):
-            return jsonify({"content": "# No .env file found"})
-        with open(env_path, 'r') as f:
-            return jsonify({"content": f.read()})
-    
-    # ب) حفظ التعديلات
-    elif request.method == 'POST':
-        new_content = request.json.get('content')
-        try:
-            with open(env_path, 'w') as f:
-                f.write(new_content)
-            log_activity("ENV_UPDATE", "Environment variables updated")
-            return jsonify({"success": True, "message": "File saved! Restart bot to apply."})
-        except Exception as e:
-            return jsonify({"success": False, "error": str(e)})
-
-# =========================================================
-# 6. أدوات الصيانة (Maintenance Tools)
-# =========================================================
-
-@web_bp.route('/api/system/maintenance', methods=['POST'])
-@sudo_required
-def system_maintenance():
+def log_actions():
     action = request.json.get('action')
-    
-    if action == 'gc':
-        # تنظيف الرام (Garbage Collection)
-        gc.collect()
-        return jsonify({"success": True, "message": "Python Garbage Collector Ran."})
-    
-    elif action == 'clear_cache':
-        # تنظيف مجلد التحميلات
-        try:
-            deleted_count = 0
-            folder = Config.DOWNLOADS_DIR
-            for filename in os.listdir(folder):
-                file_path = os.path.join(folder, filename)
-                try:
-                    if os.path.isfile(file_path) or os.path.islink(file_path):
-                        os.unlink(file_path)
-                        deleted_count += 1
-                except Exception as e:
-                    pass
-            return jsonify({"success": True, "message": f"Deleted {deleted_count} files from cache."})
-        except Exception as e:
-             return jsonify({"success": False, "error": str(e)})
-             
-    elif action == 'restart_bot':
-        # إعادة تشغيل البوت (لو شغال بـ Heroku أو Service)
-        # دي مجرد محاكاة، التنفيذ الحقيقي بيعتمد على الاستضافة
-        return jsonify({"success": True, "message": "Restart signal sent (Manual restart required if local)."})
-
-    return jsonify({"success": False, "error": "Unknown action"})
+    if action == 'clear':
+        open(Config.LOG_FILE, 'w').close()
+        return APIResponse.success(message="Logs cleared")
+    return APIResponse.error("Unknown action")
