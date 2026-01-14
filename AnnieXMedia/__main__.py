@@ -1,5 +1,5 @@
 # ================================
-# __main__.py AnnieXMedia (Final TitanOS Edition)
+# __main__.py (Linked with web_dashboard)
 # ================================
 
 import sys
@@ -10,12 +10,12 @@ from pyrogram import idle
 from pytgcalls.exceptions import NoActiveGroupCall
 
 # ------------------------
-# Paths: تصحيح المسارات
+# Paths: أهم سطر عشان يشوف الملف اللي بره
 # ------------------------
 sys.path.insert(0, os.getcwd())
 
 # ------------------------
-# استيراد مكتبات AnnieXMedia الأساسية
+# Imports
 # ------------------------
 import config
 from AnnieXMedia import LOGGER, app, userbot
@@ -27,27 +27,22 @@ from AnnieXMedia.utils.cookie_handler import fetch_and_store_cookies
 from config import BANNED_USERS
 
 # ------------------------
-# 🔥 تشغيل TitanOS Dashboard (الجديد) 🔥
+# 🔥 تشغيل TitanOS Dashboard 🔥
 # ------------------------
-# حذفنا الويب القديم وحطينا ده مكانه
 try:
-    # التأكد من وجود ملف dashboard.py داخل AnnieXMedia/web
-    from AnnieXMedia.web.dashboard import start_titan_node
-    
-    # تشغيل الداشبورد في الخلفية فوراً
-    start_titan_node()
-    
-    LOGGER("TitanOS").info("✅ TitanOS Dashboard is Running on Port 8080 🚀")
+    # استدعاء الملف من الروت
+    from web_dashboard import start_titan
+    start_titan()
+    LOGGER("TitanOS").info("✅ Dashboard Running on Port 8080")
 except ImportError:
-    LOGGER("TitanOS").warning("⚠️ Dashboard file (dashboard.py) not found! Bot will run without Web Interface.")
+    LOGGER("TitanOS").warning("⚠️ web_dashboard.py not found in root!")
 except Exception as e:
-    LOGGER("TitanOS").error(f"❌ Web Dashboard Error: {e}")
+    LOGGER("TitanOS").error(f"❌ Dashboard Error: {e}")
 
 # ========================
-# دالة Init لتشغيل البوت
+# Init Function
 # ========================
 async def init():
-    # 1. التحقق من الجلسات (Sessions)
     if (
         not config.STRING1
         and not config.STRING2
@@ -55,19 +50,15 @@ async def init():
         and not config.STRING4
         and not config.STRING5
     ):
-        LOGGER(__name__).error(
-            "ᴀssɪsᴛᴀɴᴛ sᴇssɪᴏɴ ɴᴏᴛ ғɪʟʟᴇᴅ, ᴘʟᴇᴀsᴇ ғɪʟʟ ᴀ ᴘʏʀᴏɢʀᴀᴍ sᴇssɪᴏɴ..."
-        )
+        LOGGER(__name__).error("Please fill Pyrogram Session...")
         exit()
 
-    # 2. تحميل الكوكيز
     try:
         await fetch_and_store_cookies()
-        LOGGER("AnnieXMedia").info("ʏᴏᴜᴛᴜʙᴇ ᴄᴏᴏᴋɪᴇs ʟᴏᴀᴅᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ ✅")
-    except Exception as e:
-        LOGGER("AnnieXMedia").warning(f"⚠️ᴄᴏᴏᴋɪᴇ ᴇʀʀᴏʀ: {e}")
+        LOGGER("AnnieXMedia").info("YouTube Cookies Loaded ✅")
+    except:
+        pass
 
-    # 3. تهيئة الصلاحيات والحظر
     await sudo()
     try:
         users = await get_gbanned()
@@ -79,47 +70,33 @@ async def init():
     except:
         pass
 
-    # 4. تشغيل البوت
     await app.start()
     LOGGER("AnnieXMedia").info("✅ Bot Client Started")
 
-    # 5. تحميل الإضافات (Plugins)
     for all_module in ALL_MODULES:
         importlib.import_module("AnnieXMedia.plugins" + all_module)
-    LOGGER("AnnieXMedia.plugins").info("✅ Annie's Modules Loaded...")
+    LOGGER("AnnieXMedia.plugins").info("✅ Modules Loaded...")
 
-    # 6. تشغيل المساعد والمشغل
     await userbot.start()
     await StreamController.start()
 
-    # 7. فحص المكالمة الصوتية
     try:
         await StreamController.stream_call(
             "http://docs.evostream.com/sample_content/assets/sintel1m720p.mp4"
         )
     except NoActiveGroupCall:
-        LOGGER("AnnieXMedia").error(
-            "⚠️ Please turn on the Video Chat in your Log Group!\n"
-            "Bot is stopping..."
-        )
+        LOGGER("AnnieXMedia").error("Please turn on Video Chat in Log Group!")
         exit()
-    except Exception:
+    except:
         pass
 
-    # 8. اكتمال التشغيل والدخول في وضع الخمول (Idle)
     await StreamController.decorators()
-    LOGGER("AnnieXMedia").info("🚀 Annie Music Robot Started Successfully...")
+    LOGGER("AnnieXMedia").info("🚀 Annie Music Started Successfully...")
     
-    # البوت هيفضل شغال هنا، والداشبورد شغالة في Thread منفصل
     await idle()
 
-    # 9. إغلاق البوت
     await app.stop()
     await userbot.stop()
-    LOGGER("AnnieXMedia").info("Stopping Annie Music Bot...")
 
-# ========================
-# نقطة البداية
-# ========================
 if __name__ == "__main__":
     asyncio.get_event_loop().run_until_complete(init())
