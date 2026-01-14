@@ -7,18 +7,12 @@ ENV PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-# تنظيف أي ملفات قديمة
+# تنظيف أي ملفات قديمة في حالة إعادة build
 RUN rm -rf /app/*
 
-# تثبيت المتطلبات النظامية + deno + aria2
+# تثبيت المتطلبات النظامية + deno
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        git \
-        ffmpeg \
-        curl \
-        unzip \
-        build-essential \
-        aria2 && \
+    apt-get install -y --no-install-recommends git ffmpeg curl unzip build-essential && \
     rm -rf /var/lib/apt/lists/* && \
     curl -fsSL https://deno.land/install.sh | sh && \
     ln -s /root/.deno/bin/deno /usr/local/bin/deno
@@ -34,24 +28,16 @@ RUN if [ -f /app/requirements.txt ]; then \
 
 # تثبيت باقي المكتبات
 RUN pip install --upgrade pip setuptools wheel && \
-    if [ -f /app/filtered-requirements.txt ]; then \
-        pip install --no-cache-dir -r /app/filtered-requirements.txt; \
-    fi
-
-# 🔥 (مهم جداً) تثبيت مكتبات الداشبورد يدوياً لضمان عمل الموقع وقاعدة البيانات
-RUN pip install flask psutil pymongo
+    if [ -f /app/filtered-requirements.txt ]; then pip install --no-cache-dir -r /app/filtered-requirements.txt; fi
 
 # نسخ باقي سورس AnnieXMedia
 COPY . /app
 
-# تأكيد ان Python بيستخدم pytgcalls المحلي
+# تأكيد ان Python بيستخدم النسخة المحلية من pytgcalls
 RUN python - <<'PY'
-import pytgcalls
+import pytgcalls, sys
 print('PYTGCALLS_FROM=', getattr(pytgcalls,'__file__','<not found>'))
 PY
-
-# 🌐 فتح البورت 8080 عشان الموقع يشتغل
-EXPOSE 8080
 
 # نقطة الدخول
 CMD ["python3", "-m", "AnnieXMedia"]
