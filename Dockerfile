@@ -10,7 +10,7 @@ WORKDIR /app
 # تنظيف أي ملفات قديمة
 RUN rm -rf /app/*
 
-# تثبيت المتطلبات النظامية + deno + aria2 (aria2 مثبت لكن لن يستخدم لتحميل HLS/YouTube لتفادي أخطاء 403)
+# تثبيت المتطلبات النظامية + deno + aria2
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         git \
@@ -37,6 +37,9 @@ RUN pip install --upgrade pip setuptools wheel && \
     if [ -f /app/filtered-requirements.txt ]; then \
         pip install --no-cache-dir -r /app/filtered-requirements.txt; \
     fi
+
+# 🔥 (مهم جداً) تثبيت مكتبات الداشبورد يدوياً لضمان عمل الموقع
+RUN pip install flask psutil
 
 # نسخ باقي سورس AnnieXMedia
 COPY . /app
