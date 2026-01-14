@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Titan OS | لوحة التحكم</title>
+    <!-- استدعاء ملفات الستايل (اللي هتتخدم من السيرفر) -->
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+
+    <!-- القائمة الجانبية -->
+    <nav class="sidebar glass-panel">
+        <div class="brand">
+            <i class="fa-brands fa-python"></i>
+            <span>Titan OS</span>
+        </div>
+        
+        <ul class="nav-links">
+            <li class="active"><a href="#"><i class="fa-solid fa-house"></i> الرئيسية</a></li>
+            <li><a href="#" onclick="showSection('queue')"><i class="fa-solid fa-list-ol"></i> القائمة</a></li>
+            <li><a href="#" onclick="showSection('files')"><i class="fa-solid fa-folder-open"></i> الملفات</a></li>
+            <li><a href="#" onclick="showSection('assistants')"><i class="fa-solid fa-users-gear"></i> المساعدين</a></li>
+            <li><a href="/logs"><i class="fa-solid fa-terminal"></i> السجلات</a></li>
+        </ul>
+
+        <div class="user-profile">
+            <img src="https://ui-avatars.com/api/?name=Abdallah&background=random" alt="User">
+            <div class="user-info">
+                <h4>Abdallah</h4>
+                <span>Admin</span>
+            </div>
+            <a href="/logout" class="logout-btn"><i class="fa-solid fa-right-from-bracket"></i></a>
+        </div>
+    </nav>
+
+    <!-- المحتوى الرئيسي -->
+    <main class="main-content">
+        
+        <!-- الهيدر -->
+        <header class="top-bar glass-panel">
+            <div class="search-bar">
+                <i class="fa-solid fa-search"></i>
+                <input type="text" placeholder="بحث عام في النظام...">
+            </div>
+            <div class="system-status">
+                <span class="status-dot online"></span>
+                <span>النظام يعمل: <strong id="clock">00:00:00</strong></span>
+            </div>
+        </header>
+
+        <!-- شبكة الأدوات (Widgets) -->
+        <div class="dashboard-grid">
+
+            <!-- 1. كارت المشغل الرئيسي -->
+            <div class="card player-card glass-card">
+                <div class="card-header">
+                    <h3><i class="fa-solid fa-music"></i> التشغيل الحي</h3>
+                    <div class="live-badge">LIVE</div>
+                </div>
+                <div class="player-body">
+                    <div class="album-art-wrapper">
+                        <img src="" id="track-thumb" alt="Art" onerror="this.src='https://placehold.co/400x400/1a1a1a/FFF?text=Music'">
+                        <div class="vinyl-effect"></div>
+                    </div>
+                    <div class="track-info">
+                        <h2 id="track-title">لا يوجد تشغيل</h2>
+                        <p id="track-artist">انتظار الأوامر...</p>
+                    </div>
+                    
+                    <!-- شريط التقدم -->
+                    <div class="progress-container">
+                        <span id="curr-time">0:00</span>
+                        <input type="range" class="seek-slider" value="0" max="100">
+                        <span id="total-time">0:00</span>
+                    </div>
+
+                    <!-- أزرار التحكم -->
+                    <div class="controls-wrapper">
+                        <button class="btn-ctrl" onclick="control('loop')"><i class="fa-solid fa-repeat"></i></button>
+                        <button class="btn-ctrl" onclick="control('skip')"><i class="fa-solid fa-backward-step"></i></button> <!-- RTL عكسنا الاتجاه -->
+                        <button class="btn-ctrl play-btn" onclick="togglePlay()" id="play-pause-btn"><i class="fa-solid fa-play"></i></button>
+                        <button class="btn-ctrl" onclick="control('skip')"><i class="fa-solid fa-forward-step"></i></button>
+                        <button class="btn-ctrl" onclick="control('shuffle')"><i class="fa-solid fa-shuffle"></i></button>
+                    </div>
+
+                    <!-- الصوت -->
+                    <div class="volume-wrapper">
+                        <i class="fa-solid fa-volume-high"></i>
+                        <input type="range" min="0" max="200" value="100" class="volume-slider" onchange="setVolume(this.value)">
+                        <span id="vol-value">100%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. كارت مراقبة السيرفر -->
+            <div class="card monitor-card glass-card">
+                <div class="card-header">
+                    <h3><i class="fa-solid fa-server"></i> حالة السيرفر</h3>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <div class="circular-chart" id="cpu-chart" data-percent="0">
+                            <svg viewBox="0 0 36 36">
+                                <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                                <path class="circle" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                                <text x="18" y="20.35" class="percentage">0%</text>
+                            </svg>
+                            <span>CPU</span>
+                        </div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="circular-chart" id="ram-chart" data-percent="0">
+                            <svg viewBox="0 0 36 36">
+                                <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                                <path class="circle" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                                <text x="18" y="20.35" class="percentage">0%</text>
+                            </svg>
+                            <span>RAM</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="net-stats">
+                    <div class="net-item"><i class="fa-solid fa-arrow-up"></i> <span id="net-sent">0 MB</span></div>
+                    <div class="net-item"><i class="fa-solid fa-arrow-down"></i> <span id="net-recv">0 MB</span></div>
+                </div>
+            </div>
+
+            <!-- 3. كارت المساعدين (Hive) -->
+            <div class="card assistants-card glass-card">
+                <div class="card-header">
+                    <h3><i class="fa-solid fa-robot"></i> المساعدين</h3>
+                    <button class="btn-sm" onclick="refreshAssistants()"><i class="fa-solid fa-rotate"></i></button>
+                </div>
+                <div class="assistants-list">
+                    <div class="assistant-row online">
+                        <div class="avatar">A1</div>
+                        <div class="info">
+                            <h5>المساعد الأول</h5>
+                            <small>@AnnieAssis1</small>
+                        </div>
+                        <span class="status-badge">Online</span>
+                    </div>
+                    <div class="assistant-row online">
+                        <div class="avatar">A2</div>
+                        <div class="info">
+                            <h5>المساعد الثاني</h5>
+                            <small>@AnnieAssis2</small>
+                        </div>
+                        <span class="status-badge">Online</span>
+                    </div>
+                    <div class="assistant-row offline">
+                        <div class="avatar">A3</div>
+                        <div class="info">
+                            <h5>المساعد الثالث</h5>
+                            <small>Disconnected</small>
+                        </div>
+                        <span class="status-badge">Offline</span>
+                    </div>
+                    <!-- باقي المساعدين هيكملوا بالـ JS -->
+                </div>
+            </div>
+
+            <!-- 4. أدوات النظام السريعة -->
+            <div class="card actions-card glass-card">
+                <div class="card-header">
+                    <h3><i class="fa-solid fa-bolt"></i> تحكم سريع</h3>
+                </div>
+                <div class="actions-grid">
+                    <button class="action-btn danger" onclick="confirmRestart()">
+                        <i class="fa-solid fa-power-off"></i> إعادة تشغيل
+                    </button>
+                    <button class="action-btn warning" onclick="cleanCache()">
+                        <i class="fa-solid fa-broom"></i> تنظيف الكاش
+                    </button>
+                    <button class="action-btn info" onclick="openBroadcast()">
+                        <i class="fa-solid fa-bullhorn"></i> إذاعة عامة
+                    </button>
+                    <button class="action-btn success" onclick="uploadFile()">
+                        <i class="fa-solid fa-cloud-arrow-up"></i> رفع ملف
+                    </button>
+                </div>
+            </div>
+
+        </div> <!-- End Grid -->
+    </main>
+
+    <!-- استدعاء ملف الجافاسكريبت الرئيسي -->
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
