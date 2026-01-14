@@ -363,41 +363,33 @@ async def health():
     return {"status": "healthy", "asi": "active", "uptime": int(time.time() - ASI._start_time)}
 
 # ==============================================================================
-# 🚪 LEVEL 7: FRONTEND ENTRY POINT (DOCKER LOCATOR)
+# 🚪 LEVEL 7: FRONTEND ENTRY POINT (DIRECT DASHBOARD ACCESS)
 # ==============================================================================
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():
     """
-    Finds index.html using a multi-stage search strategy.
-    Optimized for Docker Structure: /app/AnnieXMedia/web/index.html
+    Since index.html is deleted, this serves the iOS_Dashboard directly.
+    Target Path: /app/AnnieXMedia/web/components/iOS_Dashboard.html
     """
-    # 1. Priority Paths (Most common locations)
+    # 1. Priority Paths (Since index.html is gone, we look for dashboard)
     priority_paths = [
-        "AnnieXMedia/web/index.html",       # <--- DOCKER PRIORITY
-        "web/index.html",
-        "index.html",
-        os.path.join(KernelConfig.BASE_DIR, "index.html")
+        os.path.join(KernelConfig.ROOT_DIR, "AnnieXMedia", "web", "components", "iOS_Dashboard.html"), # Docker
+        "AnnieXMedia/web/components/iOS_Dashboard.html",
+        "web/components/iOS_Dashboard.html",
+        "components/iOS_Dashboard.html",
+        os.path.join(KernelConfig.BASE_DIR, "components", "iOS_Dashboard.html")
     ]
 
     for path in priority_paths:
         if os.path.exists(path):
-            logger.info(f"🎯 [UI] Found UI via Priority: {path}")
+            logger.info(f"🎯 [UI] Direct Launch: {path}")
             return FileResponse(path)
-
-    # 2. Deep Search (Last Resort - Recursive Scan)
-    logger.warning("⚠️ [UI] Priority search failed. Scanning filesystem...")
-    for root, dirs, files in os.walk(KernelConfig.ROOT_DIR):
-        if "index.html" in files:
-            found_path = os.path.join(root, "index.html")
-            if "node_modules" not in found_path:
-                logger.info(f"🔍 [UI] Found UI via Deep Search: {found_path}")
-                return FileResponse(found_path)
 
     return HTMLResponse(
         f"""<html style='background:#000;color:#ff4444;font-family:monospace;padding:20px;'>
         <div>
-            <h1>⚠️ TITAN KERNEL: UI NOT FOUND</h1>
-            <p>Could not locate 'index.html'. Checked paths: {priority_paths}</p>
+            <h1>⚠️ TITAN KERNEL: DASHBOARD NOT FOUND</h1>
+            <p>Could not locate 'iOS_Dashboard.html'. Checked paths: {priority_paths}</p>
         </div></html>"""
     )
 
