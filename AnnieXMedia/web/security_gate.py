@@ -1,164 +1,142 @@
 # web/security_gate.py
-from fastapi import FastAPI, APIRouter, Request, HTTPException, Depends
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 import hashlib
 import hmac
-import jwt
-from datetime import datetime, timedelta, timezone
+import os
 import time
 import uuid
-from typing import Optional, Dict, List
+from datetime import datetime, timedelta, timezone
+from typing import Dict, List, Optional
+
+from argon2 import PasswordHasher, exceptions as argon2_exceptions
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
+import jwt
 
 import config
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-# Configurable values with sensible defaults
-RATE_LIMIT = int(getattr(config, "RATE_LIMIT", 10))
-RATE_PERIOD = int(getattr(config, "RATE_PERIOD", 60))
-JWT_ALGORITHM = getattr(config, "JWT_ALGORITHM", "HS256")
+ph = PasswordHasher(time_cost=2, memory_cost=102400, parallelism=8, hash_len=32)
+
+JWT_ALG = getattr(config, "JWT_ALGORITHM", "HS256")
 JWT_EXP_SECONDS = int(getattr(config, "WEB_SESSION_EXPIRE_SECONDS", 3600))
 WEB_SECRET = getattr(config, "WEB_SECRET", None)
-WEB_PASSWORD = getattr(config, "WEB_PASSWORD", None)
-BOT_TOKEN = getattr(config, "BOT_TOKEN", None)
-COOKIE_SECURE = bool(getattr(config, "COOKIE_SECURE", False))
-TELEGRAM_AUTH_MAX_AGE = int(getattr(config, "TELEGRAM_AUTH_MAX_AGE_SECONDS", 86400))  # default 24h
+if not WEB_SECRET:
+    raise RuntimeError("WEB_SECRET required in config.py")
 
-if WEB_SECRET is None:
-    raise RuntimeError("WEB_SECRET not set in config.py — required for JWT signing")
+# Rate-limiting structures and IP ban
+_RATE_LIMIT = int(getattr(config, "RATE_LIMIT", 30))
+_RATE_PERIOD = int(getattr(config, "RATE_PERIOD", 60))
+_ip_log: Dict[str, List[float]] = {}
+_ip_ban: Dict[str, float] = {}  # ip -> banned_until timestamp
 
-# In-memory structures (note: ephemeral; replace with Redis for production)
-_requests_log: Dict[str, List[float]] = {}         # ip -> [timestamps]
-_token_blacklist: Dict[str, float] = {}           # jti -> expiry timestamp (for logout/invalidate)
-_seen_telegram_auths: Dict[str, float] = {}       # "tg:<id>:<auth_date>" -> timestamp when seen
+# Ghost mode token allowlist (owner-only secrets)
+_OWNER_HWID = getattr(config, "OWNER_HWID", None)  # precomputed string
+_GHOST_TOKENS: List[str] = getattr(config, "GHOST_TOKENS", [])  # pre-shared tokens for owner ghost mode
 
-# ----- Models -----
-class LoginModel(BaseModel):
-    password: str
+# HWID generation: use machine-id + mac addresses as baseline
+def compute_local_hwid() -> str:
+    parts = []
+    try:
+        if os.path.exists("/etc/machine-id"):
+            with open("/etc/machine-id", "r") as f:
+                parts.append(f.read().strip())
+    except Exception:
+        pass
+    # add mac addresses
+    try:
+        import netifaces  # optional; if not present fallback to uuid.getnode
+        for iface in netifaces.interfaces():
+            addrs = netifaces.ifaddresses(iface).get(netifaces.AF_LINK, [])
+            for a in addrs:
+                mac = a.get("addr")
+                if mac:
+                    parts.append(mac)
+    except Exception:
+        parts.append(str(uuid.getnode()))
+    raw = "|".join(parts)
+    return hashlib.sha256(raw.encode()).hexdigest()
 
-class TelegramAuthModel(BaseModel):
-    id: int
-    first_name: str
-    last_name: Optional[str] = None
-    username: Optional[str] = None
-    auth_date: int
-    hash: str
-
-# ----- Helpers -----
-def _get_client_ip(request: Request) -> str:
-    # Respect X-Forwarded-For if behind proxy (make sure your proxy sets it)
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        # may contain multiple IPs
-        ip = xff.split(",")[0].strip()
-    else:
-        ip = request.client.host or "unknown"
-    return ip
-
-def _cleanup_request_logs():
-    # optional housekeeping for memory
-    now = time.time()
-    for ip, arr in list(_requests_log.items()):
-        _requests_log[ip] = [t for t in arr if now - t < RATE_PERIOD]
-        if not _requests_log[ip]:
-            del _requests_log[ip]
-
-def _cleanup_blacklist():
-    now = time.time()
-    for jti, exp_ts in list(_token_blacklist.items()):
-        if now >= exp_ts:
-            del _token_blacklist[jti]
-
-def _is_token_blacklisted(jti: str) -> bool:
-    _cleanup_blacklist()
-    return jti in _token_blacklist
-
-def _blacklist_token(jti: str, exp_ts: float):
-    _token_blacklist[jti] = exp_ts
-
-def _create_jwt(subject: str, expires_seconds: int = JWT_EXP_SECONDS) -> str:
+# JWT helpers
+def create_jwt(sub: str, extra: Optional[dict] = None, exp_seconds: int = JWT_EXP_SECONDS) -> str:
     now = datetime.now(timezone.utc)
-    exp = now + timedelta(seconds=expires_seconds)
-    jti = str(uuid.uuid4())
-    payload = {
-        "sub": subject,
-        "iat": int(now.timestamp()),
-        "exp": int(exp.timestamp()),
-        "jti": jti,
-    }
-    token = jwt.encode(payload, WEB_SECRET, algorithm=JWT_ALGORITHM)
+    payload = {"sub": sub, "iat": int(now.timestamp()), "exp": int((now + timedelta(seconds=exp_seconds)).timestamp()), "jti": str(uuid.uuid4())}
+    if extra:
+        payload.update(extra)
+    token = jwt.encode(payload, WEB_SECRET, algorithm=JWT_ALG)
     if isinstance(token, bytes):
         token = token.decode()
     return token
 
-def _verify_jwt(token: str) -> dict:
+def verify_jwt(token: str) -> dict:
     try:
-        payload = jwt.decode(token, WEB_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(token, WEB_SECRET, algorithms=[JWT_ALG])
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
-    # check blacklist
-    jti = payload.get("jti")
-    if not jti:
-        raise HTTPException(status_code=401, detail="Malformed token (no jti)")
-    if _is_token_blacklisted(jti):
-        raise HTTPException(status_code=401, detail="Token revoked")
     return payload
 
-# ----- Rate limiter dependency -----
-async def rate_limit_dependency(request: Request):
-    ip = _get_client_ip(request)
+# Rate limiter dependency
+def _client_ip(request: Request):
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host or "unknown"
+
+def rate_limit_check(request: Request):
+    ip = _client_ip(request)
     now = time.time()
-    arr = _requests_log.get(ip, [])
-    # clean old
-    arr = [t for t in arr if now - t < RATE_PERIOD]
-    if len(arr) >= RATE_LIMIT:
-        raise HTTPException(status_code=429, detail="Too many requests")
+    # check ban
+    if ip in _ip_ban and _ip_ban[ip] > now:
+        raise HTTPException(status_code=403, detail="IP temporarily banned")
+    arr = _ip_log.get(ip, [])
+    arr = [t for t in arr if now - t < _RATE_PERIOD]
+    if len(arr) >= _RATE_LIMIT:
+        # escalate ban
+        _ip_ban[ip] = now + 60 * 15  # 15 minutes
+        _ip_log[ip] = []
+        raise HTTPException(status_code=429, detail="Rate limit exceeded; IP temporarily banned")
     arr.append(now)
-    _requests_log[ip] = arr
-    return True
+    _ip_log[ip] = arr
 
-# ----- Endpoints -----
-@router.post("/login", dependencies=[Depends(rate_limit_dependency)])
-async def admin_login(data: LoginModel, request: Request):
-    if not WEB_PASSWORD:
-        raise HTTPException(status_code=500, detail="Server misconfiguration: WEB_PASSWORD not set")
-    # Support either plain shared secret or stored hash:
-    provided = data.password or ""
-    # Hash both sides with sha256 for comparison (we assume config stores plain secret or same hashing method)
-    provided_hash = hashlib.sha256(provided.encode()).hexdigest()
-    stored_hash = hashlib.sha256(WEB_PASSWORD.encode()).hexdigest()
-    if not hmac.compare_digest(provided_hash, stored_hash):
+# Admin login using Argon2 hashed password stored in config.WEB_PASSWORD_HASH or plain secret
+@router.post("/login")
+async def admin_login(request: Request, password: dict):
+    rate_limit_check(request)
+    pwd = password.get("password", "")
+    # support both hashed and plain (if config has plain, we hash and compare)
+    stored_hash = getattr(config, "WEB_PASSWORD_HASH", None)
+    plain_secret = getattr(config, "WEB_PASSWORD", None)
+    if stored_hash:
+        try:
+            ph.verify(stored_hash, pwd)
+            token = create_jwt("admin")
+            resp = JSONResponse({"message": "ok", "token": token})
+            resp.set_cookie("session", token, httponly=True, secure=bool(getattr(config, "COOKIE_SECURE", False)))
+            return resp
+        except argon2_exceptions.VerifyMismatchError:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+    elif plain_secret:
+        # constant-time compare
+        if hmac.compare_digest(hashlib.sha256(pwd.encode()).hexdigest(), hashlib.sha256(plain_secret.encode()).hexdigest()):
+            token = create_jwt("admin")
+            resp = JSONResponse({"message": "ok", "token": token})
+            resp.set_cookie("session", token, httponly=True, secure=bool(getattr(config, "COOKIE_SECURE", False)))
+            return resp
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    token = _create_jwt(subject="admin")
-    # set cookie
-    resp = JSONResponse({"message": "login successful", "token": token})
-    resp.set_cookie(
-        key="session",
-        value=token,
-        httponly=True,
-        secure=bool(COOKIE_SECURE),
-        samesite="lax",
-        max_age=JWT_EXP_SECONDS,
-    )
-    return resp
+    else:
+        raise HTTPException(status_code=500, detail="No password configured")
 
-@router.post("/telegram", dependencies=[Depends(rate_limit_dependency)])
-async def telegram_login(data: TelegramAuthModel, request: Request):
-    """
-    Verify Telegram login widget data:
-    - Build data_check_string from all fields except hash, sorted by key
-    - Calculate HMAC-SHA256 using sha256(bot_token) as key
-    - Verify equality (constant-time)
-    - Check auth_date freshness and replay protection
-    """
-    if not BOT_TOKEN:
-        raise HTTPException(status_code=500, detail="Server misconfiguration: BOT_TOKEN not set")
-    payload = data.dict()
+# Telegram widget verification (same approach as earlier)
+@router.post("/telegram")
+async def telegram_auth(data: dict, request: Request):
+    rate_limit_check(request)
+    bot_token = getattr(config, "BOT_TOKEN", None)
+    if not bot_token:
+        raise HTTPException(status_code=500, detail="Bot token not configured")
+    payload = data.copy()
     incoming_hash = payload.pop("hash", "")
-    # Build data_check_string
     kvs = []
     for k in sorted(payload.keys()):
         v = payload[k]
@@ -166,108 +144,79 @@ async def telegram_login(data: TelegramAuthModel, request: Request):
             v = ""
         kvs.append(f"{k}={v}")
     data_check_string = "\n".join(kvs)
-    secret_key = hashlib.sha256(BOT_TOKEN.encode()).digest()
-    calc_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(calc_hash, incoming_hash):
-        raise HTTPException(status_code=401, detail="Telegram auth verification failed")
-    # Check auth_date freshness
-    now_ts = int(time.time())
-    auth_date = int(data.auth_date)
-    if now_ts - auth_date > TELEGRAM_AUTH_MAX_AGE:
+    secret = hashlib.sha256(bot_token.encode()).digest()
+    calc = hmac.new(secret, data_check_string.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(calc, incoming_hash):
+        raise HTTPException(status_code=401, detail="Telegram verification failed")
+    # check auth_date freshness
+    auth_date = int(payload.get("auth_date", 0))
+    if time.time() - auth_date > int(getattr(config, "TELEGRAM_AUTH_MAX_AGE", 86400)):
         raise HTTPException(status_code=401, detail="Telegram auth expired")
-    # Replay protection: ensure same (id,auth_date) not reused within short period
-    seen_key = f"tg:{data.id}:{auth_date}"
-    if seen_key in _seen_telegram_auths:
-        # If we've seen it recently, reject (replay)
-        raise HTTPException(status_code=401, detail="Telegram auth replay detected")
-    # record it for a short while
-    _seen_telegram_auths[seen_key] = now_ts + 60  # keep key for 60 seconds
-    # housekeeping for seen auths
-    for k, v in list(_seen_telegram_auths.items()):
-        if now_ts >= v:
-            del _seen_telegram_auths[k]
-    # Success -> issue JWT
-    subject = f"tg:{data.id}"
-    token = _create_jwt(subject=subject)
-    resp = JSONResponse({"message": "telegram auth successful", "token": token})
-    resp.set_cookie(
-        key="session",
-        value=token,
-        httponly=True,
-        secure=bool(COOKIE_SECURE),
-        samesite="lax",
-        max_age=JWT_EXP_SECONDS,
-    )
+    sub = f"tg:{payload.get('id')}"
+    token = create_jwt(sub)
+    resp = JSONResponse({"message": "ok", "token": token})
+    resp.set_cookie("session", token, httponly=True, secure=bool(getattr(config, "COOKIE_SECURE", False)))
     return resp
 
-@router.get("/logout", dependencies=[Depends(rate_limit_dependency)])
-async def logout(request: Request):
-    """
-    Logout: read token (cookie or Authorization), add its jti to blacklist until its expiry.
-    """
-    # get token from cookie or header
-    token = None
-    if "session" in request.cookies:
-        token = request.cookies.get("session")
-    auth = request.headers.get("Authorization")
-    if auth and auth.startswith("Bearer "):
-        token = auth.split(" ", 1)[1]
-    if not token:
-        return JSONResponse({"message": "no active session"}, status_code=200)
-    try:
-        payload = jwt.decode(token, WEB_SECRET, algorithms=[JWT_ALGORITHM], options={"verify_exp": False})
-    except Exception:
-        # Malformed token — simply delete cookie
-        resp = JSONResponse({"message": "logged out"})
-        resp.delete_cookie("session")
+# HWID lock endpoint - owner can lock this dashboard to a HWID
+@router.post("/hwid/lock")
+async def hwid_lock(request: Request, body: dict):
+    rate_limit_check(request)
+    secret = body.get("secret")
+    # only allow admin/jwt
+    auth = request.cookies.get("session") or request.headers.get("Authorization", "").split(" ")[-1]
+    if not auth:
+        raise HTTPException(status_code=401)
+    payload = verify_jwt(auth)
+    if payload.get("sub") != "admin":
+        raise HTTPException(status_code=403)
+    hwid = compute_local_hwid()
+    # store in config file? we store in config by writing to a local .hwid file
+    with open(".titan_hwid", "w") as f:
+        f.write(hwid)
+    return {"status": "locked", "hwid": hwid}
+
+@router.get("/hwid/check")
+async def hwid_check():
+    local = compute_local_hwid()
+    locked = None
+    if os.path.exists(".titan_hwid"):
+        with open(".titan_hwid", "r") as f:
+            locked = f.read().strip()
+    return {"local_hwid": local, "locked_to": locked, "owner_allowed": (_OWNER_HWID == local)}
+
+# Ghost mode: owner may provide pre-shared token (GHOST_TOKENS) to browse without stateful session
+@router.post("/ghost")
+async def ghost_access(request: Request, body: dict):
+    token = body.get("ghost_token")
+    rate_limit_check(request)
+    if token in _GHOST_TOKENS:
+        # create ephemeral admin jwt valid for short time
+        jwt_token = create_jwt("admin", extra={"ghost": True}, exp_seconds=60 * 10)
+        resp = JSONResponse({"status": "ok", "token": jwt_token})
+        resp.set_cookie("session", jwt_token, httponly=True, secure=bool(getattr(config, "COOKIE_SECURE", False)))
         return resp
-    jti = payload.get("jti")
-    exp_ts = payload.get("exp", int(time.time()))
-    if jti:
-        # blacklist until original expiry
-        _blacklist_token(jti, float(exp_ts))
-    resp = JSONResponse({"message": "logged out"})
-    resp.delete_cookie("session")
-    return resp
+    raise HTTPException(status_code=403, detail="invalid ghost token")
 
-# ----- Auth dependency -----
-async def require_auth(request: Request):
-    # extract token
-    token = None
-    if "session" in request.cookies:
-        token = request.cookies.get("session")
-    auth = request.headers.get("Authorization")
-    if auth and auth.startswith("Bearer "):
-        token = auth.split(" ", 1)[1]
+# Admin-only dependency
+def require_admin(request: Request):
+    token = request.cookies.get("session") or request.headers.get("Authorization", "").split(" ")[-1]
     if not token:
-        raise HTTPException(status_code=401, detail="Authentication token missing")
-    payload = _verify_jwt(token)
+        raise HTTPException(status_code=401)
+    payload = verify_jwt(token)
+    if payload.get("sub") != "admin":
+        raise HTTPException(status_code=403)
+    # check HWID lock if present
+    if os.path.exists(".titan_hwid"):
+        with open(".titan_hwid", "r") as f:
+            hw = f.read().strip()
+        if hw and hw != compute_local_hwid():
+            raise HTTPException(status_code=403, detail="HWID mismatch")
     return payload
 
-# ----- Admin-only dependency -----
-async def require_admin(payload: dict = Depends(require_auth)):
-    sub = payload.get("sub", "")
-    if sub != "admin":
-        raise HTTPException(status_code=403, detail="Admin privileges required")
-    return payload
-
-# Protected endpoint examples
-@router.get("/protected")
-async def protected(payload: dict = Depends(require_auth)):
-    return {"status": "ok", "user": payload.get("sub")}
-
-@router.get("/me")
-async def me(payload: dict = Depends(require_auth)):
-    return {"sub": payload.get("sub"), "iat": payload.get("iat"), "exp": payload.get("exp")}
-
-@router.get("/admin-only")
-async def admin_only(payload: dict = Depends(require_admin)):
-    return {"status": "ok", "admin": payload.get("sub")}
-
-# Export router
+# Expose router for app integration
 def get_router():
     return router
 
-# For quick local testing as standalone app
-app = FastAPI(title="AnnieXBoda - Security Gate", version="1.0.0")
+app = FastAPI(title="Titan-Glass Security Gate")
 app.include_router(router)
