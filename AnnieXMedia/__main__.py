@@ -1,5 +1,5 @@
 # ================================
-# __main__.py AnnieXMedia
+# __main__.py AnnieXMedia (Corrected)
 # ================================
 
 import sys
@@ -10,13 +10,13 @@ from pyrogram import idle
 from pytgcalls.exceptions import NoActiveGroupCall
 
 # ------------------------
-# Paths: مجلد pytgcalls المحلي + web modules
+# Paths: إعداد مسارات البوت
 # ------------------------
-sys.path.insert(0, os.getcwd())  # إجبار البوت يستخدم نسخة pytgcalls المحلية
-sys.path.insert(0, os.path.join(os.getcwd(), "web"))  # إضافة مجلد web للـ imports
+# إجبار البوت يستخدم المسار الحالي كـ Root Package
+sys.path.insert(0, os.getcwd())
 
 # ------------------------
-# استيراد مكتبات AnnieXMedia
+# استيراد مكتبات AnnieXMedia الأساسية
 # ------------------------
 import config
 from AnnieXMedia import LOGGER, app, userbot
@@ -28,17 +28,24 @@ from AnnieXMedia.utils.cookie_handler import fetch_and_store_cookies
 from config import BANNED_USERS
 
 # ------------------------
-# استيراد ملفات web مباشرة
+# 🔥 استيراد ملفات WEB (التصحيح هنا) 🔥
 # ------------------------
-import Resource_Optimizer
-import backend_bridge
-import security_gate
+try:
+    from AnnieXMedia.web import Resource_Optimizer
+    from AnnieXMedia.web import backend_bridge
+    from AnnieXMedia.web import security_gate
+    LOGGER("AnnieXMedia.web").info("✅ Web Modules Loaded Successfully")
+except ImportError as e:
+    LOGGER("AnnieXMedia.web").error(f"❌ Failed to load Web Modules: {e}")
+    # لن نوقف البوت، سيكمل العمل بدون الويب مؤقتاً
+except Exception as e:
+    LOGGER("AnnieXMedia.web").error(f"❌ Critical Error in Web Files: {e}")
 
 # ========================
 # دالة Init لتشغيل كل شيء
 # ========================
 async def init():
-    # تحقق من أن أي من STRING1-5 موجود لتشغيل session
+    # 1. التحقق من وجود Session
     if (
         not config.STRING1
         and not config.STRING2
@@ -51,23 +58,15 @@ async def init():
         )
         exit()
 
-    # ------------------------
-    # تحميل ملفات الكوكيز
-    # ------------------------
+    # 2. تحميل الكوكيز
     try:
         await fetch_and_store_cookies()
         LOGGER("AnnieXMedia").info("ʏᴏᴜᴛᴜʙᴇ ᴄᴏᴏᴋɪᴇs ʟᴏᴀᴅᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ ✅")
     except Exception as e:
         LOGGER("AnnieXMedia").warning(f"⚠️ᴄᴏᴏᴋɪᴇ ᴇʀʀᴏʀ: {e}")
 
-    # ------------------------
-    # تهيئة صلاحيات sudo
-    # ------------------------
+    # 3. تهيئة الصلاحيات وقوائم الحظر
     await sudo()
-
-    # ------------------------
-    # جلب المستخدمين المحظورين
-    # ------------------------
     try:
         users = await get_gbanned()
         for user_id in users:
@@ -78,51 +77,40 @@ async def init():
     except:
         pass
 
-    # ------------------------
-    # تشغيل FastAPI backend
-    # ------------------------
+    # 4. تشغيل البوت (Client)
     await app.start()
-    LOGGER("AnnieXMedia").info("FastAPI backend started ✅")
+    LOGGER("AnnieXMedia").info("✅ Bot Client Started")
 
-    # ------------------------
-    # تحميل كل الـ plugins
-    # ------------------------
+    # 5. تحميل الـ Plugins
     for all_module in ALL_MODULES:
         importlib.import_module("AnnieXMedia.plugins" + all_module)
-    LOGGER("AnnieXMedia.plugins").info("ᴀɴɴɪᴇ's ᴍᴏᴅᴜʟᴇs ʟᴏᴀᴅᴇᴅ...")
+    LOGGER("AnnieXMedia.plugins").info("✅ Annie's Modules Loaded...")
 
-    # ------------------------
-    # تشغيل userbot و StreamController
-    # ------------------------
+    # 6. تشغيل المساعد والمشغل
     await userbot.start()
     await StreamController.start()
 
-    # ------------------------
-    # تشغيل مثال صوتي للتأكد من اتصال الـ Voice Chat
-    # ------------------------
+    # 7. اختبار Voice Chat
     try:
         await StreamController.stream_call(
             "http://docs.evostream.com/sample_content/assets/sintel1m720p.mp4"
         )
     except NoActiveGroupCall:
         LOGGER("AnnieXMedia").error(
-            "ᴘʟᴇᴀsᴇ ᴛᴜʀɴ ᴏɴ ᴛʜᴇ ᴠᴏɪᴄᴇ ᴄʜᴀᴛ ᴏғ ʏᴏᴜʀ ʟᴏɢ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ.\n\n"
-            "ᴀɴɴɪᴇ ʙᴏᴛ sᴛᴏᴘᴘᴇᴅ..."
+            "⚠️ Please turn on the Video Chat in your Log Group!\n"
+            "Bot is stopping..."
         )
         exit()
     except Exception:
         pass
 
-    # ------------------------
-    # Decorators و idle loop
-    # ------------------------
+    # 8. تشغيل Decorators و Idle
     await StreamController.decorators()
-    LOGGER("AnnieXMedia").info("Annie Music Robot Started Successfully...")
+    LOGGER("AnnieXMedia").info("🚀 Annie Music Robot Started Successfully...")
+    
     await idle()
 
-    # ------------------------
-    # إيقاف كل شيء عند الخروج
-    # ------------------------
+    # 9. إغلاق نظيف
     await app.stop()
     await userbot.stop()
     LOGGER("AnnieXMedia").info("Stopping Annie Music Bot...")
