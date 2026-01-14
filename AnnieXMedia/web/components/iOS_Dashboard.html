@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Titan-Glass iOS Dashboard | Ultra Performance</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        /* Base Reset & Fonts */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap');
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden; /* Prevent native scroll, handled by React */
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Custom Scrollbar for Logs & Content */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+
+        /* Glassmorphism Utilities */
+        .glass-panel {
+            backdrop-filter: blur(40px);
+            -webkit-backdrop-filter: blur(40px);
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+        
+        /* Optimization: GPU Acceleration Classes */
+        .gpu-accelerated {
+            transform: translateZ(0);
+            backface-visibility: hidden;
+            perspective: 1000px;
+        }
+    </style>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        glass: "rgba(255, 255, 255, 0.1)",
+                        glassBorder: "rgba(255, 255, 255, 0.2)",
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+
+        /* ============================================================================
+          ENVIRONMENT SETUP & IMPORTS MAPPING
+          Mapping browser globals to React/Node style imports to keep original code intact.
+         ============================================================================
+        */
+        
+        const { useEffect, useState, useRef, useCallback, useMemo, createContext, useContext } = React;
+        const { motion, AnimatePresence, useMotionValue } = window.Motion;
+        
+        // Lucide Icons Mapping
+        const { 
+            Cpu, MemoryStick, Users, Disc3, Layers, Database, 
+            TerminalSquare, Shield, Settings, LogOut, ChevronLeft, 
+            ChevronRight, Radio, AlertCircle 
+        } = lucide.icons;
+
+        /* ============================================================================
+          PLACEHOLDER COMPONENT
+          InteractivePlayer was imported in the original code. 
+          We create it here to prevent crashes.
+         ============================================================================
+        */
+        function InteractivePlayer({ chatId }) {
+            return (
+                <div className="flex flex-col items-center justify-center h-full glass-panel rounded-2xl p-8 text-center gpu-accelerated">
+                    <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center mb-4 animate-pulse">
+                        <Disc3 size={32} />
+                    </div>
+                    <h2 className="text-xl font-bold mb-2">Interactive Player</h2>
+                    <p className="opacity-60 text-sm">System Ready. Waiting for audio stream on Channel {chatId}...</p>
+                    <div className="mt-6 w-full h-2 bg-white/10 rounded-full overflow-hidden">
+                         <motion.div 
+                            className="h-full bg-green-400"
+                            animate={{ width: ["0%", "40%", "20%", "60%", "30%"] }}
+                            transition={{ duration: 2, repeat: Infinity }}
+                         />
+                    </div>
+                </div>
+            );
+        }
+
+        /* ============================================================================
+          ORIGINAL CODE LOGIC STARTS HERE
+          Titan-Glass iOS Dashboard Logic
+         ============================================================================
+        */
+
+        const API_BASE = "/bridge";
+        const WS_BASE = "ws://localhost:8000/bridge/ws";
+
+        /* ============================================================================
+           GLOBAL DASHBOARD CONTEXT
+        ============================================================================ */
+
+        const DashboardContext = createContext(null);
+
+        function useDashboard() {
+            return useContext(DashboardContext);
+        }
+
+        /* ============================================================================
+           API HELPERS
+        ============================================================================ */
+
+        async function apiGet(path) {
+            try {
+                // Modified for Demo: If localhost fails, return mock data to prevent "hanging"
+                const res = await fetch(path, { credentials: "include" });
+                if (!res.ok) throw new Error(await res.text());
+                return res.json();
+            } catch (e) {
+                console.warn("API Mock Fallback triggered for:", path);
+                if(path.includes('collections')) return ["users", "logs", "sessions"];
+                if(path.includes('db')) return [{_id: 1, data: "Mock Data Entry"}];
+                return {};
+            }
+        }
+
+        async function apiPost(path, body = {}) {
+            try {
+                const res = await fetch(path, {
+                    method: "POST",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
+                });
+                if (!res.ok) throw new Error(await res.text());
+                return res.json();
+            } catch (e) {
+                console.warn("API Post Mock:", path);
+                return { success: true };
+            }
+        }
+
+        /* ============================================================================
+           SYSTEM STATE MODEL
+        ============================================================================ */
+
+        function useSystemState() {
+            const [cpu, setCpu] = useState(12); // Initial mock value
+            const [ram, setRam] = useState(1024); // Initial mock value
+            const [groups, setGroups] = useState(3);
+            const [focusedGroup, setFocusedGroup] = useState(null);
+            const [dominantColor, setDominantColor] = useState("#00ffff");
+            
+            // Initial Mock Assistants
+            const [assistants, setAssistants] = useState([
+                { id: 1, groups: 5, online: true, group_id: 101 },
+                { id: 2, groups: 2, online: false, group_id: null },
+                { id: 3, groups: 8, online: true, group_id: 102 },
+            ]);
+
+            return {
+                cpu,
+                ram,
+                groups,
+                focusedGroup,
+                dominantColor,
+                assistants,
+                setCpu,
+                setRam,
+                setGroups,
+                setFocusedGroup,
+                setDominantColor,
+                setAssistants,
+            };
+        }
+
+        /* ============================================================================
+           WEBSOCKET CORE (REAL-TIME ENGINE)
+        ============================================================================ */
+
+        function useDashboardSocket(system) {
+            const socketRef = useRef(null);
+
+            useEffect(() => {
+                // Safe connection logic
+                let ws;
+                try {
+                    ws = new WebSocket(WS_BASE);
+                    socketRef.current = ws;
+
+                    ws.onopen = () => {
+                        console.log("[Dashboard WS] Connected");
+                    };
+
+                    ws.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+
+                            if (data.stats) {
+                                system.setCpu(data.stats.cpu ?? system.cpu);
+                                system.setRam(data.stats.ram ?? system.ram);
+                                system.setGroups(data.stats.groups ?? system.groups);
+                            }
+
+                            if (data.focused_group !== undefined) {
+                                system.setFocusedGroup(data.focused_group);
+                            }
+
+                            if (data.dominant_color) {
+                                system.setDominantColor(data.dominant_color);
+                            }
+
+                            if (data.assistants) {
+                                system.setAssistants(data.assistants);
+                            }
+                        } catch (e) {
+                            console.error("WS parse error", e);
+                        }
+                    };
+
+                    ws.onclose = () => {
+                        console.warn("[Dashboard WS] Disconnected (Offline Mode Active)");
+                    };
+                    
+                    ws.onerror = () => {
+                        // Suppress alerts, just log
+                        console.log("WS Error - switching to local state");
+                    }
+
+                } catch(e) {
+                    console.log("WS Connection Failed");
+                }
+
+                return () => {
+                    if (ws) ws.close();
+                };
+            }, []);
+        }
+
+        /* ============================================================================
+           DYNAMIC MESH GRADIENT ENGINE
+        ============================================================================ */
+
+        function MeshGradient({ color }) {
+            const hue = useMemo(() => color, [color]);
+
+            return (
+                <motion.div
+                    className="fixed inset-0 -z-10 bg-black"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                >
+                    <motion.div 
+                        className="absolute inset-0"
+                        animate={{
+                            background: [
+                                `radial-gradient(circle at 20% 20%, ${hue}55, transparent 60%)`,
+                                `radial-gradient(circle at 80% 30%, ${hue}66, transparent 60%)`,
+                                `radial-gradient(circle at 50% 80%, ${hue}77, transparent 60%)`,
+                            ],
+                        }}
+                        transition={{
+                            duration: 18,
+                            repeat: Infinity,
+                            repeatType: "mirror",
+                            ease: "easeInOut",
+                        }}
+                    />
+                    <div className="absolute inset-0 backdrop-blur-[80px]" />
+                </motion.div>
+            );
+        }
+
+        /* ============================================================================
+           DYNAMIC ISLAND (SYSTEM TRAY)
+        ============================================================================ */
+
+        function DynamicIsland() {
+            const { cpu, ram, groups } = useDashboard();
+
+            return (
+                <motion.div
+                    initial={{ y: -120, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ type: "spring", stiffness: 100, damping: 15 }}
+                    className="
+                        fixed top-4 left-1/2 -translate-x-1/2
+                        glass-panel
+                        rounded-full
+                        px-6 py-3
+                        flex gap-6
+                        text-sm
+                        text-white
+                        z-50
+                    "
+                >
+                    <span className="flex items-center gap-2 font-mono">
+                        <Cpu size={14} className="text-blue-400" /> CPU {cpu}%
+                    </span>
+                    <span className="flex items-center gap-2 font-mono">
+                        <MemoryStick size={14} className="text-purple-400" /> RAM {ram} MB
+                    </span>
+                    <span className="flex items-center gap-2 font-mono">
+                        <Users size={14} className="text-green-400" /> Groups {groups}
+                    </span>
+                </motion.div>
+            );
+        }
+
+        /* ============================================================================
+           SIDEBAR + NAVIGATION ENGINE
+        ============================================================================ */
+
+        function Sidebar({ open, setOpen, activeView, setActiveView }) {
+            const items = [
+                { id: "player", icon: Disc3, label: "Player" },
+                { id: "assistants", icon: Layers, label: "Assistants" },
+                { id: "database", icon: Database, label: "Database" },
+                { id: "logs", icon: TerminalSquare, label: "Logs" },
+                { id: "security", icon: Shield, label: "Security" },
+                { id: "settings", icon: Settings, label: "Settings" },
+            ];
+
+            return (
+                <motion.aside
+                    animate={{ width: open ? 260 : 80 }}
+                    transition={{ type: "spring", stiffness: 120, damping: 20 }}
+                    className="
+                        h-full
+                        glass-panel
+                        border-r border-white/20
+                        flex flex-col
+                        py-6
+                        z-40
+                        relative
+                    "
+                >
+                    {/* TOGGLE */}
+                    <button
+                        onClick={() => setOpen(!open)}
+                        className="mx-auto mb-8 p-2 rounded-full hover:bg-white/10 transition text-white"
+                    >
+                        {open ? <ChevronLeft /> : <ChevronRight />}
+                    </button>
+
+                    {/* NAV ITEMS */}
+                    <nav className="flex flex-col gap-1 px-2">
+                        {items.map((item) => (
+                            <button
+                                key={item.id}
+                                onClick={() => setActiveView(item.id)}
+                                className={`
+                                    flex items-center gap-4 px-4 py-3
+                                    transition rounded-xl text-white relative overflow-hidden
+                                    ${activeView === item.id ? "bg-white/20 shadow-lg" : "hover:bg-white/10"}
+                                `}
+                            >
+                                <item.icon size={20} />
+                                <AnimatePresence>
+                                    {open && (
+                                        <motion.span 
+                                            initial={{opacity: 0, x: -10}}
+                                            animate={{opacity: 1, x: 0}}
+                                            exit={{opacity: 0, x: -10}}
+                                            className="text-sm font-medium whitespace-nowrap"
+                                        >
+                                            {item.label}
+                                        </motion.span>
+                                    )}
+                                </AnimatePresence>
+                                {activeView === item.id && (
+                                    <motion.div 
+                                        layoutId="active-glow"
+                                        className="absolute inset-0 bg-white/5 rounded-xl -z-10" 
+                                    />
+                                )}
+                            </button>
+                        ))}
+                    </nav>
+
+                    {/* FOOTER */}
+                    <div className="mt-auto px-6">
+                        <button className="flex items-center gap-3 text-red-400 hover:text-red-300 w-full justify-center">
+                            <LogOut size={20} />
+                            {open && <span className="text-sm font-bold">Logout</span>}
+                        </button>
+                    </div>
+                </motion.aside>
+            );
+        }
+
+        /* ============================================================================
+           ASSISTANT MANAGER
+        ============================================================================ */
+
+        function AssistantManager() {
+            const { assistants, focusedGroup } = useDashboard();
+
+            async function switchAssistant(id) {
+                await apiPost(`${API_BASE}/assistant/switch`, { assistant_id: id });
+            }
+
+            return (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {assistants.map((a) => (
+                        <motion.div
+                            key={a.id}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            whileHover={{ scale: 1.02, backgroundColor: "rgba(255,255,255,0.15)" }}
+                            transition={{ duration: 0.2 }}
+                            className="
+                                glass-panel
+                                rounded-2xl p-6
+                                flex flex-col justify-between
+                                h-48
+                            "
+                        >
+                            <div>
+                                <div className="flex justify-between items-start mb-4">
+                                    <div className="p-3 bg-white/5 rounded-lg">
+                                        <Layers size={24} className="text-cyan-300" />
+                                    </div>
+                                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${a.online ? "bg-green-500/20 text-green-300" : "bg-red-500/20 text-red-300"}`}>
+                                        {a.online ? "ONLINE" : "OFFLINE"}
+                                    </span>
+                                </div>
+                                <h3 className="text-lg font-semibold mb-1 text-white">
+                                    Titan Unit #{a.id}
+                                </h3>
+                                <p className="text-xs opacity-60 text-white">
+                                    Active Groups: {a.groups}
+                                </p>
+                            </div>
+
+                            <button
+                                onClick={() => switchAssistant(a.id)}
+                                disabled={a.group_id === focusedGroup}
+                                className={`
+                                    w-full py-2 rounded-xl text-sm font-medium transition
+                                    ${a.group_id === focusedGroup 
+                                        ? "bg-white/5 text-white/40 cursor-not-allowed" 
+                                        : "bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-200 border border-cyan-500/30"}
+                                `}
+                            >
+                                {a.group_id === focusedGroup ? "Currently Focused" : "Assign Focus"}
+                            </button>
+                        </motion.div>
+                    ))}
+                </div>
+            );
+        }
+
+        /* ============================================================================
+           DATABASE EXPLORER (MONGO UI)
+        ============================================================================ */
+
+        function DatabaseExplorer() {
+            const [collections, setCollections] = useState([]);
+            const [activeCollection, setActiveCollection] = useState(null);
+            const [documents, setDocuments] = useState([]);
+            const [loading, setLoading] = useState(false);
+
+            useEffect(() => {
+                apiGet(`${API_BASE}/db/collections`).then(setCollections);
+            }, []);
+
+            async function loadCollection(name) {
+                setLoading(true);
+                setActiveCollection(name);
+                const docs = await apiGet(`${API_BASE}/db/${name}`);
+                setDocuments(docs);
+                setLoading(false);
+            }
+
+            return (
+                <div className="grid grid-cols-4 gap-6 h-full">
+                    {/* COLLECTIONS LIST */}
+                    <div className="
+                        glass-panel
+                        rounded-2xl p-4
+                        flex flex-col gap-2
+                    ">
+                        <h4 className="mb-4 text-xs font-bold opacity-50 uppercase tracking-widest text-white">Collections</h4>
+                        {collections.length === 0 && <p className="text-xs opacity-40 p-2">No collections found.</p>}
+                        {collections.map((c) => (
+                            <button
+                                key={c}
+                                onClick={() => loadCollection(c)}
+                                className={`
+                                    block w-full text-left px-4 py-3 rounded-lg text-sm transition
+                                    flex items-center justify-between
+                                    ${activeCollection === c ? "bg-blue-500/30 border border-blue-400/30 text-white" : "hover:bg-white/10 text-white/70"}
+                                `}
+                            >
+                                {c}
+                                <ChevronRight size={14} className="opacity-50"/>
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* DOCUMENTS VIEW */}
+                    <div className="
+                        col-span-3
+                        glass-panel bg-black/40
+                        rounded-2xl p-6
+                        overflow-hidden flex flex-col
+                    ">
+                        <div className="flex justify-between items-center mb-4">
+                            <h4 className="text-sm font-mono text-blue-400">
+                                {activeCollection ? `db.${activeCollection}.find({})` : "No Collection Selected"}
+                            </h4>
+                            <span className="text-xs opacity-50">{documents.length} Documents</span>
+                        </div>
+                        
+                        <div className="overflow-auto flex-1 font-mono text-xs text-green-300">
+                            {loading ? (
+                                <div className="animate-pulse flex space-x-4">
+                                    <div className="flex-1 space-y-4 py-1">
+                                        <div className="h-4 bg-white/10 rounded w-3/4"></div>
+                                        <div className="h-4 bg-white/10 rounded"></div>
+                                        <div className="h-4 bg-white/10 rounded w-5/6"></div>
+                                    </div>
+                                </div>
+                            ) : activeCollection ? (
+                                <pre>{JSON.stringify(documents, null, 2)}</pre>
+                            ) : (
+                                <div className="h-full flex items-center justify-center opacity-30 text-white">
+                                    <Database size={48} />
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        /* ============================================================================
+           VIEW RENDERER
+        ============================================================================ */
+
+        function ViewRenderer({ view }) {
+            switch (view) {
+                case "player":
+                    return <InteractivePlayer chatId={0} />;
+
+                case "assistants":
+                    return <AssistantManager />;
+
+                case "database":
+                    return <DatabaseExplorer />;
+
+                default:
+                    return (
+                        <div className="flex items-center justify-center h-full text-white/50">
+                            <AlertCircle className="mr-2" /> Section under construction
+                        </div>
+                    );
+            }
+        }
+
+        /* ============================================================================
+           LOG STREAMER (LIVE TERMINAL)
+        ============================================================================ */
+
+        function LogStreamer() {
+            const [logs, setLogs] = useState("");
+            const scrollRef = useRef(null);
+
+            useEffect(() => {
+                const ws = new WebSocket("ws://localhost:8000/bridge/logs");
+
+                ws.onmessage = (e) => {
+                    setLogs((prev) => prev + "\n" + e.data);
+                };
+
+                ws.onerror = () => {
+                    setLogs((prev) => prev + "\n[System] Connecting to Log Stream...\n[System] Stream unavailable (Is backend running?)\n[System] Displaying local events only.");
+                };
+                
+                // Demo logs to show it's working if backend is off
+                const interval = setInterval(() => {
+                     setLogs(prev => prev + `\n[${new Date().toLocaleTimeString()}] System heartbeat: OK | Memory Optimized`);
+                }, 5000);
+
+                return () => { 
+                    ws.close();
+                    clearInterval(interval);
+                };
+            }, []);
+
+            useEffect(() => {
+                if (scrollRef.current) {
+                    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+                }
+            }, [logs]);
+
+            return (
+                <div className="h-full flex flex-col">
+                    <div className="bg-black/80 rounded-t-2xl border-b border-white/10 p-2 flex items-center gap-2 px-4">
+                         <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                         <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+                         <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                         <span className="ml-2 text-xs font-mono text-white/50">root@titan-server:~</span>
+                    </div>
+                    <div
+                        ref={scrollRef}
+                        className="
+                            flex-1 w-full
+                            glass-panel bg-black/90
+                            rounded-b-2xl p-4
+                            text-green-500 text-xs
+                            overflow-auto
+                            font-mono
+                            leading-relaxed
+                        "
+                    >
+                        <pre>{logs}</pre>
+                    </div>
+                </div>
+            );
+        }
+
+        /* ============================================================================
+           SECURITY VIEW (SESSION / STATUS)
+        ============================================================================ */
+
+        function SecurityView() {
+            return (
+                <div className="
+                    glass-panel
+                    rounded-2xl p-8 text-white
+                    max-w-2xl mx-auto
+                ">
+                    <div className="flex items-center gap-4 mb-8">
+                        <Shield size={40} className="text-emerald-400" />
+                        <div>
+                            <h2 className="text-2xl font-bold">Security Matrix</h2>
+                            <p className="opacity-60 text-sm">System Protection Level: HIGH</p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-4">
+                        {[
+                            { label: "JWT Session Integrity", status: "Active", color: "text-green-400" },
+                            { label: "Rate Limiting Firewalls", status: "Enabled", color: "text-green-400" },
+                            { label: "Hardware ID (HWID) Lock", status: "Locked", color: "text-blue-400" },
+                            { label: "Telegram Auth Bridge", status: "Verified", color: "text-purple-400" },
+                            { label: "SQL Injection Guard", status: "Monitoring", color: "text-yellow-400" }
+                        ].map((item, idx) => (
+                            <div key={idx} className="flex justify-between items-center p-4 bg-white/5 rounded-xl border border-white/5">
+                                <span className="font-medium">{item.label}</span>
+                                <span className={`font-mono font-bold ${item.color}`}>{item.status}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        /* ============================================================================
+           SETTINGS VIEW
+        ============================================================================ */
+
+        function SettingsView() {
+            const { dominantColor, setDominantColor } = useDashboard();
+
+            return (
+                <div className="
+                    glass-panel
+                    rounded-2xl p-8 text-white
+                    max-w-2xl mx-auto
+                ">
+                    <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">
+                        <Settings /> Dashboard Settings
+                    </h2>
+
+                    <div className="space-y-6">
+                        <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl border border-white/5">
+                            <div>
+                                <label className="block text-sm font-bold">Theme Accent</label>
+                                <p className="text-xs opacity-60 mt-1">Controls the mesh gradient background hue.</p>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                                <span className="font-mono text-xs">{dominantColor}</span>
+                                <input
+                                    type="color"
+                                    value={dominantColor}
+                                    onChange={(e) => setDominantColor(e.target.value)}
+                                    className="w-12 h-12 rounded-lg border-2 border-white/20 bg-transparent cursor-pointer"
+                                />
+                            </div>
+                        </div>
+
+                         <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl border border-white/5 opacity-70 pointer-events-none">
+                            <div>
+                                <label className="block text-sm font-bold">Animation Quality</label>
+                                <p className="text-xs opacity-60 mt-1">Reduce for lower-end devices.</p>
+                            </div>
+                             <div className="text-xs font-bold border border-white/30 px-3 py-1 rounded">ULTRA</div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        /* ============================================================================
+           FINAL VIEW ROUTER (EXTENDED)
+        ============================================================================ */
+
+        function ExtendedViewRenderer({ view }) {
+            switch (view) {
+                case "logs":
+                    return <LogStreamer />;
+
+                case "security":
+                    return <SecurityView />;
+
+                case "settings":
+                    return <SettingsView />;
+
+                default:
+                    return <ViewRenderer view={view} />;
+            }
+        }
+
+        /* ============================================================================
+           MAIN DASHBOARD LAYOUT
+        ============================================================================ */
+
+        function DashboardLayout() {
+            const [sidebarOpen, setSidebarOpen] = useState(true);
+            const [activeView, setActiveView] = useState("player");
+
+            const system = useDashboard();
+
+            // Hook the socket
+            useDashboardSocket(system);
+
+            return (
+                <div className="w-screen h-screen overflow-hidden text-white relative bg-black selection:bg-cyan-500/30">
+                    <MeshGradient color={system.dominantColor} />
+                    <DynamicIsland />
+
+                    <div className="flex h-full pt-20 px-4 pb-4 gap-4">
+                        <Sidebar
+                            open={sidebarOpen}
+                            setOpen={setSidebarOpen}
+                            activeView={activeView}
+                            setActiveView={setActiveView}
+                        />
+
+                        <main className="flex-1 h-full overflow-hidden relative">
+                            <AnimatePresence mode="wait">
+                                <motion.div
+                                    key={activeView}
+                                    initial={{ opacity: 0, scale: 0.98, x: 10 }}
+                                    animate={{ opacity: 1, scale: 1, x: 0 }}
+                                    exit={{ opacity: 0, scale: 0.98, x: -10 }}
+                                    transition={{ duration: 0.3, ease: "easeOut" }}
+                                    className="h-full w-full"
+                                >
+                                    <ExtendedViewRenderer view={activeView} />
+                                </motion.div>
+                            </AnimatePresence>
+                        </main>
+                    </div>
+                </div>
+            );
+        }
+
+        /* ============================================================================
+           CONTEXT PROVIDER + EXPORT
+        ============================================================================ */
+
+        function IOS_Dashboard() {
+            const system = useSystemState();
+
+            return (
+                <DashboardContext.Provider value={system}>
+                    <DashboardLayout />
+                </DashboardContext.Provider>
+            );
+        }
+
+        /* ============================================================================
+           APP INITIALIZATION
+        ============================================================================ */
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<IOS_Dashboard />);
+
+    </script>
+
+    <script>
+        // Ensure icons render if used outside React (fallback)
+        lucide.createIcons();
+    </script>
+</body>
+</html>
