@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>لوحة القيادة | AnnieX</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <!-- خطوط وأيقونات -->
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    <style>
+        :root {
+            --bg-color: #050505;
+            --glass-bg: rgba(255, 255, 255, 0.05);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --primary: #00d2ff;
+            --primary-gradient: linear-gradient(45deg, #00d2ff, #3a7bd5);
+            --text: #ffffff;
+            --text-secondary: #aaaaaa;
+            --danger: #ff4757;
+            --success: #2ed573;
+        }
+
+        * { box-sizing: border-box; transition: all 0.3s ease; }
+        
+        body {
+            margin: 0;
+            font-family: 'Cairo', sans-serif;
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(0, 210, 255, 0.1) 0%, transparent 20%),
+                radial-gradient(circle at 90% 80%, rgba(58, 123, 213, 0.1) 0%, transparent 20%);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        /* --- Scrollbar --- */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-color); }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+
+        /* --- Login Page --- */
+        .login-wrapper {
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .login-wrapper::before {
+            content: '';
+            position: absolute;
+            width: 150%; 
+            height: 150%;
+            background: radial-gradient(transparent, var(--bg-color));
+            z-index: 1;
+        }
+        .login-card {
+            position: relative;
+            z-index: 10;
+            background: rgba(20, 20, 20, 0.6);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            padding: 50px 40px;
+            border-radius: 20px;
+            text-align: center;
+            width: 350px;
+            box-shadow: 0 0 50px rgba(0, 210, 255, 0.1);
+            animation: float 6s ease-in-out infinite;
+        }
+        @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-10px); } 100% { transform: translateY(0px); } }
+        
+        .login-card h2 { margin-bottom: 30px; font-weight: 700; background: var(--primary-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .inp-group { position: relative; margin-bottom: 20px; }
+        .inp-group i { position: absolute; top: 50%; right: 15px; transform: translateY(-50%); color: var(--text-secondary); }
+        .inp-field {
+            width: 100%;
+            padding: 15px 45px 15px 15px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--glass-border);
+            border-radius: 10px;
+            color: white;
+            font-family: inherit;
+            outline: none;
+        }
+        .inp-field:focus { border-color: var(--primary); box-shadow: 0 0 15px rgba(0, 210, 255, 0.2); }
+        .btn-main {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            background: var(--primary-gradient);
+            color: white;
+            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+            box-shadow: 0 5px 20px rgba(0, 210, 255, 0.3);
+        }
+        .btn-main:hover { transform: scale(1.02); box-shadow: 0 10px 30px rgba(0, 210, 255, 0.5); }
+
+        /* --- Dashboard --- */
+        .navbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 5%;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--glass-border);
+            position: sticky; top: 0; z-index: 100;
+        }
+        .brand { font-size: 1.5rem; font-weight: bold; color: white; display: flex; align-items: center; gap: 10px; }
+        .brand i { color: var(--primary); }
+        .nav-btn { color: var(--danger); text-decoration: none; font-weight: 600; padding: 8px 20px; border-radius: 30px; background: rgba(255, 71, 87, 0.1); border: 1px solid rgba(255, 71, 87, 0.2); }
+        .nav-btn:hover { background: var(--danger); color: white; }
+
+        .container { max-width: 1100px; margin: 40px auto; padding: 0 20px; }
+
+        /* Stats */
+        .grid-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 40px; }
+        .stat-box {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            padding: 25px;
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        .stat-icon { width: 60px; height: 60px; background: rgba(255,255,255,0.05); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; color: var(--primary); }
+        .stat-info h4 { margin: 0; color: var(--text-secondary); font-weight: normal; font-size: 0.9rem; }
+        .stat-info h2 { margin: 5px 0 0; font-size: 2rem; }
+
+        /* Sections */
+        .section-header { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; border-right: 4px solid var(--primary); padding-right: 15px; }
+        
+        /* Chat Cards */
+        .chat-grid { display: grid; gap: 15px; }
+        .chat-card {
+            background: linear-gradient(90deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%);
+            border: 1px solid var(--glass-border);
+            padding: 20px;
+            border-radius: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        .chat-card:hover { border-color: var(--primary); transform: translateX(-5px); }
+        
+        .chat-meta { display: flex; align-items: center; gap: 15px; }
+        .chat-avatar { width: 50px; height: 50px; background: #222; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #555; font-size: 1.2rem; }
+        .chat-details h4 { margin: 0; font-size: 1.1rem; }
+        .chat-details span { font-size: 0.8rem; color: var(--text-secondary); font-family: monospace; background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; }
+
+        .controls { display: flex; gap: 8px; }
+        .ctrl-btn { width: 38px; height: 38px; border-radius: 8px; border: none; cursor: pointer; color: white; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; }
+        .btn-p { background: rgba(255, 204, 0, 0.2); color: #ffcc00; }
+        .btn-r { background: rgba(46, 213, 115, 0.2); color: #2ed573; }
+        .btn-s { background: rgba(0, 210, 255, 0.2); color: #00d2ff; }
+        .btn-m { background: rgba(162, 155, 254, 0.2); color: #a29bfe; }
+        .btn-k { background: rgba(255, 71, 87, 0.2); color: #ff4757; }
+        
+        .ctrl-btn:hover { filter: brightness(1.5); transform: scale(1.1); }
+
+        /* Remote Play */
+        .remote-panel {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            padding: 30px;
+            border-radius: 15px;
+            margin-top: 40px;
+            position: relative;
+            overflow: hidden;
+        }
+        .remote-panel::after { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(rgba(0,210,255,0.05), transparent 70%); pointer-events: none; }
+        
+        .remote-inputs { display: flex; gap: 15px; flex-wrap: wrap; position: relative; z-index: 2; }
+        .remote-inputs input { flex: 1; min-width: 250px; }
+        .btn-play { background: var(--success); width: auto; min-width: 150px; }
+        .btn-play:hover { background: #26af61; }
+
+        /* Mobile */
+        @media (max-width: 768px) {
+            .chat-card { flex-direction: column; align-items: flex-start; }
+            .controls { width: 100%; justify-content: space-between; margin-top: 10px; }
+            .remote-inputs { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+
+{% if login_page %}
+    <div class="login-wrapper">
+        <form class="login-card" method="POST">
+            <h2>لوحة التحكم</h2>
+            <div class="inp-group">
+                <i class="fas fa-lock"></i>
+                <input type="password" name="password" class="inp-field" placeholder="كلمة المرور" required>
+            </div>
+            <button type="submit" class="btn-main">دخول النظام <i class="fas fa-arrow-left" style="margin-right:8px"></i></button>
+            {% if error %}
+            <div style="color: var(--danger); margin-top: 15px; font-size: 0.9rem;">
+                <i class="fas fa-exclamation-circle"></i> {{error}}
+            </div>
+            {% endif %}
+        </form>
+    </div>
+{% else %}
+
+    <div class="navbar">
+        <div class="brand">
+            <i class="fas fa-bolt"></i> AnnieX <span style="font-weight:300; font-size:0.8em; opacity:0.7">Admin</span>
+        </div>
+        <a href="/logout" class="nav-btn"><i class="fas fa-power-off"></i> خروج</a>
+    </div>
+
+    <div class="container">
+        
+        <!-- Stats -->
+        <div class="grid-stats">
+            <div class="stat-box">
+                <div class="stat-icon"><i class="fas fa-headset"></i></div>
+                <div class="stat-info">
+                    <h4>مكالمات نشطة</h4>
+                    <h2 id="count">0</h2>
+                </div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-icon" style="color: #ff9f43"><i class="fas fa-microchip"></i></div>
+                <div class="stat-info">
+                    <h4>المعالج</h4>
+                    <h2 id="cpu">-</h2>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Chats -->
+        <div class="section-header">
+            <h3><i class="fas fa-wave-square"></i> البث المباشر</h3>
+        </div>
+        
+        <div class="chat-grid" id="chats">
+            <div style="text-align:center; padding: 40px; color: var(--text-secondary); border: 1px dashed #333; border-radius: 10px;">
+                <i class="fas fa-spinner fa-spin fa-2x"></i><br><br>جاري الاتصال بالسيرفر...
+            </div>
+        </div>
+
+        <!-- Remote Control -->
+        <div class="remote-panel">
+            <div class="section-header" style="border-color: var(--success); padding:0; border:none; margin-bottom: 25px;">
+                <h3><i class="fas fa-gamepad"></i> تحكم عن بعد</h3>
+            </div>
+            <div class="remote-inputs">
+                <input type="text" id="r-id" class="inp-field" placeholder="أيدي الجروب (-100..)">
+                <input type="text" id="r-q" class="inp-field" placeholder="اسم الأغنية أو الرابط">
+                <button onclick="remotePlay()" class="btn-main btn-play"><i class="fas fa-play"></i> تشغيل الآن</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // Animations and Logic
+        function loadStats() {
+            fetch('/api/stats').then(r => r.json()).then(d => {
+                document.getElementById('count').innerText = d.active_calls;
+                document.getElementById('cpu').innerText = d.cpu;
+                
+                const box = document.getElementById('chats');
+                
+                if(d.chats.length === 0) {
+                    box.innerHTML = `
+                        <div style="text-align:center; padding: 40px; background: var(--glass-bg); border-radius: 10px;">
+                            <i class="fas fa-sleep" style="font-size: 2rem; color: #555; margin-bottom:15px;"></i>
+                            <div style="color: var(--text-secondary);">لا توجد مكالمات نشطة حالياً</div>
+                        </div>`;
+                    return;
+                }
+                
+                let html = '';
+                d.chats.forEach(c => {
+                    html += `
+                    <div class="chat-card">
+                        <div class="chat-meta">
+                            <div class="chat-avatar"><i class="fas fa-music"></i></div>
+                            <div class="chat-details">
+                                <h4>${c.name}</h4>
+                                <span>ID: ${c.id}</span>
+                            </div>
+                        </div>
+                        <div class="controls">
+                            <button class="ctrl-btn btn-p" onclick="act(${c.id}, 'pause')" title="إيقاف مؤقت"><i class="fas fa-pause"></i></button>
+                            <button class="ctrl-btn btn-r" onclick="act(${c.id}, 'resume')" title="استئناف"><i class="fas fa-play"></i></button>
+                            <button class="ctrl-btn btn-s" onclick="act(${c.id}, 'skip')" title="تخطي"><i class="fas fa-forward"></i></button>
+                            <button class="ctrl-btn btn-m" onclick="act(${c.id}, 'mute')" title="كتم الصوت"><i class="fas fa-volume-mute"></i></button>
+                            <button class="ctrl-btn btn-k" onclick="act(${c.id}, 'stop')" title="إيقاف وطرد"><i class="fas fa-stop"></i></button>
+                        </div>
+                    </div>`;
+                });
+                
+                // Only update if content changed (prevents flickering)
+                if (box.innerHTML.length !== html.length) box.innerHTML = html;
+            });
+        }
+
+        function act(id, cmd) {
+            fetch('/api/action', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({chat_id: id, cmd: cmd})
+            }).then(r => r.json()).then(d => {
+                const Toast = Swal.mixin({
+                    toast: true, position: 'top-end', showConfirmButton: false, timer: 2000,
+                    didOpen: (toast) => { toast.addEventListener('mouseenter', Swal.stopTimer); toast.addEventListener('mouseleave', Swal.resumeTimer); }
+                });
+                
+                if(d.status === 'ok') {
+                    Toast.fire({icon: 'success', title: d.msg, background: '#1e1e1e', color: '#fff'});
+                } else {
+                    Toast.fire({icon: 'error', title: d.msg, background: '#1e1e1e', color: '#fff'});
+                }
+                setTimeout(loadStats, 500);
+            });
+        }
+
+        function remotePlay() {
+            const id = document.getElementById('r-id').value;
+            const q = document.getElementById('r-q').value;
+            
+            if(!id || !q) return Swal.fire({
+                icon: 'warning', title: 'بيانات ناقصة', text: 'يرجى كتابة أيدي الجروب واسم الأغنية',
+                background: '#1e1e1e', color: '#fff', confirmButtonColor: '#00d2ff'
+            });
+            
+            fetch('/api/remote_play', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({chat_id: id, query: q})
+            }).then(r => r.json()).then(d => {
+                Swal.fire({
+                    icon: 'success', title: 'تم الإرسال', text: 'تم إرسال الأمر للجروب بنجاح',
+                    background: '#1e1e1e', color: '#fff', confirmButtonColor: '#00d2ff', timer: 1500, showConfirmButton: false
+                });
+                document.getElementById('r-q').value = '';
+            });
+        }
+
+        setInterval(loadStats, 3000);
+        loadStats();
+    </script>
+{% endif %}
+
+</body>
+</html>
