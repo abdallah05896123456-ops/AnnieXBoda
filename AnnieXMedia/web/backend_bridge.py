@@ -604,3 +604,24 @@ async def health():
 # --------------------
 # End of file
 # --------------------
+# ==========================================
+# 🔥 CRITICAL: SERVER STARTER FOR FLY.IO 🔥
+# ==========================================
+def start_titan_server():
+    import uvicorn
+    # تشغيل السيرفر على البورت 8080 عشان Fly.io يشوفه
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8080,
+        log_level="info",
+        ws_ping_interval=20,  # مهم عشان الـ WebSockets تفضل شغالة
+        ws_ping_timeout=20
+    )
+
+# تشغيل السيرفر في Thread منفصل أول ما الملف ده يتعمل له Import
+if __name__ != "__main__":
+    from threading import Thread
+    server_thread = Thread(target=start_titan_server)
+    server_thread.daemon = True
+    server_thread.start()
