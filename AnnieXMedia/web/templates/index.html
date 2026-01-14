@@ -6,24 +6,32 @@
     <meta name="theme-color" content="#000000">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="format-detection" content="telephone=no">
     <meta name="description" content="Titan OS - Ultimate Glass Control Panel">
     
-    <title>تيتان OS - لوحة التحكم</title>
+    <title>Titan OS | لوحة التحكم</title>
     
-    <!-- مكتبة الأيقونات -->
+    <!-- مكتبة الأيقونات (Font Awesome) -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <!-- الخطوط العربية (Cairo + Tajawal) -->
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;800;900&family=Tajawal:wght@400;700&display=swap" rel="stylesheet">
     
-    <!-- ملف الاستايل (لسه هبعتهولك بعدين) -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <!-- ربط ملف الاستايل (تم التعديل ليتوافق مع Blueprint) -->
+    <link rel="stylesheet" href="{{ url_for('web.static', filename='style.css') }}">
+    
+    <style>
+        /* ستايل طوارئ عشان لو ملف الـ CSS الخارجي محملش */
+        body { margin: 0; background: #000; color: #fff; font-family: 'Cairo', sans-serif; overflow: hidden; }
+        .preloader-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 9999; display: flex; justify-content: center; align-items: center; flex-direction: column; transition: opacity 0.5s; }
+        .logo-text { font-size: 2rem; font-weight: 900; letter-spacing: 2px; }
+        .highlight { color: #007aff; }
+    </style>
 </head>
 <body>
 
     <!-- =============================================
        1. طبقات الخلفية (Background Layers)
-       عشان نعمل تأثير العمق والزجاج (Depth & Glass)
     ============================================= -->
     <div class="app-wallpaper">
         <!-- الألوان المتحركة -->
@@ -32,31 +40,31 @@
             <div class="orb orb-2"></div>
             <div class="orb orb-3"></div>
         </div>
-        <!-- طبقة تغبيش خفيفة -->
+        <!-- طبقة الزجاج -->
         <div class="glass-overlay"></div>
     </div>
 
-    <!-- شاشة الترحيب (Preloader) -->
+    <!-- شاشة التحميل (Preloader) -->
     <div id="preloader" class="preloader-screen">
         <div class="loader-content">
             <div class="logo-text">Titan <span class="highlight">OS</span></div>
             <div class="loading-bar"><div class="bar-fill"></div></div>
-            <p class="loading-text">جاري تحميل النظام...</p>
+            <p class="loading-text" id="loading-msg">جاري الاتصال بالسيرفر...</p>
         </div>
     </div>
 
     <!-- =============================================
-       2. حاوية التطبيق الرئيسية (Main Container)
+       2. إطار التطبيق (Main Frame)
     ============================================= -->
-    <div class="ios-frame">
+    <div class="ios-frame" id="main-app" style="opacity: 0; transition: opacity 0.8s;">
         
-        <!-- الشريط العلوي (Status Bar) - كلاسيكي ونظيف -->
+        <!-- الشريط العلوي (Status Bar) -->
         <header class="status-header glass-panel-sm">
             <div class="right-side">
                 <i class="fas fa-wifi signal-icon"></i>
                 <i class="fas fa-battery-three-quarters battery-icon"></i>
             </div>
-            <div class="center-time" id="clock-display">12:00</div>
+            <div class="center-time" id="clock-display">--:--</div>
             <div class="left-side">
                 <span class="carrier-name">Titan 5G</span>
                 <i class="fas fa-signal"></i>
@@ -64,127 +72,123 @@
         </header>
 
         <!-- =============================================
-           3. منطقة المحتوى المتغير (Viewport)
+           3. منطقة العرض (Viewport)
         ============================================= -->
         <main class="viewport-area">
 
-            <!-- أ) الصفحة الرئيسية (لوحة التحكم) -->
+            <!-- أ) الصفحة الرئيسية (Dashboard) -->
             <section id="view-home" class="view-screen active">
                 <div class="screen-header">
                     <div>
                         <h1 class="page-title">مرحباً، المطور 👋</h1>
-                        <p class="page-subtitle">نظرة عامة على السيرفر</p>
+                        <p class="page-subtitle">نظرة عامة على النظام</p>
                     </div>
                     <div class="user-avatar-sm">
-                        <img src="https://telegra.ph/file/5a5d09854728704253158.jpg" alt="Admin">
+                        <!-- صورة الأدمن -->
+                        <img src="https://telegra.ph/file/5a5d09854728704253158.jpg" alt="Admin" onerror="this.src='https://via.placeholder.com/50'">
                         <span class="status-dot"></span>
                     </div>
                 </div>
 
-                <!-- الويدجت (Widgets Area) -->
+                <!-- الويدجت (Widgets) -->
                 <div class="widgets-grid">
-                    <!-- ويدجت الرامات -->
+                    <!-- الرامات -->
                     <div class="glass-widget stats-widget">
                         <div class="widget-icon"><i class="fas fa-memory"></i></div>
                         <div class="widget-data">
                             <span class="stat-val" id="ram-usage">--%</span>
-                            <span class="stat-label">الذاكرة</span>
+                            <span class="stat-label">الذاكرة العشوائية</span>
                         </div>
                         <div class="mini-chart" id="ram-chart"></div>
                     </div>
-                    <!-- ويدجت المعالج -->
+                    <!-- المعالج -->
                     <div class="glass-widget stats-widget">
                         <div class="widget-icon color-warn"><i class="fas fa-microchip"></i></div>
                         <div class="widget-data">
                             <span class="stat-val" id="cpu-usage">--%</span>
-                            <span class="stat-label">المعالج</span>
+                            <span class="stat-label">وحدة المعالجة</span>
                         </div>
                     </div>
                 </div>
 
-                <!-- قائمة التشغيل النشط (The Active List) -->
+                <!-- قائمة التشغيل (Active Streams) -->
                 <div class="section-title">
-                    <h3>البث المباشر النشط</h3>
+                    <h3>البث النشط</h3>
                     <span class="badge-count" id="active-count">0</span>
                 </div>
 
                 <div id="active-streams-container" class="scroll-content">
-                    <!-- (سيتم حقن الكروت هنا بواسطة JS) -->
-                    <!-- مثال للكارت عشان الاستايل -->
-                    <!-- 
-                    <div class="glass-row-card">
-                        <div class="card-art">
-                            <img src="..." class="art-img">
-                            <img src="..." class="user-bubble">
-                        </div>
-                        <div class="card-info">
-                            <h4>اسم الأغنية</h4>
-                            <p>اسم المجموعة</p>
-                        </div>
-                        <div class="card-eq">
-                            <span></span><span></span><span></span>
-                        </div>
-                    </div> 
-                    -->
                     <div class="empty-placeholder">
-                        <i class="fas fa-music"></i>
+                        <div class="icon-circle"><i class="fas fa-music"></i></div>
                         <p>لا يوجد تشغيل حالياً</p>
+                        <small>قم بتشغيل أغنية في المكالمة لتظهر هنا</small>
                     </div>
                 </div>
             </section>
 
-            <!-- ب) صفحة الخزنة (Vault) -->
+            <!-- ب) الخزنة (Vault) -->
             <section id="view-vault" class="view-screen">
                 <div class="screen-header">
-                    <h1 class="page-title">الخزنة</h1>
+                    <h1 class="page-title">الخزنة السحابية</h1>
                     <button class="glass-btn-icon" onclick="document.getElementById('file-upload').click()">
                         <i class="fas fa-cloud-upload-alt"></i>
                     </button>
-                    <input type="file" id="file-upload" hidden>
+                    <!-- Input مخفي لرفع الملفات -->
+                    <input type="file" id="file-upload" hidden onchange="Vault.uploadFile(this)">
                 </div>
 
                 <div class="vault-stats glass-panel">
                     <div class="v-stat">
                         <i class="fas fa-hdd"></i>
-                        <span id="disk-space">-- GB</span>
+                        <span id="disk-space">جاري الحساب...</span>
                     </div>
                     <div class="v-divider"></div>
                     <div class="v-stat">
                         <i class="fas fa-file-audio"></i>
-                        <span id="files-total">0 ملف</span>
+                        <span id="files-total">-- ملف</span>
                     </div>
                 </div>
 
                 <div id="vault-files-list" class="files-grid scroll-content">
-                    <!-- سيتم عرض الملفات هنا -->
+                    <!-- سيتم ملء الملفات هنا تلقائياً -->
                 </div>
             </section>
 
-            <!-- ج) صفحة الطرفية (Terminal) -->
+            <!-- ج) الطرفية (Terminal) -->
             <section id="view-terminal" class="view-screen">
                 <div class="screen-header">
-                    <h1 class="page-title">الطرفية (Root)</h1>
-                    <div class="terminal-indicator online"></div>
+                    <h1 class="page-title">Root Terminal</h1>
+                    <div class="terminal-indicator online" title="Connected"></div>
                 </div>
                 
                 <div class="terminal-window glass-panel-dark">
                     <div class="term-output" id="term-output-area">
-                        <div class="term-line sys">Titan OS Kernel v2.0 Initialized...</div>
-                        <div class="term-line sys">Waiting for commands...</div>
+                        <div class="term-line sys">Titan OS Kernel v3.0 Initialized...</div>
+                        <div class="term-line sys">Connected to AnnieX Server [OK]</div>
+                        <div class="term-line sys">Type 'help' for commands.</div>
                     </div>
                     <div class="term-input-wrapper">
                         <span class="prompt-char">➜</span>
-                        <input type="text" id="term-cmd-input" placeholder="أدخل الأمر هنا..." autocomplete="off">
-                        <button id="send-cmd-btn"><i class="fas fa-paper-plane"></i></button>
+                        <input type="text" id="term-cmd-input" placeholder="أدخل الأمر..." autocomplete="off">
+                        <button id="send-cmd-btn" onclick="Terminal.sendCommand()"><i class="fas fa-paper-plane"></i></button>
                     </div>
+                </div>
+            </section>
+            
+            <!-- د) الإعدادات (Settings - Placeholder) -->
+            <section id="view-settings" class="view-screen">
+                 <div class="screen-header">
+                    <h1 class="page-title">الإعدادات</h1>
+                </div>
+                <div class="glass-panel">
+                    <p style="text-align:center; padding: 20px; color: #aaa;">قريباً...</p>
                 </div>
             </section>
 
         </main>
 
         <!-- =============================================
-           4. الدوك السفلي العائم (Floating Dock)
-           زي الايفون بالظبط
+           4. الدوك السفلي (Dock Navigation)
         ============================================= -->
         <nav class="dock-wrapper">
             <div class="glass-dock">
@@ -208,40 +212,34 @@
         </nav>
 
         <!-- =============================================
-           5. نافذة المشغل المنبثقة (The Glass Player Modal)
-           دي بتطلع من تحت لما تضغط على جروب
+           5. نافذة المشغل (Player Modal)
         ============================================= -->
         <div id="player-modal" class="modal-overlay">
-            <!-- خلفية ضبابية -->
             <div class="modal-backdrop" onclick="Player.close()"></div>
             
-            <!-- جسم المودال -->
             <div class="modal-card glass-panel-heavy">
                 <div class="modal-handle-bar"></div>
                 
                 <div class="modal-header-row">
                     <button class="close-btn" onclick="Player.close()"><i class="fas fa-chevron-down"></i></button>
-                    <span class="playing-status">جاري التشغيل الآن</span>
+                    <span class="playing-status">NOW PLAYING</span>
                     <button class="options-btn"><i class="fas fa-ellipsis-h"></i></button>
                 </div>
 
-                <!-- الألبوم والصور -->
                 <div class="album-art-area">
                     <div class="art-glow"></div>
-                    <img id="p-cover" src="" class="main-cover" alt="Cover">
+                    <img id="p-cover" src="" class="main-cover" alt="Cover" onerror="this.style.display='none'">
                     <div class="requester-badge">
                         <img id="p-user-img" src="" alt="User">
                         <i class="fas fa-microphone icon-tiny"></i>
                     </div>
                 </div>
 
-                <!-- المعلومات -->
                 <div class="track-details">
-                    <h2 id="p-track-title" class="scrolling-text">عنوان الأغنية</h2>
-                    <p id="p-group-name">اسم المجموعة</p>
+                    <h2 id="p-track-title" class="scrolling-text">--</h2>
+                    <p id="p-group-name">--</p>
                 </div>
 
-                <!-- شريط التقدم -->
                 <div class="progress-area">
                     <div class="progress-bar">
                         <div class="progress-fill" id="p-progress-fill" style="width: 0%"></div>
@@ -253,7 +251,6 @@
                     </div>
                 </div>
 
-                <!-- أزرار التحكم الرئيسية -->
                 <div class="controls-row main">
                     <button class="ctrl-btn sm" onclick="Player.action('ban')"><i class="fas fa-ban"></i></button>
                     <button class="ctrl-btn md" onclick="Player.action('skip')"><i class="fas fa-step-forward"></i></button>
@@ -265,28 +262,35 @@
                     <button class="ctrl-btn md" onclick="Player.action('stop')"><i class="fas fa-stop"></i></button>
                     <button class="ctrl-btn sm" onclick="Player.action('focus')"><i class="fas fa-rocket"></i></button>
                 </div>
-
-                <!-- التحكم في الصوت -->
-                <div class="volume-row">
-                    <i class="fas fa-volume-down"></i>
-                    <div class="vol-slider">
-                        <div class="vol-fill" style="width: 80%"></div>
-                    </div>
-                    <i class="fas fa-volume-up"></i>
-                </div>
             </div>
         </div>
 
         <!-- =============================================
-           6. الإشعارات العائمة (Toast Notifications)
+           6. الإشعارات (Toast Notifications)
         ============================================= -->
-        <div id="toast-area" class="toast-wrapper">
-            <!-- الإشعارات بتظهر هنا -->
-        </div>
+        <div id="toast-area" class="toast-wrapper"></div>
 
-    </div> <!-- نهاية الـ ios-frame -->
+    </div>
 
-    <!-- ملف الجافا سكريبت (لسه هبعتهولك) -->
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <!-- =============================================
+       7. الجافا سكريبت (Scripts)
+    ============================================= -->
+    <!-- ربط ملف السكريبت (تم التعديل ليتوافق مع Blueprint) -->
+    <script src="{{ url_for('web.static', filename='script.js') }}"></script>
+    
+    <script>
+        // كود طوارئ لإخفاء شاشة التحميل في حالة تأخر تحميل السكريبت الأساسي
+        window.addEventListener('load', function() {
+            setTimeout(() => {
+                const preloader = document.getElementById('preloader');
+                const app = document.getElementById('main-app');
+                if(preloader) {
+                    preloader.style.opacity = '0';
+                    setTimeout(() => preloader.style.display = 'none', 500);
+                }
+                if(app) app.style.opacity = '1';
+            }, 1500); // إزالة التحميل بعد 1.5 ثانية كحد أقصى
+        });
+    </script>
 </body>
 </html>
