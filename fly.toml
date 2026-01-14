@@ -1,9 +1,27 @@
 app = "anniexboda-ongrzg"
 primary_region = "iad"
 
+[build]
+  dockerfile = "Dockerfile"
+
+# تعريف متغير البورت ليتوافق مع كود بايثون
+[env]
+  PORT = "8080"
+
+# 🌐 إعدادات الشبكة (مهمة جداً لفتح الداشبورد)
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false   # ⛔️ منع السيرفر من النوم عشان الأغاني متفصلش
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+# أمر التشغيل
 [processes]
   app = "python3 -m AnnieXMedia"
 
+# مواصفات السيرفر
 [[vm]]
   cpu_kind = "shared"
   cpus = 1
