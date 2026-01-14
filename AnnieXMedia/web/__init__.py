@@ -1,72 +1,71 @@
-import asyncio
-from flask import Blueprint, render_template, jsonify, request
-# استيراد كائنات البوت (تأكد من المسارات حسب مشروعك)
-from AnnieXMedia import app as bot_app
-from AnnieXMedia.core.call import StreamController
+# ==============================
+# 4. API: نظام الخزنة (The Vault)
+# ==============================
 
-# تعريف البلوبرينت
-web_bp = Blueprint('web', __name__, template_folder='templates', static_folder='static')
+DOWNLOADS_DIR = "downloads"  # اسم الفولدر اللي هنعرض ملفاته
 
-# ==============================
-# 1. الصفحة الرئيسية
-# ==============================
-@web_bp.route('/')
-def home():
-    """تحميل واجهة الـ Dashboard"""
-    return render_template('index.html')
-
-# ==============================
-# 2. API: حالة المشغل (Status)
-# ==============================
-@web_bp.route('/api/status')
-def get_status():
-    """إرسال بيانات الأغنية الحالية للواجهة"""
-    # حالياً بنبعت بيانات افتراضية لحد ما نربط متغيرات البوت المباشرة
-    # في الخطوات الجاية هنخلي القيم دي تيجي من active_calls
-    return jsonify({
-        "status": "playing",
-        "track": "AnnieX System Active", 
-        "artist": "Waiting for commands...",
-        "cover": "https://telegra.ph/file/8b3e21894d3062325c04b.jpg",
-        "position": 0,
-        "duration": 100,
-        "listeners": 0,
-        "ping": "Online"
-    })
-
-# ==============================
-# 3. API: التحكم (Controls)
-# ==============================
-@web_bp.route('/api/control', methods=['POST'])
-def control_player():
-    """استقبال الأوامر من أزرار الموقع"""
+def get_file_info(path):
+    """دالة مساعدة بتجيب حجم الملف وتاريخه"""
     try:
-        data = request.json
-        action = data.get('action')
-        chat_id = data.get('chat_id') 
+        stat = os.stat(path)
+        # تحويل الحجم لـ MB
+        size_mb = stat.st_size / (1024 * 1024)
+        # تحويل التاريخ لصيغة مقروءة
+        mod_time = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M')
+        return size_mb, mod_time
+    except:
+        return 0, "Unknown"
 
-        # لو مفيش شات ايدي مبعوت، ممكن نستخدم واحد افتراضي أو نرجع خطأ
-        # حالياً للتجربة:
-        if not chat_id:
-            return jsonify({"success": False, "error": "Chat ID Missing"})
-
-        # الحصول على الـ Event Loop الخاص بالبوت
-        loop = asyncio.get_event_loop()
-
-        # تنفيذ الأمر بناءً على الزر المضغوط
-        if action == 'pause':
-            # تشغيل دالة البوت في الخلفية
-            loop.create_task(StreamController.pause_stream(chat_id))
+@web_bp.route('/api/vault/list')
+def list_files():
+    """جلب قائمة الملفات الموجودة"""
+    if not os.path.exists(DOWNLOADS_DIR):
+        os.makedirs(DOWNLOADS_DIR) # لو الفولدر مش موجود نعمله
+        
+    files_data = []
+    
+    # قراءة الملفات
+    for filename in os.listdir(DOWNLOADS_DIR):
+        # بنعرض بس ملفات الصوت والفيديو
+        if filename.lower().endswith(('.mp3', '.m4a', '.flac', '.mp4', '.mkv', '.webm')):
+            path = os.path.join(DOWNLOADS_DIR, filename)
+            size, date = get_file_info(path)
             
-        elif action == 'resume':
-            loop.create_task(StreamController.resume_stream(chat_id))
+            files_data.append({
+                "name": filename,
+                "type": "video" if filename.endswith(('.mp4', '.mkv')) else "audio",
+                "size": f"{size:.1f} MB",
+                "date": date,
+                "path": path
+            })
+    
+    return jsonify({"files": files_data})
+
+@web_bp.route('/api/vault/action', methods=['POST'])
+def vault_action():
+    """تشغيل أو حذف ملف"""
+    data = request.json
+    action = data.get('action')
+    filename = data.get('filename')
+    chat_id = data.get('chat_id')
+    
+    path = os.path.join(DOWNLOADS_DIR, filename)
+    
+    if not os.path.exists(path):
+        return jsonify({"success": False, "error": "File not found"})
+
+    try:
+        if action == 'play':
+            # أمر التشغيل المباشر للملف المحلي
+            loop = asyncio.get_event_loop()
+            loop.create_task(StreamController.stream_call(path)) # تأكد إن دي دالة التشغيل عندك
+            return jsonify({"success": True, "message": "Playing now..."})
             
-        elif action == 'skip':
-            loop.create_task(StreamController.skip_stream(chat_id))
-
-        print(f"✅ Web Control: {action} -> {chat_id}")
-        return jsonify({"success": True, "action": action})
-
+        elif action == 'delete':
+            os.remove(path)
+            return jsonify({"success": True, "message": "Deleted successfully"})
+            
     except Exception as e:
-        print(f"❌ Web Error: {e}")
         return jsonify({"success": False, "error": str(e)})
+        
+    return jsonify({"success": False})
