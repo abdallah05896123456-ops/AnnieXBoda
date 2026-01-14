@@ -1,14 +1,13 @@
 # Authored By Certified Coders © 2025
 import sys
 import os
-import asyncio
-import importlib
-import threading
-import logging
 
+# السطر ده بيجبر البوت يستخدم مجلد pytgcalls المحلي بدل اللي نازل من النت
 sys.path.insert(0, os.getcwd())
 
-from flask import Flask
+import asyncio
+import importlib
+
 from pyrogram import idle
 from pytgcalls.exceptions import NoActiveGroupCall
 
@@ -21,49 +20,25 @@ from AnnieXMedia.utils.database import get_banned_users, get_gbanned
 from AnnieXMedia.utils.cookie_handler import fetch_and_store_cookies
 from config import BANNED_USERS
 
-# ---------------------------------------------------
-# ⚠️ التعديل هنا: الاستيراد من داخل AnnieXMedia
-# ---------------------------------------------------
-try:
-    from AnnieXMedia.web import web_bp
-except ImportError:
-    # محاولة بديلة لو حصلت لخبطة في المسارات
-    from web import web_bp
-
-# ==========================================
-# 🌐 إعداد الفلاسك (تعديل المسارات)
-# ==========================================
-# لاحظ هنا ضفنا AnnieXMedia قبل web
-flask_app = Flask(__name__, 
-                  template_folder='AnnieXMedia/web/templates', 
-                  static_folder='AnnieXMedia/web/static')
-
-flask_app.secret_key = "Titan_Glass_OS_Key"
-flask_app.register_blueprint(web_bp)
-
-def run_web_server():
-    log = logging.getLogger('werkzeug')
-    log.setLevel(logging.ERROR)
-    
-    _port = int(os.environ.get("PORT", 8080))
-    print(f">> [TITAN OS] RUNNING INSIDE ANNIEX ON PORT {_port} 💎")
-    
-    flask_app.run(host="0.0.0.0", port=_port, debug=False, use_reloader=False)
-
-# ==========================================
-# 🤖 تشغيل البوت
-# ==========================================
 
 async def init():
-    if (not config.STRING1 and not config.STRING2 and not config.STRING3 and not config.STRING4 and not config.STRING5):
-        LOGGER(__name__).error("Session String Missing!")
+    if (
+        not config.STRING1
+        and not config.STRING2
+        and not config.STRING3
+        and not config.STRING4
+        and not config.STRING5
+    ):
+        LOGGER(__name__).error("ᴀssɪsᴛᴀɴᴛ sᴇssɪᴏɴ ɴᴏᴛ ғɪʟʟᴇᴅ, ᴘʟᴇᴀsᴇ ғɪʟʟ ᴀ ᴘʏʀᴏɢʀᴀᴍ sᴇssɪᴏɴ...")
         exit()
 
+    # ✅ Try to fetch cookies at startup
     try:
         await fetch_and_store_cookies()
-        LOGGER("AnnieXMedia").info("Cookies Loaded ✅")
-    except:
-        pass
+        LOGGER("AnnieXMedia").info("ʏᴏᴜᴛᴜʙᴇ ᴄᴏᴏᴋɪᴇs ʟᴏᴀᴅᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ ✅")
+    except Exception as e:
+        LOGGER("AnnieXMedia").warning(f"⚠️ᴄᴏᴏᴋɪᴇ ᴇʀʀᴏʀ: {e}")
+
 
     await sudo()
 
@@ -81,32 +56,30 @@ async def init():
     for all_module in ALL_MODULES:
         importlib.import_module("AnnieXMedia.plugins" + all_module)
 
-    LOGGER("AnnieXMedia.plugins").info("Modules Loaded...")
+    LOGGER("AnnieXMedia.plugins").info("ᴀɴɴɪᴇ's ᴍᴏᴅᴜʟᴇs ʟᴏᴀᴅᴇᴅ...")
 
     await userbot.start()
     await StreamController.start()
 
     try:
-        await StreamController.stream_call("AnnieXMedia/assets/test.mp4")
+        await StreamController.stream_call("http://docs.evostream.com/sample_content/assets/sintel1m720p.mp4")
     except NoActiveGroupCall:
-        LOGGER("AnnieXMedia").error("Please turn on Voice Chat in Logger Group!")
+        LOGGER("AnnieXMedia").error(
+            "ᴘʟᴇᴀsᴇ ᴛᴜʀɴ ᴏɴ ᴛʜᴇ ᴠᴏɪᴄᴇ ᴄʜᴀᴛ ᴏғ ʏᴏᴜʀ ʟᴏɢ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ.\n\nᴀɴɴɪᴇ ʙᴏᴛ sᴛᴏᴘᴘᴇᴅ..."
+        )
         exit()
     except:
         pass
 
     await StreamController.decorators()
-    LOGGER("AnnieXMedia").info("💎 TITAN OS ONLINE 💎")
-    
+    LOGGER("AnnieXMedia").info(
+        "\x41\x6e\x6e\x69\x65\x20\x4d\x75\x73\x69\x63\x20\x52\x6f\x62\x6f\x74\x20\x53\x74\x61\x72\x74\x65\x64\x20\x53\x75\x63\x63\x65\x73\x73\x66\x75\x6c\x6c\x79\x2e\x2e\x2e"
+    )
     await idle()
     await app.stop()
     await userbot.stop()
+    LOGGER("AnnieXMedia").info("sᴛᴏᴘᴘɪɴɢ ᴀɴɴɪᴇ ᴍᴜsɪᴄ ʙᴏᴛ ...")
+
 
 if __name__ == "__main__":
-    # تشغيل الويب
-    web_thread = threading.Thread(target=run_web_server)
-    web_thread.daemon = True
-    web_thread.start()
-
-    # تشغيل البوت
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(init())
+    asyncio.get_event_loop().run_until_complete(init())
