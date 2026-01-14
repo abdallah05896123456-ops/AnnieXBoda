@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Titan Glass | Ultimate Interactive Player</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-bg: rgba(18, 18, 23, 0.6);
+            --neon-accent: #06b6d4;
+            --neon-secondary: #7c3aed;
+        }
+
+        body {
+            background-color: #050505;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(124, 58, 237, 0.15) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(6, 182, 212, 0.15) 0%, transparent 40%);
+            color: #fff;
+            font-family: 'Outfit', sans-serif;
+            overflow: hidden;
+            margin: 0;
+            height: 100vh;
+        }
+
+        /* Titan Glass Effect */
+        .titan-glass {
+            background: var(--glass-bg);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid var(--glass-border);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
+
+        /* Range Slider Styling */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 14px;
+            width: 14px;
+            border-radius: 50%;
+            background: #fff;
+            cursor: pointer;
+            margin-top: -5px;
+            box-shadow: 0 0 10px rgba(255,255,255,0.5);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: rgba(255,255,255,0.1);
+            border-radius: 2px;
+        }
+
+        /* Animations */
+        @keyframes pulse-slow {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 0.6; }
+        }
+        .animate-pulse-slow { animation: pulse-slow 4s infinite; }
+        
+        .reflection-mask {
+            mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
+            -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="root" class="w-full h-full"></div>
+
+    <script type="text/babel">
+
+        /* -------------------------------------------------------------------------- */
+        /* IMPORTS & CONSTANTS                              */
+        /* -------------------------------------------------------------------------- */
+        
+        const { useState, useEffect, useRef, useMemo, useCallback, createContext, useContext } = React;
+        const { motion, AnimatePresence } = window.Motion;
+        const { 
+            Play, Pause, SkipForward, SkipBack, Volume2, Sliders, Music, 
+            UserMinus, UserPlus, Target, Filter, Search, ChevronDown, 
+            ChevronUp, List, Zap, Cpu, Database, Clock, Wifi, Activity,
+            MoreHorizontal, Mic2, Headphones, Radio
+        } = lucide.icons;
+
+        /* -------------------------------------------------------------------------- */
+        /* MOCK API LAYER (Network Bridge)                      */
+        /* -------------------------------------------------------------------------- */
+        
+        // This ensures the player works even without the Python backend
+        const MockData = {
+            track: {
+                id: "mock_1",
+                title: "Interstellar - Cornfield Chase",
+                artist: "Hans Zimmer",
+                art: "https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=1000&auto=format&fit=crop",
+                duration: 248,
+                // Using a real URL for demo purposes (copyright free or sample)
+                stream_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", 
+                dominant_color: "#7c3aed"
+            },
+            listeners: Array.from({length: 12}).map((_,i) => ({
+                id: `user_${i}`, name: `Agent ${i+100}`, username: `@titan_unit_${i}`
+            })),
+            lyrics: [
+                { t: 0, text: "Wait..." },
+                { t: 5, text: "Initializing System..." },
+                { t: 10, text: "(Instrumental Build Up)" },
+                { t: 25, text: "Systems Green." },
+                { t: 40, text: "Engaging Thrusters." },
+                { t: 60, text: "Atmospheric Entry Detected." }
+            ]
+        };
+
+        const Bridge = {
+            async post(path, body) {
+                // Simulate network latency
+                await new Promise(r => setTimeout(r, 200)); 
+                console.log(`[Bridge] POST ${path}`, body);
+                
+                // Determine if we should fail (simulate offline)
+                // For this demo, we assume success to keep it interactive
+                if(Math.random() > 0.99) throw new Error("Network Glitch");
+                
+                return { success: true, ...body };
+            },
+            
+            async get(path) {
+                await new Promise(r => setTimeout(r, 200));
+                console.log(`[Bridge] GET ${path}`);
+                
+                if (path.includes('lyrics')) return { lines: MockData.lyrics };
+                if (path.includes('status')) return { current: MockData.track };
+                return {};
+            }
+        };
+
+        /* -------------------------------------------------------------------------- */
+        /* AUDIO ENGINE (Web Audio API)                       */
+        /*  - Implemented Below              */
+        /* -------------------------------------------------------------------------- */
+        
+        class TitanAudioEngine {
+            constructor() {
+                this.ctx = null;
+                this.source = null;
+                this.analyser = null;
+                this.gainNode = null;
+                this.bassNode = null;
+                this.trebleNode = null;
+                this.pannerNode = null;
+                this.isInitialized = false;
+                this.pannerAngle = 0;
+                this.pannerInterval = null;
+            }
+
+            init(audioElement) {
+                if (this.isInitialized) return;
+                
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                this.ctx = new AudioContext();
+                
+                this.source = this.ctx.createMediaElementSource(audioElement);
+                this.analyser = this.ctx.createAnalyser();
+                this.analyser.fftSize = 2048;
+                
+                // EQ Nodes
+                this.bassNode = this.ctx.createBiquadFilter();
+                this.bassNode.type = 'lowshelf';
+                this.bassNode.frequency.value = 200; // Bass freq
+                
+                this.trebleNode = this.ctx.createBiquadFilter();
+                this.trebleNode.type = 'highshelf';
+                this.trebleNode.frequency.value = 3000; // Treble freq
+
+                this.midNode = this.ctx.createBiquadFilter();
+                this.midNode.type = 'peaking';
+                this.midNode.frequency.value = 1000;
+
+                // 8D / Panner
+                this.pannerNode = this.ctx.createStereoPanner();
+                
+                this.gainNode = this.ctx.createGain();
+
+                // Connect Graph: Source -> Bass -> Mid -> Treble -> Panner -> Analyser -> Destination
+                this.source.connect(this.bassNode);
+                this.bassNode.connect(this.midNode);
+                this.midNode.connect(this.trebleNode);
+                this.trebleNode.connect(this.pannerNode);
+                this.pannerNode.connect(this.analyser);
+                this.analyser.connect(this.gainNode);
+                this.gainNode.connect(this.ctx.destination);
+                
+                this.isInitialized = true;
+                console.log("[Audio Engine] Graph built successfully.");
+            }
+
+            setEQ(bass, mid, treble) {
+                if(!this.isInitialized) return;
+                // Values are dB (-12 to 12)
+                this.bassNode.gain.setValueAtTime(bass, this.ctx.currentTime);
+                this.midNode.gain.setValueAtTime(mid, this.ctx.currentTime);
+                this.trebleNode.gain.setValueAtTime(treble, this.ctx.currentTime);
+            }
+
+            toggle8D(enabled) {
+                if(!this.isInitialized) return;
+                if(enabled) {
+                    // Start rotating sound
+                    if(this.pannerInterval) clearInterval(this.pannerInterval);
+                    this.pannerInterval = setInterval(() => {
+                        this.pannerAngle += 0.02;
+                        this.pannerNode.pan.value = Math.sin(this.pannerAngle);
+                    }, 16);
+                } else {
+                    if(this.pannerInterval) clearInterval(this.pannerInterval);
+                    this.pannerNode.pan.setValueAtTime(0, this.ctx.currentTime);
+                }
+            }
+
+            resume() {
+                if(this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+            }
+        }
+
+        const audioEngine = new TitanAudioEngine();
+
+        /* -------------------------------------------------------------------------- */
+        /* REACT COMPONENTS                                 */
+        /* -------------------------------------------------------------------------- */
+
+        // -- Toast Notification Component --
+        function ToastContainer({ toasts }) {
+            return (
+                <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
+                    <AnimatePresence>
+                        {toasts.map(toast => (
+                            <motion.div
+                                key={toast.id}
+                                initial={{ opacity: 0, x: 50 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, scale: 0.9 }}
+                                className={`px-4 py-3 rounded-lg border border-white/10 shadow-xl backdrop-blur-xl flex items-center gap-3 ${
+                                    toast.type === 'error' ? 'bg-red-500/20 text-red-200' : 'bg-emerald-500/20 text-emerald-200'
+                                }`}
+                            >
+                                <Zap size={16} />
+                                <span className="text-sm font-medium">{toast.message}</span>
+                            </motion.div>
+                        ))}
+                    </AnimatePresence>
+                </div>
+            );
+        }
+
+        // -- Visualizer Canvas --
+        function Visualizer({ audioRef, mode, colors }) {
+            const canvasRef = useRef(null);
+            const rafId = useRef(null);
+
+            const draw = useCallback(() => {
+                if (!canvasRef.current || !audioEngine.analyser) return;
+                
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+                const analyser = audioEngine.analyser;
+                const bufferLength = analyser.frequencyBinCount;
+                const dataArray = new Uint8Array(bufferLength);
+                
+                analyser.getByteFrequencyData(dataArray);
+
+                // Resize logic
+                const w = canvas.parentElement.clientWidth;
+                const h = canvas.parentElement.clientHeight;
+                canvas.width = w;
+                canvas.height = h;
+
+                ctx.clearRect(0, 0, w, h);
+
+                if (mode === 'neon') {
+                    ctx.lineWidth = 3;
+                    ctx.strokeStyle = colors[0];
+                    ctx.beginPath();
+                    const sliceWidth = w * 1.0 / bufferLength;
+                    let x = 0;
+                    for(let i = 0; i < bufferLength; i++) {
+                        const v = dataArray[i] / 128.0;
+                        const y = v * h / 2;
+                        if(i === 0) ctx.moveTo(x, h - y); // Flip for better visual
+                        else ctx.lineTo(x, h - y);
+                        x += sliceWidth;
+                    }
+                    ctx.stroke();
+                    // Glow effect
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = colors[0];
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+
+                } else if (mode === 'bars') {
+                    const barWidth = (w / bufferLength) * 2.5;
+                    let barHeight;
+                    let x = 0;
+                    for(let i = 0; i < bufferLength; i++) {
+                        barHeight = dataArray[i] / 1.5;
+                        const grd = ctx.createLinearGradient(0, h - barHeight, 0, h);
+                        grd.addColorStop(0, colors[1]);
+                        grd.addColorStop(1, "transparent");
+                        ctx.fillStyle = grd;
+                        ctx.fillRect(x, h - barHeight, barWidth, barHeight);
+                        x += barWidth + 1;
+                    }
+                } else if (mode === 'circular') {
+                    const cx = w/2, cy = h/2, radius = 50;
+                    for(let i = 0; i < bufferLength; i += 5) {
+                        const barHeight = dataArray[i] / 2;
+                        const angle = (i * 360) / bufferLength;
+                        const rad = angle * (Math.PI / 180);
+                        
+                        const xStart = cx + Math.cos(rad) * radius;
+                        const yStart = cy + Math.sin(rad) * radius;
+                        const xEnd = cx + Math.cos(rad) * (radius + barHeight);
+                        const yEnd = cy + Math.sin(rad) * (radius + barHeight);
+
+                        ctx.strokeStyle = `rgba(255, 255, 255, ${dataArray[i]/255})`;
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.moveTo(xStart, yStart);
+                        ctx.lineTo(xEnd, yEnd);
+                        ctx.stroke();
+                    }
+                }
+
+                rafId.current = requestAnimationFrame(draw);
+            }, [mode, colors]);
+
+            useEffect(() => {
+                rafId.current = requestAnimationFrame(draw);
+                return () => cancelAnimationFrame(rafId.current);
+            }, [draw]);
+
+            return <canvas ref={canvasRef} className="w-full h-full block" />;
+        }
+
+        /* -------------------------------------------------------------------------- */
+        /* MAIN APPLICATION                                 */
+        /* -------------------------------------------------------------------------- */
+
+        function App() {
+            // State
+            const audioRef = useRef(null);
+            const [playing, setPlaying] = useState(false);
+            const [track, setTrack] = useState(MockData.track);
+            const [toasts, setToasts] = useState([]);
+            const [currentTime, setCurrentTime] = useState(0);
+            const [duration, setDuration] = useState(0);
+            const [visMode, setVisMode] = useState('neon');
+            const [eq, setEq] = useState({ bass: 0, mid: 0, treble: 0 });
+            const [is8D, setIs8D] = useState(false);
+            const [listeners, setListeners] = useState(MockData.listeners);
+            const [searchQuery, setSearchQuery] = useState("");
+            const [activeTab, setActiveTab] = useState("lyrics"); // lyrics | dsp | stats
+            const [lyrics, setLyrics] = useState(MockData.lyrics);
+            const [activeLyricIdx, setActiveLyricIdx] = useState(0);
+
+            // Helpers
+            const addToast = (msg, type='info') => {
+                const id = Date.now();
+                setToasts(prev => [...prev, { id, message: msg, type }]);
+                setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
+            };
+
+            // Audio Init
+            useEffect(() => {
+                const aud = audioRef.current;
+                if(aud) {
+                    aud.volume = 0.5;
+                    const onPlay = () => {
+                        audioEngine.init(aud);
+                        audioEngine.resume();
+                        setPlaying(true);
+                    };
+                    const onPause = () => setPlaying(false);
+                    const onTime = () => setCurrentTime(aud.currentTime);
+                    const onMeta = () => setDuration(aud.duration);
+                    
+                    aud.addEventListener('play', onPlay);
+                    aud.addEventListener('pause', onPause);
+                    aud.addEventListener('timeupdate', onTime);
+                    aud.addEventListener('loadedmetadata', onMeta);
+                    
+                    return () => {
+                        aud.removeEventListener('play', onPlay);
+                        aud.removeEventListener('pause', onPause);
+                        aud.removeEventListener('timeupdate', onTime);
+                        aud.removeEventListener('loadedmetadata', onMeta);
+                    };
+                }
+            }, []);
+
+            // EQ & 8D Effect Hook
+            useEffect(() => {
+                audioEngine.setEQ(eq.bass, eq.mid, eq.treble);
+            }, [eq]);
+
+            useEffect(() => {
+                audioEngine.toggle8D(is8D);
+                if(is8D) addToast("8D Spatial Audio Enabled", "success");
+            }, [is8D]);
+
+            // Sync Lyrics
+            useEffect(() => {
+                const idx = lyrics.findIndex(l => l.t > currentTime) - 1;
+                setActiveLyricIdx(idx >= 0 ? idx : 0);
+            }, [currentTime, lyrics]);
+
+            // Handlers
+            const togglePlay = () => {
+                if(!audioRef.current) return;
+                if(playing) {
+                    audioRef.current.pause();
+                    Bridge.post('/bridge/pause', { id: track.id });
+                } else {
+                    audioRef.current.play().catch(e => console.log("User interaction needed"));
+                    Bridge.post('/bridge/play', { id: track.id });
+                }
+            };
+
+            const handleSeek = (e) => {
+                const time = (e.target.value / 100) * duration;
+                audioRef.current.currentTime = time;
+                setCurrentTime(time);
+            };
+
+            const handleBan = (id) => {
+                setListeners(prev => prev.filter(u => u.id !== id));
+                addToast("User removed from session", "error");
+                Bridge.post('/user/action', { type: 'ban', target: id });
+            };
+
+            // Filtered Listeners
+            const filteredListeners = listeners.filter(l => 
+                l.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                l.username.toLowerCase().includes(searchQuery.toLowerCase())
+            );
+
+            /* ---------------- RENDERING ---------------- */
+            return (
+                <div className="flex items-center justify-center w-full h-full p-6 relative">
+                    <ToastContainer toasts={toasts} />
+                    
+                    {/* Hidden Audio Element */}
+                    <audio ref={audioRef} src={track.stream_url} crossOrigin="anonymous" loop />
+
+                    {/* Main Interface Grid */}
+                    <div className="w-full max-w-7xl h-[85vh] grid grid-cols-12 gap-6">
+                        
+                        {/* LEFT COLUMN: Track Info & Listeners */}
+                        <div className="col-span-12 lg:col-span-4 flex flex-col gap-6 h-full">
+                            {/* Album Art Card */}
+                            <motion.div 
+                                initial={{ y: 20, opacity: 0 }}
+                                animate={{ y: 0, opacity: 1 }}
+                                className="titan-glass rounded-3xl p-4 flex flex-col items-center relative overflow-hidden group"
+                            >
+                                <div className="relative w-full aspect-square rounded-2xl overflow-hidden shadow-2xl z-10">
+                                    <img src={track.art} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
+                                    <div className="absolute bottom-4 left-4">
+                                        <h2 className="text-2xl font-bold text-white drop-shadow-md">{track.title}</h2>
+                                        <p className="text-white/70 font-medium">{track.artist}</p>
+                                    </div>
+                                    <div className="absolute top-4 right-4 bg-black/40 backdrop-blur-md px-2 py-1 rounded-full text-xs font-mono border border-white/10">
+                                        LIVE
+                                    </div>
+                                </div>
+                                
+                                {/* Reflection */}
+                                <div className="w-[90%] h-12 mt-2 opacity-30 reflection-mask transform scale-y-[-1]">
+                                     <img src={track.art} className="w-full h-full object-cover blur-sm" />
+                                </div>
+                            </motion.div>
+
+                            {/* Listeners Panel */}
+                            <motion.div 
+                                initial={{ y: 20, opacity: 0 }}
+                                animate={{ y: 0, opacity: 1 }}
+                                transition={{ delay: 0.1 }}
+                                className="titan-glass rounded-3xl flex-1 flex flex-col overflow-hidden"
+                            >
+                                <div className="p-4 border-b border-white/5 bg-white/5 flex justify-between items-center">
+                                    <div className="flex items-center gap-2">
+                                        <Radio className="text-emerald-400" size={18} />
+                                        <span className="font-semibold">Bridge Users</span>
+                                        <span className="bg-white/10 px-2 rounded-full text-xs">{listeners.length}</span>
+                                    </div>
+                                    <div className="relative w-32">
+                                        <Search size={14} className="absolute left-2 top-2 text-white/40" />
+                                        <input 
+                                            type="text" 
+                                            placeholder="Filter..." 
+                                            className="w-full bg-black/20 border border-white/10 rounded-full pl-8 py-1 text-xs text-white focus:outline-none focus:border-emerald-500/50"
+                                            value={searchQuery}
+                                            onChange={e => setSearchQuery(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                                    {filteredListeners.map(user => (
+                                        <div key={user.id} className="group flex items-center justify-between p-3 rounded-xl hover:bg-white/5 transition-colors">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-xs font-bold">
+                                                    {user.name[0]}
+                                                </div>
+                                                <div>
+                                                    <div className="text-sm font-medium">{user.name}</div>
+                                                    <div className="text-xs text-white/40">{user.username}</div>
+                                                </div>
+                                            </div>
+                                            <div className="opacity-0 group-hover:opacity-100 flex gap-2 transition-opacity">
+                                                <button onClick={() => handleBan(user.id)} className="p-2 hover:bg-red-500/20 text-red-400 rounded-lg">
+                                                    <UserMinus size={14} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </motion.div>
+                        </div>
+
+                        {/* RIGHT COLUMN: Player Controls & Details */}
+                        <div className="col-span-12 lg:col-span-8 flex flex-col gap-6 h-full">
+                            
+                            {/* Main Player Control Unit */}
+                            <motion.div 
+                                initial={{ scale: 0.95, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                className="titan-glass rounded-3xl p-6 relative overflow-hidden"
+                            >
+                                {/* Background Viz Overlay */}
+                                <div className="absolute inset-0 opacity-20 pointer-events-none z-0">
+                                     <Visualizer audioRef={audioRef} mode={visMode} colors={[track.dominant_color, '#06b6d4']} />
+                                </div>
+
+                                <div className="relative z-10 flex flex-col gap-4">
+                                    {/* Seek Bar */}
+                                    <div className="group">
+                                        <div className="flex justify-between text-xs font-mono text-white/50 mb-2">
+                                            <span>{Math.floor(currentTime / 60)}:{String(Math.floor(currentTime % 60)).padStart(2, '0')}</span>
+                                            <span>{Math.floor(duration / 60)}:{String(Math.floor(duration % 60)).padStart(2, '0')}</span>
+                                        </div>
+                                        <div className="h-2 bg-white/10 rounded-full overflow-hidden relative">
+                                            <motion.div 
+                                                className="absolute top-0 left-0 h-full bg-gradient-to-r from-indigo-500 to-cyan-400"
+                                                style={{ width: `${(currentTime/duration)*100}%` }}
+                                            />
+                                            <input 
+                                                type="range" 
+                                                min="0" max="100" 
+                                                className="absolute inset-0 opacity-0 cursor-pointer"
+                                                onChange={handleSeek}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Controls */}
+                                    <div className="flex items-center justify-between mt-2">
+                                        <div className="flex gap-4">
+                                            <button 
+                                                onClick={() => setIs8D(!is8D)}
+                                                className={`p-3 rounded-xl border transition-all ${is8D ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300' : 'bg-white/5 border-white/5 text-white/50'}`}
+                                                title="Toggle 8D Audio"
+                                            >
+                                                <Headphones size={20} />
+                                            </button>
+                                            <button 
+                                                onClick={() => setVisMode(m => m === 'neon' ? 'bars' : m === 'bars' ? 'circular' : 'neon')}
+                                                className="p-3 rounded-xl bg-white/5 border border-white/5 text-white/50 hover:bg-white/10 transition"
+                                                title="Cycle Visualizer"
+                                            >
+                                                <Activity size={20} />
+                                            </button>
+                                        </div>
+
+                                        <div className="flex items-center gap-6">
+                                            <button className="text-white/60 hover:text-white transition"><SkipBack size={24} /></button>
+                                            <motion.button 
+                                                whileTap={{ scale: 0.9 }}
+                                                onClick={togglePlay}
+                                                className="w-16 h-16 rounded-full bg-white text-black flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.3)] hover:shadow-[0_0_50px_rgba(255,255,255,0.5)] transition-shadow"
+                                            >
+                                                {playing ? <Pause fill="black" /> : <Play fill="black" className="ml-1" />}
+                                            </motion.button>
+                                            <button className="text-white/60 hover:text-white transition"><SkipForward size={24} /></button>
+                                        </div>
+
+                                        <div className="flex gap-4">
+                                            <button className="p-3 rounded-xl bg-white/5 border border-white/5 text-white/50 hover:bg-white/10">
+                                                <Volume2 size={20} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </motion.div>
+
+                            {/* Info Tabs Area */}
+                            <motion.div 
+                                initial={{ y: 20, opacity: 0 }}
+                                animate={{ y: 0, opacity: 1 }}
+                                transition={{ delay: 0.2 }}
+                                className="titan-glass rounded-3xl flex-1 flex flex-col overflow-hidden"
+                            >
+                                {/* Tabs Header */}
+                                <div className="flex border-b border-white/10">
+                                    {[
+                                        { id: 'lyrics', icon: Mic2, label: 'Live Lyrics' },
+                                        { id: 'dsp', icon: Sliders, label: 'DSP & EQ' },
+                                        { id: 'stats', icon: Cpu, label: 'Net Stats' }
+                                    ].map(tab => (
+                                        <button
+                                            key={tab.id}
+                                            onClick={() => setActiveTab(tab.id)}
+                                            className={`flex-1 py-4 flex items-center justify-center gap-2 text-sm font-medium transition-colors relative
+                                                ${activeTab === tab.id ? 'text-white' : 'text-white/40 hover:text-white/70'}
+                                            `}
+                                        >
+                                            <tab.icon size={16} /> {tab.label}
+                                            {activeTab === tab.id && <motion.div layoutId="activeTab" className="absolute bottom-0 w-full h-1 bg-cyan-400 shadow-[0_0_10px_#22d3ee]" />}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {/* Tabs Content */}
+                                <div className="flex-1 p-6 overflow-hidden relative bg-black/20">
+                                    <AnimatePresence mode="wait">
+                                        
+                                        {/* LYRICS VIEW */}
+                                        {activeTab === 'lyrics' && (
+                                            <motion.div 
+                                                key="lyrics"
+                                                initial={{ opacity: 0, x: -20 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                exit={{ opacity: 0, x: 20 }}
+                                                className="h-full overflow-y-auto flex flex-col gap-4 text-center items-center py-10"
+                                            >
+                                                {lyrics.map((line, i) => (
+                                                    <div 
+                                                        key={i}
+                                                        className={`transition-all duration-500 cursor-pointer
+                                                            ${i === activeLyricIdx 
+                                                                ? 'text-2xl font-bold text-white scale-110 drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]' 
+                                                                : 'text-lg text-white/30 hover:text-white/50 blur-[1px]'}
+                                                        `}
+                                                        onClick={() => {
+                                                            audioRef.current.currentTime = line.t;
+                                                            setCurrentTime(line.t);
+                                                        }}
+                                                    >
+                                                        {line.text}
+                                                    </div>
+                                                ))}
+                                            </motion.div>
+                                        )}
+
+                                        {/* EQ VIEW */}
+                                        {activeTab === 'dsp' && (
+                                            <motion.div 
+                                                key="dsp"
+                                                initial={{ opacity: 0 }}
+                                                animate={{ opacity: 1 }}
+                                                exit={{ opacity: 0 }}
+                                                className="h-full flex flex-col justify-center gap-8 px-8"
+                                            >
+                                                <div className="flex justify-between items-end h-40 gap-4">
+                                                    {['bass', 'mid', 'treble'].map(band => (
+                                                        <div key={band} className="flex-1 flex flex-col items-center gap-4 h-full">
+                                                            <div className="relative w-2 h-full bg-white/10 rounded-full">
+                                                                <div 
+                                                                    className="absolute bottom-0 w-full bg-cyan-400 rounded-full transition-all duration-100"
+                                                                    style={{ height: `${((eq[band] + 12) / 24) * 100}%` }}
+                                                                ></div>
+                                                                <input 
+                                                                    type="range" 
+                                                                    min="-12" max="12"
+                                                                    orient="vertical"
+                                                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer appearance-slider-vertical"
+                                                                    style={{ appearance: 'slider-vertical' }}
+                                                                    value={eq[band]}
+                                                                    onChange={(e) => setEq({ ...eq, [band]: Number(e.target.value) })}
+                                                                />
+                                                            </div>
+                                                            <span className="uppercase text-xs font-bold tracking-widest text-white/60">{band}</span>
+                                                            <span className="font-mono text-cyan-300 text-xs">{eq[band]}dB</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <div className="flex gap-4 justify-center">
+                                                     <button 
+                                                        onClick={() => setEq({bass: 0, mid: 0, treble: 0})}
+                                                        className="px-6 py-2 rounded-full border border-white/20 hover:bg-white/10 text-sm transition"
+                                                     >
+                                                        Reset EQ
+                                                     </button>
+                                                     <button 
+                                                        onClick={() => setEq({bass: 8, mid: -2, treble: 5})}
+                                                        className="px-6 py-2 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-sm transition hover:bg-cyan-500/30"
+                                                     >
+                                                        Bass Boost Preset
+                                                     </button>
+                                                </div>
+                                            </motion.div>
+                                        )}
+
+                                        {/* STATS VIEW */}
+                                        {activeTab === 'stats' && (
+                                            <motion.div 
+                                                key="stats"
+                                                initial={{ opacity: 0 }}
+                                                animate={{ opacity: 1 }}
+                                                exit={{ opacity: 0 }}
+                                                className="h-full grid grid-cols-2 gap-4"
+                                            >
+                                                <div className="bg-white/5 rounded-2xl p-4 flex flex-col justify-between">
+                                                    <div className="flex items-center gap-2 text-white/50"><Wifi size={16}/> Latency</div>
+                                                    <div className="text-2xl font-mono text-emerald-400">24ms</div>
+                                                </div>
+                                                <div className="bg-white/5 rounded-2xl p-4 flex flex-col justify-between">
+                                                    <div className="flex items-center gap-2 text-white/50"><Database size={16}/> Buffer</div>
+                                                    <div className="text-2xl font-mono text-blue-400">100%</div>
+                                                </div>
+                                                <div className="bg-white/5 rounded-2xl p-4 flex flex-col justify-between col-span-2">
+                                                    <div className="flex items-center gap-2 text-white/50"><Target size={16}/> Stream Quality</div>
+                                                    <div className="text-lg font-mono text-white">320kbps / 48kHz (Lossless)</div>
+                                                    <div className="w-full bg-white/10 h-1 mt-2 rounded-full overflow-hidden">
+                                                        <div className="bg-emerald-500 h-full w-[98%]"></div>
+                                                    </div>
+                                                </div>
+                                            </motion.div>
+                                        )}
+
+                                    </AnimatePresence>
+                                </div>
+                            </motion.div>
+
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        /* -------------------------------------------------------------------------- */
+        /* BOOTSTRAP                                        */
+        /* -------------------------------------------------------------------------- */
+        
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+
+        // Init Icons
+        setTimeout(() => lucide.createIcons(), 100);
+    </script>
+</body>
+</html>
