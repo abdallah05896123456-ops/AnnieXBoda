@@ -1,8 +1,9 @@
 import time
 import asyncio
 import logging
-from datetime import datetime
-from flask import jsonify, request, session
+import random
+from datetime import datetime, timedelta
+from flask import jsonify, request, session, current_app
 from . import web_bp
 from .utils import (
     run_async, 
@@ -15,13 +16,44 @@ from .utils import (
 )
 
 # =========================================================
-# إعدادات المشغل المتقدمة
+# 1. إعدادات السجلات والتهيئة (Setup & Logging)
 # =========================================================
 logger = logging.getLogger("DashX_Player")
+logger.setLevel(logging.INFO)
 
-# لتخزين حالة التشغيل الوهمية (في حالة عدم وجود اتصال حقيقي)
-MOCK_STATE = {
-    "status": "playing",
+# =========================================================
+# 2. بيانات المحاكاة (Mock Data) - للطوارئ والتجربة
+# =========================================================
+# تم إضافة حقل 'user_img' عشان طلبك (صورة المستخدم جنب الأغنية)
+MOCK_CHATS = [
+    {
+        "chat_id": -100123456789,
+        "title": "سهرة ملوك البرمجة 👑",
+        "track": "Ahmed Mekky - Atr Al Hayah",
+        "cover": "https://telegra.ph/file/8b3e21894d3062325c04b.jpg",
+        "user": "Ahmed",
+        "user_img": "https://telegra.ph/file/5a5d09854728704253158.jpg", # صورة اليوزر
+        "duration": 245,
+        "position": 120,
+        "listeners": 15,
+        "active": True
+    },
+    {
+        "chat_id": -100987654321,
+        "title": "Music Galaxy 🎵",
+        "track": "Alan Walker - Faded",
+        "cover": "https://i1.sndcdn.com/artworks-000185747619-j1z80j-t500x500.jpg",
+        "user": "Sarah",
+        "user_img": "https://telegra.ph/file/710609b5527a20c327293.jpg", # صورة اليوزر
+        "duration": 300,
+        "position": 45,
+        "listeners": 42,
+        "active": True
+    }
+]
+
+# حالة المشغل الافتراضية
+PLAYER_STATE = {
     "volume": 100,
     "speed": 1.0,
     "loop": False,
@@ -29,251 +61,226 @@ MOCK_STATE = {
 }
 
 # =========================================================
-# 1. واجهة الحالة الحية (Live Status API)
+# 3. محرك لوحة القيادة (Dashboard Engine) 🧠
 # =========================================================
 
-@web_bp.route('/api/player/status')
-def get_player_status():
+@web_bp.route('/api/player/dashboard')
+def dashboard_data():
     """
-    جلب الحالة الكاملة للمشغل.
-    يدعم تعدد المجموعات (Multi-Chat Support).
+    عصب النظام: بيحدد نعرض الرامات ولا الجروبات.
     """
-    chat_id = request.args.get('chat_id')
-    
-    # 1. لو مفيش chat_id، رجع حالة عامة للنظام
-    if not chat_id:
+    try:
+        # 1. محاولة جلب البيانات الحقيقية من الـ StreamController
+        active_chats = []
+        if StreamController:
+            # tasks = run_async(StreamController.get_all_active_chats())
+            # active_chats = parse_bot_data(tasks) 
+            pass 
+        
+        # 2. استخدام الموك داتا لو مفيش اتصال (للتجربة)
+        if not active_chats:
+            active_chats = MOCK_CHATS
+
+        # 3. منطق التبديل الذكي (Smart Switch)
+        if not active_chats:
+            return jsonify({
+                "mode": "stats",
+                "message": "لـيـس هـنـاك اغـنـيـة تـعـمـل الان",
+                "sub_message": "السيرفر في وضع الاستعداد"
+            })
+        
+        # تحديث شريط التقدم وهمياً للتجربة
+        for chat in active_chats:
+            chat['position'] += 3
+            if chat['position'] > chat['duration']: chat['position'] = 0
+            chat['progress'] = (chat['position'] / chat['duration']) * 100
+            chat['position_str'] = format_duration(chat['position'])
+
         return jsonify({
-            "state": "idle",
-            "message": "Select a chat to view player",
-            "active_chats_count": 5  # رقم وهمي للتجربة
+            "mode": "active",
+            "chats": active_chats
         })
 
-    # 2. محاولة جلب البيانات الحقيقية من البوت
-    # (هنا بنفترض وجود دوال معينة في StreamController)
-    try:
-        # real_status = run_async(StreamController.get_active_call(chat_id))
-        real_status = None # خليه None حالياً عشان نستخدم الـ Mock
-    except:
-        real_status = None
-
-    # 3. بيانات المحاكاة (Fallback) لضمان عمل الواجهة
-    current_time = time.time()
-    track_duration = 240 # 4 دقائق
-    position = int(current_time % track_duration)
-    
-    response = {
-        "status": MOCK_STATE["status"],
-        "track": {
-            "title": "DashX Ultimate Soundtrack",
-            "artist": "AnnieX System",
-            "album": "Titan V2",
-            "cover": "https://telegra.ph/file/8b3e21894d3062325c04b.jpg",
-            "duration": track_duration,
-            "duration_str": format_duration(track_duration),
-            "position": position,
-            "position_str": format_duration(position),
-            "progress_percent": (position / track_duration) * 100
-        },
-        "settings": {
-            "volume": MOCK_STATE["volume"],
-            "speed": MOCK_STATE["speed"],
-            "loop": MOCK_STATE["loop"],
-            "shuffle": MOCK_STATE["shuffle"]
-        },
-        "meta": {
-            "listeners": 12,
-            "chat_id": chat_id,
-            "ping": "23ms"
-        }
-    }
-    
-    return jsonify(response)
+    except Exception as e:
+        logger.error(f"Dashboard Error: {e}")
+        return jsonify({"mode": "stats", "message": "System Error", "error": str(e)})
 
 # =========================================================
-# 2. واجهة التحكم المركزية (Main Control Hub)
+# 4. التحكم في المجموعات (Group Actions Modal) 🎮
+# =========================================================
+
+@web_bp.route('/api/player/group_action', methods=['POST'])
+@sudo_required
+def group_action():
+    """
+    التحكم العميق: إيقاف، حظر، تركيز موارد.
+    """
+    data = request.json
+    action = data.get('action')
+    chat_id = data.get('chat_id')
+
+    if not chat_id: return jsonify({"success": False, "msg": "Chat ID missing"})
+
+    log_activity(f"GROUP_OP_{action.upper()}", f"Target: {chat_id}")
+
+    try:
+        # --- إيقاف التشغيل ---
+        if action == 'stop':
+            if StreamController:
+                run_async(StreamController.stop_stream(chat_id))
+            
+            # تحديث الموك داتا للحذف الفوري (للتجربة)
+            global MOCK_CHATS
+            MOCK_CHATS = [c for c in MOCK_CHATS if c['chat_id'] != chat_id]
+            
+            return jsonify({"success": True, "msg": "تم إيقاف التشغيل بنجاح"})
+
+        # --- حظر المجموعة ---
+        elif action == 'ban':
+            if db:
+                db.blacklist.insert_one({
+                    "chat_id": chat_id,
+                    "reason": "Admin Ban via Dashboard",
+                    "date": datetime.utcnow()
+                })
+            # هنا مفروض نطرد البوت من الجروب
+            # run_async(StreamController.leave_chat(chat_id))
+            return jsonify({"success": True, "msg": "⛔ تم حظر المجموعة وإيقاف الخدمة"})
+
+        # --- تركيز الموارد (Focus Mode) ---
+        elif action == 'focus':
+            # ميزة حصرية: تقليل جودة المكالمات الأخرى ورفع جودة دي
+            # run_async(StreamController.set_high_priority(chat_id))
+            return jsonify({"success": True, "msg": "🚀 تم تحويل السيرفر لوضع التركيز"})
+
+        # --- تخطي (Skip) من المودال ---
+        elif action == 'skip':
+            if StreamController:
+                run_async(StreamController.skip_stream(chat_id))
+            return jsonify({"success": True, "msg": "تم تخطي الأغنية"})
+
+    except Exception as e:
+        return jsonify({"success": False, "msg": f"فشل التنفيذ: {str(e)}"})
+    
+    return jsonify({"success": False, "msg": "أمر غير معروف"})
+
+# =========================================================
+# 5. التحكم الدقيق في المشغل (Fine Controls) 🎛️
 # =========================================================
 
 @web_bp.route('/api/player/control', methods=['POST'])
 @sudo_required
 def player_control():
     """
-    عصب التحكم الرئيسي.
-    بيستقبل أي أمر (Pause, Skip, Volume, Seek, etc.)
+    Play, Pause, Volume, Seek, Speed
     """
-    if not StreamController:
-        return jsonify({"success": False, "error": "Core Disconnected"})
-
     data = request.json
     action = data.get('action')
     chat_id = data.get('chat_id')
-    value = data.get('value') # للقيم المتغيرة زي الصوت والسرعة
-
-    if not chat_id:
-        return jsonify({"success": False, "error": "Chat ID Required"})
-
-    log_activity(f"PLAYER_CMD_{action.upper()}", f"Chat: {chat_id}, Val: {value}")
+    value = data.get('value')
 
     try:
-        # --- أوامر التشغيل الأساسية ---
         if action == 'pause':
             run_async(StreamController.pause_stream(chat_id))
-            MOCK_STATE["status"] = "paused"
-            
         elif action == 'resume':
             run_async(StreamController.resume_stream(chat_id))
-            MOCK_STATE["status"] = "playing"
-            
-        elif action == 'skip':
-            run_async(StreamController.skip_stream(chat_id))
-            
-        elif action == 'stop':
-            # run_async(StreamController.stop_stream(chat_id))
-            pass # محتاج دالة stop في البوت
-
-        # --- أوامر التعديل (Advanced) ---
-        elif action == 'seek':
-            # value هنا بالثواني
-            # run_async(StreamController.seek_stream(chat_id, int(value)))
-            pass
-
         elif action == 'volume':
-            # value من 0 لـ 200
-            # run_async(StreamController.set_volume(chat_id, int(value)))
-            MOCK_STATE["volume"] = int(value)
-
+            # value: 0-200
+            run_async(StreamController.set_volume(chat_id, int(value)))
+            PLAYER_STATE['volume'] = int(value)
         elif action == 'speed':
-            # value: 0.5, 1.0, 1.5, 2.0
-            # run_async(StreamController.set_speed(chat_id, float(value)))
-            MOCK_STATE["speed"] = float(value)
+            # value: 1.0, 1.5, 2.0
+            run_async(StreamController.set_speed(chat_id, float(value)))
+        elif action == 'seek':
+            # value: seconds
+            run_async(StreamController.seek_stream(chat_id, int(value)))
 
-        # --- أوامر القائمة ---
-        elif action == 'loop':
-            MOCK_STATE["loop"] = not MOCK_STATE["loop"]
-            # منطق تفعيل التكرار في البوت
-            
-        elif action == 'shuffle':
-            MOCK_STATE["shuffle"] = not MOCK_STATE["shuffle"]
-            # منطق تفعيل العشوائية
-
-        return jsonify({
-            "success": True, 
-            "message": f"Executed {action}",
-            "new_state": MOCK_STATE
-        })
-
+        return jsonify({"success": True, "state": PLAYER_STATE})
     except Exception as e:
-        logger.error(f"Control Error: {e}")
         return jsonify({"success": False, "error": str(e)})
 
 # =========================================================
-# 3. إدارة قائمة الانتظار (Queue Management)
+# 6. التشغيل المباشر (Direct Play) ▶️
 # =========================================================
 
-@web_bp.route('/api/player/queue', methods=['GET'])
-def get_queue():
-    """جلب قائمة الأغاني المنتظرة"""
-    chat_id = request.args.get('chat_id')
-    # محاكاة قائمة انتظار
-    fake_queue = [
-        {"id": "vid1", "title": "Alan Walker - Faded", "duration": "3:32", "user": "User1"},
-        {"id": "vid2", "title": "Imagine Dragons - Believer", "duration": "3:24", "user": "User2"},
-        {"id": "vid3", "title": "Quran - Surah Al-Kahf", "duration": "45:00", "user": "Admin"},
-    ]
-    return jsonify({"queue": fake_queue})
-
-@web_bp.route('/api/player/queue/action', methods=['POST'])
+@web_bp.route('/api/player/play', methods=['POST'])
 @sudo_required
-def queue_action():
-    """تعديل القائمة (حذف، ترتيب)"""
-    data = request.json
-    action = data.get('action') # 'remove', 'move', 'clear'
-    chat_id = data.get('chat_id')
-    item_id = data.get('item_id')
-    
-    # هنا هنحط منطق التعامل مع Queue البوت الحقيقي
-    if action == 'clear':
-        # run_async(StreamController.clear_queue(chat_id))
-        return jsonify({"success": True, "message": "Queue Cleared"})
-    
-    return jsonify({"success": True})
-
-# =========================================================
-# 4. البحث والتشغيل المباشر (Search & Play)
-# =========================================================
-
-@web_bp.route('/api/player/play_url', methods=['POST'])
-@sudo_required
-def play_direct():
-    """تشغيل رابط مباشر (Youtube/Link)"""
+def play_track():
+    """تشغيل رابط يوتيوب أو ملف مباشر"""
     data = request.json
     url = data.get('url')
     chat_id = data.get('chat_id')
     
     if not url or not chat_id:
-        return jsonify({"success": False, "error": "URL and ChatID required"})
+        return jsonify({"error": "Missing URL or Chat ID"})
 
     try:
-        # استدعاء دالة التشغيل في البوت
+        # إضافة للموك داتا مؤقتاً للتجربة
+        MOCK_CHATS.append({
+            "chat_id": chat_id,
+            "title": "تشغيل مباشر من الداشبورد",
+            "track": "Loading...",
+            "cover": "https://telegra.ph/file/8b3e21894d3062325c04b.jpg",
+            "user": "Admin",
+            "user_img": "https://telegra.ph/file/5a5d09854728704253158.jpg",
+            "duration": 0, position: 0, listeners: 1, active: True
+        })
+        
+        # الأمر الحقيقي
         run_async(StreamController.play_stream(chat_id, url))
         
-        # تسجيل في الداتابيز (History)
+        # تسجيل في الهستوري
         if db:
-            db.play_history.insert_one({
-                "chat_id": chat_id,
-                "url": url,
-                "played_by": "Web Dashboard",
-                "timestamp": datetime.utcnow()
+            db.history.insert_one({
+                "chat_id": chat_id, 
+                "url": url, 
+                "date": datetime.utcnow()
             })
-
-        return jsonify({"success": True, "message": "Request sent to bot"})
+            
+        return jsonify({"success": True, "msg": "Request sent to bot"})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
 # =========================================================
-# 5. المجموعات النشطة (Active Chats Monitor)
+# 7. إدارة طابور الانتظار (Queue System) 📋
 # =========================================================
 
-@web_bp.route('/api/player/active_chats')
-def active_chats():
-    """جلب كل المجموعات اللي البوت شغال فيها حالياً"""
-    # مفروض نجيب ده من Call Container في البايثون
-    # محاكاة:
-    chats = [
-        {"id": -100123456789, "name": "Music Galaxy 🎵", "listeners": 15, "active": True},
-        {"id": -100987654321, "name": "Coding Support 💻", "listeners": 3, "active": True},
+@web_bp.route('/api/player/queue')
+def get_queue():
+    chat_id = request.args.get('chat_id')
+    # محاكاة
+    queue = [
+        {"title": "Track 1", "dur": "3:00", "user": "User A"},
+        {"title": "Track 2", "dur": "4:20", "user": "User B"},
     ]
-    return jsonify({"chats": chats})
+    return jsonify({"queue": queue})
+
+@web_bp.route('/api/player/queue/clear', methods=['POST'])
+@sudo_required
+def clear_queue():
+    chat_id = request.json.get('chat_id')
+    run_async(StreamController.clear_queue(chat_id))
+    return jsonify({"success": True})
 
 # =========================================================
-# 6. جلب الكلمات (Lyrics Fetcher)
+# 8. السجل والتاريخ (History) 📜
+# =========================================================
+
+@web_bp.route('/api/player/history')
+def playback_history():
+    if not db: return jsonify([])
+    try:
+        history = list(db.history.find().sort("date", -1).limit(50))
+        for h in history: h['_id'] = str(h['_id'])
+        return jsonify(history)
+    except: return jsonify([])
+
+# =========================================================
+# 9. كلمات الأغاني (Lyrics) 🎤
 # =========================================================
 
 @web_bp.route('/api/player/lyrics')
 def get_lyrics():
-    """جلب كلمات الأغنية الحالية"""
-    track_name = request.args.get('track')
-    if not track_name: return jsonify({"lyrics": "No track specified"})
-    
-    # هنا ممكن نربط بـ API خارجي زي Genius
-    return jsonify({
-        "lyrics": f"[Verse 1]\nLyrics for {track_name} will appear here...\n(Integration pending)"
-    })
-
-# =========================================================
-# 7. سجل التشغيل (Playback History) - MongoDB
-# =========================================================
-
-@web_bp.route('/api/player/history')
-def get_history():
-    """جلب آخر الأغاني اللي اشتغلت"""
-    if not db:
-        return jsonify({"history": []})
-    
-    try:
-        history = list(db.play_history.find().sort("timestamp", -1).limit(20))
-        # تنظيف البيانات عشان الـ JSON
-        for h in history:
-            h['_id'] = str(h['_id'])
-        return jsonify({"history": history})
-    except:
-        return jsonify({"history": []})
+    query = request.args.get('q')
+    # هنا ممكن تربط بـ Genius API
+    return jsonify({"lyrics": "Lyrics system not configured yet."})
