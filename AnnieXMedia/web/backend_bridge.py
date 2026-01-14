@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # ==============================================================================
-# TITAN OS KERNEL BRIDGE - VERSION 9.1 (GENIUS MODE)
+# TITAN OS KERNEL BRIDGE - VERSION 9.2 (DOCKER OPTIMIZED)
 # Architected for: Fly.io, Heroku, Docker Environments
-# Features: Recursive File Discovery, Auto-Healing, Zero-Config Deployment
+# Features: Structure-Aware Discovery, Auto-Healing, Zero-Config Deployment
 # ==============================================================================
 
 import asyncio
@@ -100,7 +100,7 @@ except ImportError:
 # ==============================================================================
 class KernelConfig:
     APP_TITLE = "Titan OS Kernel"
-    VERSION = "9.1.0-Genius"
+    VERSION = "9.2.0-Docker"
     HOST = "0.0.0.0"
     PORT = 8080
     WS_INTERVAL = getattr(config, "WS_STATUS_INTERVAL", 1.0)
@@ -134,13 +134,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- INTELLIGENT COMPONENT DISCOVERY ---
-# This loop finds the 'components' folder wherever it is hiding
+# --- INTELLIGENT COMPONENT DISCOVERY (DOCKER OPTIMIZED) ---
+# This loop specifically targets the structure: /app/AnnieXMedia/web/components
 found_components = False
 search_paths = [
-    os.path.join(KernelConfig.BASE_DIR, "components"),
-    os.path.join(KernelConfig.ROOT_DIR, "components"),
+    # 1. Docker Structure Priority
+    os.path.join(KernelConfig.ROOT_DIR, "AnnieXMedia", "web", "components"),
+    # 2. Local/Standard Structure
     os.path.join(KernelConfig.ROOT_DIR, "web", "components"),
+    os.path.join(KernelConfig.BASE_DIR, "components"),
     "components",
     "web/components"
 ]
@@ -153,17 +155,7 @@ for path in search_paths:
         break
 
 if not found_components:
-    # Deep Search Fallback
-    logger.warning("⚠️ [FILESYSTEM] Components not found in standard paths. Initiating Deep Search...")
-    for root, dirs, files in os.walk(KernelConfig.ROOT_DIR):
-        if "components" in dirs:
-            full_path = os.path.join(root, "components")
-            # Verify it contains JSX files
-            if any(f.endswith(".jsx") for f in os.listdir(full_path)):
-                app.mount("/components", StaticFiles(directory=full_path), name="components")
-                logger.info(f"📂 [FILESYSTEM] Deep Link Established: {full_path}")
-                found_components = True
-                break
+    logger.warning("⚠️ [FILESYSTEM] Components not found. UI styling might break.")
 
 # ==============================================================================
 # 🧠 LEVEL 4: ARTIFICIAL SYSTEM INTELLIGENCE (A.S.I)
@@ -371,21 +363,19 @@ async def health():
     return {"status": "healthy", "asi": "active", "uptime": int(time.time() - ASI._start_time)}
 
 # ==============================================================================
-# 🚪 LEVEL 7: FRONTEND ENTRY POINT (GENIUS LOCATOR)
+# 🚪 LEVEL 7: FRONTEND ENTRY POINT (DOCKER LOCATOR)
 # ==============================================================================
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():
     """
     Finds index.html using a multi-stage search strategy.
-    Guaranteed to find the file if it exists anywhere in the build.
+    Optimized for Docker Structure: /app/AnnieXMedia/web/index.html
     """
     # 1. Priority Paths (Most common locations)
     priority_paths = [
-        "index.html",
+        "AnnieXMedia/web/index.html",       # <--- DOCKER PRIORITY
         "web/index.html",
-        "AnnieXMedia/web/index.html",
-        "/app/web/index.html",
-        "/app/AnnieXMedia/web/index.html",
+        "index.html",
         os.path.join(KernelConfig.BASE_DIR, "index.html")
     ]
 
@@ -399,26 +389,15 @@ async def serve_index():
     for root, dirs, files in os.walk(KernelConfig.ROOT_DIR):
         if "index.html" in files:
             found_path = os.path.join(root, "index.html")
-            # Sanity check: ensure it's not inside node_modules or something weird
             if "node_modules" not in found_path:
                 logger.info(f"🔍 [UI] Found UI via Deep Search: {found_path}")
                 return FileResponse(found_path)
-
-    # 3. Emergency Debug View
-    current_files = []
-    for root, dirs, files in os.walk("."):
-        for f in files: current_files.append(os.path.join(root, f))
-        if len(current_files) > 20: break # Show only first 20
 
     return HTMLResponse(
         f"""<html style='background:#000;color:#ff4444;font-family:monospace;padding:20px;'>
         <div>
             <h1>⚠️ TITAN KERNEL: UI NOT FOUND</h1>
-            <p>Could not locate 'index.html' in any standard or deep path.</p>
-            <hr>
-            <p><strong>Debug Info:</strong></p>
-            <p>CWD: {os.getcwd()}</p>
-            <p>Sample Files: {current_files}</p>
+            <p>Could not locate 'index.html'. Checked paths: {priority_paths}</p>
         </div></html>"""
     )
 
