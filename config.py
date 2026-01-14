@@ -11,6 +11,11 @@ from pyrogram import filters
 # Load environment variables
 load_dotenv()
 
+# ── Web Dashboard Config (إعدادات لوحة التحكم) ─────────────────────────────
+# تم إضافة كلمة السر ومفتاح التشفير هنا
+WEB_PASSWORD = getenv("WEB_PASSWORD", "asdfghjkl05896") 
+WEB_SECRET = getenv("WEB_SECRET", "AnnieX_Secret_Key_99123") 
+
 # ── Core bot config (إعدادات البوت الأساسية) ───────────────────────────────────
 try:
     API_ID = int(getenv("API_ID"))
