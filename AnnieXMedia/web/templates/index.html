@@ -4,24 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#000000">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="format-detection" content="telephone=no">
-    <meta name="description" content="Titan OS - Ultimate Glass Control Panel">
+    <meta name="description" content="Titan OS - Control Panel">
     
     <title>Titan OS | لوحة التحكم</title>
     
-    <!-- مكتبة الأيقونات (Font Awesome) -->
+    <!-- مكتبة الأيقونات -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- الخطوط العربية (Cairo + Tajawal) -->
+    <!-- الخطوط -->
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;800;900&family=Tajawal:wght@400;700&display=swap" rel="stylesheet">
     
-    <!-- ربط ملف الاستايل (تم التعديل ليتوافق مع Blueprint) -->
-    <link rel="stylesheet" href="{{ url_for('web.static', filename='style.css') }}">
+    <!-- ✅ (تعديل هام) إضافة ?v=3 لكسر الكاش -->
+    <link rel="stylesheet" href="{{ url_for('web.static', filename='style.css') }}?v=3">
     
     <style>
-        /* ستايل طوارئ عشان لو ملف الـ CSS الخارجي محملش */
+        /* ستايل الطوارئ: يضمن ظهور الخلفية حتى لو ملف الـ CSS فشل */
         body { margin: 0; background: #000; color: #fff; font-family: 'Cairo', sans-serif; overflow: hidden; }
         .preloader-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 9999; display: flex; justify-content: center; align-items: center; flex-direction: column; transition: opacity 0.5s; }
         .logo-text { font-size: 2rem; font-weight: 900; letter-spacing: 2px; }
@@ -30,35 +27,29 @@
 </head>
 <body>
 
-    <!-- =============================================
-       1. طبقات الخلفية (Background Layers)
-    ============================================= -->
+    <!-- 1. الخلفية -->
     <div class="app-wallpaper">
-        <!-- الألوان المتحركة -->
         <div class="mesh-gradient">
             <div class="orb orb-1"></div>
             <div class="orb orb-2"></div>
             <div class="orb orb-3"></div>
         </div>
-        <!-- طبقة الزجاج -->
         <div class="glass-overlay"></div>
     </div>
 
-    <!-- شاشة التحميل (Preloader) -->
+    <!-- 2. شاشة التحميل -->
     <div id="preloader" class="preloader-screen">
         <div class="loader-content">
             <div class="logo-text">Titan <span class="highlight">OS</span></div>
             <div class="loading-bar"><div class="bar-fill"></div></div>
-            <p class="loading-text" id="loading-msg">جاري الاتصال بالسيرفر...</p>
+            <p class="loading-text" id="loading-msg">جاري تحميل النظام...</p>
         </div>
     </div>
 
-    <!-- =============================================
-       2. إطار التطبيق (Main Frame)
-    ============================================= -->
+    <!-- 3. التطبيق الرئيسي -->
     <div class="ios-frame" id="main-app" style="opacity: 0; transition: opacity 0.8s;">
         
-        <!-- الشريط العلوي (Status Bar) -->
+        <!-- الهيدر -->
         <header class="status-header glass-panel-sm">
             <div class="right-side">
                 <i class="fas fa-wifi signal-icon"></i>
@@ -71,12 +62,9 @@
             </div>
         </header>
 
-        <!-- =============================================
-           3. منطقة العرض (Viewport)
-        ============================================= -->
+        <!-- المحتوى -->
         <main class="viewport-area">
-
-            <!-- أ) الصفحة الرئيسية (Dashboard) -->
+            <!-- أ) الرئيسية -->
             <section id="view-home" class="view-screen active">
                 <div class="screen-header">
                     <div>
@@ -84,213 +72,167 @@
                         <p class="page-subtitle">نظرة عامة على النظام</p>
                     </div>
                     <div class="user-avatar-sm">
-                        <!-- صورة الأدمن -->
                         <img src="https://telegra.ph/file/5a5d09854728704253158.jpg" alt="Admin" onerror="this.src='https://via.placeholder.com/50'">
                         <span class="status-dot"></span>
                     </div>
                 </div>
 
-                <!-- الويدجت (Widgets) -->
                 <div class="widgets-grid">
-                    <!-- الرامات -->
                     <div class="glass-widget stats-widget">
                         <div class="widget-icon"><i class="fas fa-memory"></i></div>
                         <div class="widget-data">
                             <span class="stat-val" id="ram-usage">--%</span>
-                            <span class="stat-label">الذاكرة العشوائية</span>
+                            <span class="stat-label">RAM</span>
                         </div>
                         <div class="mini-chart" id="ram-chart"></div>
                     </div>
-                    <!-- المعالج -->
                     <div class="glass-widget stats-widget">
                         <div class="widget-icon color-warn"><i class="fas fa-microchip"></i></div>
                         <div class="widget-data">
                             <span class="stat-val" id="cpu-usage">--%</span>
-                            <span class="stat-label">وحدة المعالجة</span>
+                            <span class="stat-label">CPU</span>
                         </div>
                     </div>
                 </div>
 
-                <!-- قائمة التشغيل (Active Streams) -->
                 <div class="section-title">
                     <h3>البث النشط</h3>
                     <span class="badge-count" id="active-count">0</span>
                 </div>
-
                 <div id="active-streams-container" class="scroll-content">
                     <div class="empty-placeholder">
-                        <div class="icon-circle"><i class="fas fa-music"></i></div>
+                        <i class="fas fa-music" style="font-size: 30px; opacity: 0.5;"></i>
                         <p>لا يوجد تشغيل حالياً</p>
-                        <small>قم بتشغيل أغنية في المكالمة لتظهر هنا</small>
                     </div>
                 </div>
             </section>
 
-            <!-- ب) الخزنة (Vault) -->
+            <!-- ب) الخزنة -->
             <section id="view-vault" class="view-screen">
                 <div class="screen-header">
-                    <h1 class="page-title">الخزنة السحابية</h1>
+                    <h1 class="page-title">الخزنة</h1>
                     <button class="glass-btn-icon" onclick="document.getElementById('file-upload').click()">
                         <i class="fas fa-cloud-upload-alt"></i>
                     </button>
-                    <!-- Input مخفي لرفع الملفات -->
                     <input type="file" id="file-upload" hidden onchange="Vault.uploadFile(this)">
                 </div>
-
                 <div class="vault-stats glass-panel">
-                    <div class="v-stat">
-                        <i class="fas fa-hdd"></i>
-                        <span id="disk-space">جاري الحساب...</span>
-                    </div>
+                    <div class="v-stat"><i class="fas fa-hdd"></i><span id="disk-space">--</span></div>
                     <div class="v-divider"></div>
-                    <div class="v-stat">
-                        <i class="fas fa-file-audio"></i>
-                        <span id="files-total">-- ملف</span>
-                    </div>
+                    <div class="v-stat"><i class="fas fa-file-audio"></i><span id="files-total">0</span></div>
                 </div>
-
-                <div id="vault-files-list" class="files-grid scroll-content">
-                    <!-- سيتم ملء الملفات هنا تلقائياً -->
-                </div>
+                <div id="vault-files-list" class="files-grid scroll-content"></div>
             </section>
 
-            <!-- ج) الطرفية (Terminal) -->
+            <!-- ج) الطرفية -->
             <section id="view-terminal" class="view-screen">
                 <div class="screen-header">
-                    <h1 class="page-title">Root Terminal</h1>
-                    <div class="terminal-indicator online" title="Connected"></div>
+                    <h1 class="page-title">Terminal</h1>
+                    <div class="terminal-indicator online"></div>
                 </div>
-                
                 <div class="terminal-window glass-panel-dark">
                     <div class="term-output" id="term-output-area">
-                        <div class="term-line sys">Titan OS Kernel v3.0 Initialized...</div>
-                        <div class="term-line sys">Connected to AnnieX Server [OK]</div>
-                        <div class="term-line sys">Type 'help' for commands.</div>
+                        <div class="term-line sys">Titan OS v3.0 Ready...</div>
                     </div>
                     <div class="term-input-wrapper">
                         <span class="prompt-char">➜</span>
-                        <input type="text" id="term-cmd-input" placeholder="أدخل الأمر..." autocomplete="off">
+                        <input type="text" id="term-cmd-input" placeholder="Enter command..." autocomplete="off">
                         <button id="send-cmd-btn" onclick="Terminal.sendCommand()"><i class="fas fa-paper-plane"></i></button>
                     </div>
                 </div>
             </section>
             
-            <!-- د) الإعدادات (Settings - Placeholder) -->
+             <!-- د) الإعدادات -->
             <section id="view-settings" class="view-screen">
-                 <div class="screen-header">
-                    <h1 class="page-title">الإعدادات</h1>
-                </div>
-                <div class="glass-panel">
-                    <p style="text-align:center; padding: 20px; color: #aaa;">قريباً...</p>
-                </div>
+                 <div class="screen-header"><h1 class="page-title">الإعدادات</h1></div>
+                <div class="glass-panel"><p style="text-align:center; padding:20px; color:#aaa;">قريباً...</p></div>
             </section>
-
         </main>
 
-        <!-- =============================================
-           4. الدوك السفلي (Dock Navigation)
-        ============================================= -->
+        <!-- 4. الدوك السفلي -->
         <nav class="dock-wrapper">
             <div class="glass-dock">
                 <div class="dock-item active" data-target="view-home" onclick="App.nav('home')">
                     <div class="icon-box"><i class="fas fa-th-large"></i></div>
-                    <span class="icon-label">الرئيسية</span>
+                    <span class="icon-label">Home</span>
                 </div>
                 <div class="dock-item" data-target="view-vault" onclick="App.nav('vault')">
                     <div class="icon-box"><i class="fas fa-folder-open"></i></div>
-                    <span class="icon-label">الخزنة</span>
+                    <span class="icon-label">Vault</span>
                 </div>
                 <div class="dock-item" data-target="view-terminal" onclick="App.nav('terminal')">
                     <div class="icon-box"><i class="fas fa-terminal"></i></div>
-                    <span class="icon-label">الطرفية</span>
+                    <span class="icon-label">Term</span>
                 </div>
                 <div class="dock-item" data-target="view-settings" onclick="App.nav('settings')">
                     <div class="icon-box"><i class="fas fa-sliders-h"></i></div>
-                    <span class="icon-label">الإعدادات</span>
+                    <span class="icon-label">Set</span>
                 </div>
             </div>
         </nav>
 
-        <!-- =============================================
-           5. نافذة المشغل (Player Modal)
-        ============================================= -->
+        <!-- 5. نافذة المشغل -->
         <div id="player-modal" class="modal-overlay">
             <div class="modal-backdrop" onclick="Player.close()"></div>
-            
             <div class="modal-card glass-panel-heavy">
                 <div class="modal-handle-bar"></div>
-                
                 <div class="modal-header-row">
                     <button class="close-btn" onclick="Player.close()"><i class="fas fa-chevron-down"></i></button>
                     <span class="playing-status">NOW PLAYING</span>
                     <button class="options-btn"><i class="fas fa-ellipsis-h"></i></button>
                 </div>
-
                 <div class="album-art-area">
                     <div class="art-glow"></div>
-                    <img id="p-cover" src="" class="main-cover" alt="Cover" onerror="this.style.display='none'">
-                    <div class="requester-badge">
-                        <img id="p-user-img" src="" alt="User">
-                        <i class="fas fa-microphone icon-tiny"></i>
-                    </div>
+                    <img id="p-cover" src="" class="main-cover" onerror="this.style.display='none'">
+                    <div class="requester-badge"><img id="p-user-img" src=""><i class="fas fa-microphone icon-tiny"></i></div>
                 </div>
-
                 <div class="track-details">
                     <h2 id="p-track-title" class="scrolling-text">--</h2>
                     <p id="p-group-name">--</p>
                 </div>
-
                 <div class="progress-area">
                     <div class="progress-bar">
                         <div class="progress-fill" id="p-progress-fill" style="width: 0%"></div>
-                        <div class="progress-knob"></div>
                     </div>
-                    <div class="time-row">
-                        <span id="p-current-time">0:00</span>
-                        <span id="p-total-time">0:00</span>
-                    </div>
+                    <div class="time-row"><span id="p-current-time">0:00</span><span id="p-total-time">0:00</span></div>
                 </div>
-
                 <div class="controls-row main">
                     <button class="ctrl-btn sm" onclick="Player.action('ban')"><i class="fas fa-ban"></i></button>
                     <button class="ctrl-btn md" onclick="Player.action('skip')"><i class="fas fa-step-forward"></i></button>
-                    
-                    <button class="ctrl-btn lg play-pause" id="play-btn" onclick="Player.toggle()">
-                        <i class="fas fa-pause"></i>
-                    </button>
-                    
+                    <button class="ctrl-btn lg play-pause" id="play-btn" onclick="Player.toggle()"><i class="fas fa-pause"></i></button>
                     <button class="ctrl-btn md" onclick="Player.action('stop')"><i class="fas fa-stop"></i></button>
                     <button class="ctrl-btn sm" onclick="Player.action('focus')"><i class="fas fa-rocket"></i></button>
                 </div>
             </div>
         </div>
 
-        <!-- =============================================
-           6. الإشعارات (Toast Notifications)
-        ============================================= -->
+        <!-- 6. الإشعارات -->
         <div id="toast-area" class="toast-wrapper"></div>
-
     </div>
 
     <!-- =============================================
-       7. الجافا سكريبت (Scripts)
+       7. السكريبتات وكود الطوارئ
     ============================================= -->
-    <!-- ربط ملف السكريبت (تم التعديل ليتوافق مع Blueprint) -->
-    <script src="{{ url_for('web.static', filename='script.js') }}"></script>
+    <!-- ✅ (تعديل هام) إضافة ?v=3 لكسر الكاش -->
+    <script src="{{ url_for('web.static', filename='script.js') }}?v=3"></script>
     
     <script>
-        // كود طوارئ لإخفاء شاشة التحميل في حالة تأخر تحميل السكريبت الأساسي
-        window.addEventListener('load', function() {
+        // 🔥 كود الإجبار: بيفتح الموقع غصب بعد 2 ثانية حتى لو السكريبت ضرب
+        window.onload = function() {
             setTimeout(() => {
                 const preloader = document.getElementById('preloader');
                 const app = document.getElementById('main-app');
+                
+                // إخفاء التحميل وإظهار التطبيق
                 if(preloader) {
                     preloader.style.opacity = '0';
-                    setTimeout(() => preloader.style.display = 'none', 500);
+                    preloader.style.pointerEvents = 'none'; // منع التفاعل معه
                 }
-                if(app) app.style.opacity = '1';
-            }, 1500); // إزالة التحميل بعد 1.5 ثانية كحد أقصى
-        });
+                if(app) {
+                    app.style.opacity = '1';
+                }
+            }, 2000); // الانتظار 2 ثانية فقط
+        };
     </script>
 </body>
 </html>
