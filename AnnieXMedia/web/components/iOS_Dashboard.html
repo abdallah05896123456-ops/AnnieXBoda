@@ -3,45 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Titan-Glass iOS Dashboard | Ultra Performance</title>
+    <title>Titan OS | Secure Access</title>
 
     <script src="https://cdn.tailwindcss.com"></script>
+    
     <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
     <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <style>
-        /* Base Reset & Fonts */
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap');
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;800&family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 
+    <style>
+        /* =========================================
+           GLOBAL STYLES
+           ========================================= */
         body {
-            margin: 0;
-            padding: 0;
-            background-color: #000;
+            margin: 0; padding: 0; background-color: #000;
             font-family: 'Inter', sans-serif;
-            overflow: hidden; /* Prevent native scroll, handled by React */
+            overflow: hidden;
             -webkit-font-smoothing: antialiased;
         }
 
-        /* Custom Scrollbar for Logs & Content */
-        ::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
-        }
-        ::-webkit-scrollbar-track {
-            background: rgba(255, 255, 255, 0.05);
-        }
-        ::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 10px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 255, 255, 0.4);
-        }
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 10px; }
 
-        /* Glassmorphism Utilities */
+        /* =========================================
+           DASHBOARD STYLES (ORIGINAL)
+           ========================================= */
         .glass-panel {
             backdrop-filter: blur(40px);
             -webkit-backdrop-filter: blur(40px);
@@ -49,13 +41,94 @@
             border: 1px solid rgba(255, 255, 255, 0.2);
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
         }
-        
-        /* Optimization: GPU Acceleration Classes */
         .gpu-accelerated {
-            transform: translateZ(0);
-            backface-visibility: hidden;
-            perspective: 1000px;
+            transform: translateZ(0); backface-visibility: hidden; perspective: 1000px;
         }
+
+        /* =========================================
+           LOGIN OVERLAY STYLES (MERGED)
+           ========================================= */
+        #login-overlay {
+            position: fixed; inset: 0; z-index: 9999;
+            background: rgba(0, 0, 0, 0.85); /* Darken bg behind login */
+            backdrop-filter: blur(15px);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            transition: all 1s ease-in-out;
+        }
+
+        /* Cairo font specifically for Login UI */
+        .login-font { font-family: 'Cairo', sans-serif; }
+
+        .ambient-glow {
+            position: absolute; width: 600px; height: 600px;
+            background: radial-gradient(circle, rgba(6,182,212,0.15) 0%, rgba(0,0,0,0) 70%);
+            top: 50%; left: 50%; transform: translate(-50%, -50%);
+            pointer-events: none; z-index: -1; animation: pulse 8s infinite ease-in-out;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 0.5; transform: translate(-50%, -50%) scale(1); }
+            50% { opacity: 0.8; transform: translate(-50%, -50%) scale(1.1); }
+        }
+
+        /* Ultra Glass Card for Login */
+        .login-card {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(50px);
+            -webkit-backdrop-filter: blur(50px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 40px 80px rgba(0, 0, 0, 0.8);
+            border-radius: 30px;
+        }
+
+        .glass-input {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            color: white; text-align: center;
+            transition: all 0.3s ease;
+        }
+        .glass-input:focus {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.4);
+            outline: none; box-shadow: 0 0 20px rgba(255,255,255,0.05);
+        }
+        .glass-input::placeholder { color: rgba(255,255,255,0.3); }
+
+        .loader-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 99px; overflow: hidden;
+        }
+        .loader-fill {
+            background: white; height: 100%; width: 0%;
+            border-radius: 99px; transition: width 0.1s linear;
+            box-shadow: 0 0 15px rgba(255,255,255,0.4);
+        }
+
+        /* Transitions states for Overlay */
+        .fade-out-up {
+            opacity: 0;
+            transform: translateY(-50px) scale(0.95);
+            pointer-events: none;
+        }
+        .hidden-state { opacity: 0; display: none; }
+
+        /* =========================================
+           DASHBOARD BLUR STATE
+           ========================================= */
+        #root {
+            transition: filter 1.5s ease, transform 1.5s ease;
+        }
+        #root.blurred {
+            filter: blur(20px) brightness(0.4);
+            transform: scale(0.98);
+            pointer-events: none;
+        }
+        #root.active {
+            filter: blur(0) brightness(1);
+            transform: scale(1);
+            pointer-events: auto;
+        }
+
     </style>
 
     <script>
@@ -73,13 +146,157 @@
 </head>
 <body>
 
-    <div id="root"></div>
+    <div id="root" class="blurred"></div>
+
+
+    <div id="login-overlay" class="login-font" dir="rtl">
+        
+        <div class="ambient-glow"></div>
+
+        <div class="login-card w-full max-w-sm p-10 flex flex-col items-center text-center relative overflow-hidden min-h-[400px] justify-center transition-all duration-700">
+            
+            <div id="boot-view" class="w-full flex flex-col items-center transition-all duration-500">
+                <div class="mb-8 relative">
+                    <div class="absolute inset-0 bg-white/10 blur-2xl rounded-full"></div>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="animate-pulse relative z-10"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/><path d="M3 9h18"/><path d="M3 15h18"/></svg>
+                </div>
+                
+                <h1 class="text-3xl font-bold mb-2 tracking-wider text-white" style="font-family: 'Inter', sans-serif;">TITAN OS</h1>
+                <p id="boot-text" class="text-white/40 text-xs mb-10 font-mono tracking-widest" dir="ltr">INITIALIZING...</p>
+                
+                <div class="w-full h-1 loader-track">
+                    <div id="progress-bar" class="loader-fill"></div>
+                </div>
+            </div>
+
+            <div id="login-view" class="w-full flex flex-col items-center hidden-state transition-all duration-700 transform translate-y-4">
+                <div class="w-20 h-20 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(255,255,255,0.05)]">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/><path d="M14 13.12c0 2.38 0 6.38-1 8.88"/><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"/><path d="M2 12a10 10 0 0 1 18-6"/><path d="M2 16h.01"/><path d="M21.8 16c.2-2 .131-5.354 0-6"/><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2"/><path d="M8.65 22c.21-.66.45-1.32.57-2"/><path d="M9 6.8a6 6 0 0 1 9 5.2c0 .47 0 1.17-.02 2"/></svg>
+                </div>
+                
+                <h2 class="text-2xl font-bold mb-1 text-white">مرحباً بك</h2>
+                <p class="text-white/30 text-xs mb-8">يرجى تأكيد الهوية للمتابعة</p>
+
+                <form id="login-form" class="w-full space-y-4">
+                    <input type="text" id="user" placeholder="اسم المستخدم" class="glass-input w-full rounded-2xl py-4 px-4 text-sm font-bold" autocomplete="off">
+                    <input type="password" id="pass" placeholder="كلمة المرور" class="glass-input w-full rounded-2xl py-4 px-4 text-sm font-mono tracking-widest">
+                    
+                    <div id="error-msg" class="h-4 text-[11px] text-red-400 font-bold opacity-0 transition-opacity"></div>
+
+                    <button type="submit" class="w-full bg-white/90 hover:bg-white text-black font-bold py-4 rounded-2xl active:scale-95 transition-all shadow-[0_0_25px_rgba(255,255,255,0.15)] mt-2">
+                        فتح النظام
+                    </button>
+                </form>
+            </div>
+
+        </div>
+        
+        <div class="absolute bottom-8 text-white/10 text-[10px] font-mono tracking-[0.2em]">
+            KERNEL v3.0 // SECURE CONNECTION
+        </div>
+    </div>
+
+
+    <script>
+        (function() {
+            // Configuration
+            const CREDENTIALS = { u: "Abdallah", p: "asdfghjkl05896" };
+            
+            const System = {
+                boot: function() {
+                    const bar = document.getElementById('progress-bar');
+                    const bootText = document.getElementById('boot-text');
+                    let width = 0;
+
+                    const interval = setInterval(() => {
+                        width += Math.random() * 6; // Slightly slower for drama
+                        if (width > 100) width = 100;
+                        bar.style.width = width + "%";
+
+                        // Fake Status Updates
+                        if (width > 20 && width < 25) bootText.innerText = "LOADING MODULES...";
+                        if (width > 50 && width < 55) bootText.innerText = "VERIFYING SECURITY...";
+                        if (width > 80) bootText.innerText = "STARTING UI...";
+
+                        if (width === 100) {
+                            clearInterval(interval);
+                            setTimeout(this.showLogin, 500);
+                        }
+                    }, 80);
+                },
+
+                showLogin: function() {
+                    const bootView = document.getElementById('boot-view');
+                    const loginView = document.getElementById('login-view');
+
+                    // Fade out boot
+                    bootView.style.opacity = '0';
+                    bootView.style.transform = 'scale(0.9)';
+                    
+                    setTimeout(() => {
+                        bootView.style.display = 'none';
+                        // Show Login
+                        loginView.classList.remove('hidden-state');
+                        void loginView.offsetWidth; // Trigger reflow
+                        loginView.style.opacity = '1';
+                        loginView.style.transform = 'translateY(0)';
+                        
+                        document.getElementById('user').focus();
+                    }, 500);
+                },
+
+                unlock: function() {
+                    const overlay = document.getElementById('login-overlay');
+                    const dashboardRoot = document.getElementById('root');
+
+                    // 1. Fade out overlay
+                    overlay.classList.add('fade-out-up');
+                    
+                    // 2. Un-blur Dashboard
+                    dashboardRoot.classList.remove('blurred');
+                    dashboardRoot.classList.add('active');
+
+                    // 3. Remove overlay from DOM after anim
+                    setTimeout(() => {
+                        overlay.style.display = 'none';
+                    }, 1000);
+                }
+            };
+
+            // Event Listeners
+            document.getElementById('login-form').addEventListener('submit', (e) => {
+                e.preventDefault();
+                const u = document.getElementById('user').value;
+                const p = document.getElementById('pass').value;
+                const err = document.getElementById('error-msg');
+                const card = document.querySelector('.login-card');
+
+                if (u === CREDENTIALS.u && p === CREDENTIALS.p) {
+                    System.unlock();
+                } else {
+                    err.innerText = "بيانات الدخول غير صحيحة";
+                    err.style.opacity = '1';
+                    
+                    // Shake Animation
+                    card.animate([
+                        { transform: 'translateX(0)' },
+                        { transform: 'translateX(-10px)' },
+                        { transform: 'translateX(10px)' },
+                        { transform: 'translateX(0)' }
+                    ], { duration: 300 });
+                }
+            });
+
+            // Start Boot Sequence
+            window.addEventListener('load', () => System.boot());
+        })();
+    </script>
+
 
     <script type="text/babel">
 
         /* ============================================================================
           ENVIRONMENT SETUP & IMPORTS MAPPING
-          Mapping browser globals to React/Node style imports to keep original code intact.
          ============================================================================
         */
         
@@ -95,8 +312,6 @@
 
         /* ============================================================================
           PLACEHOLDER COMPONENT
-          InteractivePlayer was imported in the original code. 
-          We create it here to prevent crashes.
          ============================================================================
         */
         function InteractivePlayer({ chatId }) {
@@ -770,7 +985,7 @@
             useDashboardSocket(system);
 
             return (
-                <div className="w-screen h-screen overflow-hidden text-white relative bg-black selection:bg-cyan-500/30">
+                <div className="w-screen h-screen overflow-hidden text-white relative bg-transparent selection:bg-cyan-500/30">
                     <MeshGradient color={system.dominantColor} />
                     <DynamicIsland />
 
@@ -824,7 +1039,7 @@
     </script>
 
     <script>
-        // Ensure icons render if used outside React (fallback)
+        // Ensure icons render for non-React parts
         lucide.createIcons();
     </script>
 </body>
