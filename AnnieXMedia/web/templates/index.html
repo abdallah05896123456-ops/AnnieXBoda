@@ -218,7 +218,7 @@
     </style>
 </head>
 <body>
-
+    {% raw %}
     <!-- SOUND ENGINE -->
     <audio id="sfx-hover" src="https://assets.mixkit.co/sfx/preview/mixkit-sci-fi-interface-click-901.mp3"></audio>
     <audio id="sfx-click" src="https://assets.mixkit.co/sfx/preview/mixkit-modern-technology-select-3124.mp3"></audio>
@@ -390,7 +390,8 @@
                             <input type="text" v-model="currentPath" @keydown.enter="fetchFiles" class="path-input">
                             <button class="btn-act" @click="fetchFiles"><i class="fas fa-sync"></i></button>
                             <label class="btn-act" style="display:inline-block; margin:0">
-                                <i class="fas fa-upload"></i> UPLOAD
+                                <i class="fas fa-upload"></i```html
+                                UPLOAD
                                 <input type="file" @change="uploadFile" hidden>
                             </label>
                             <button class="btn-act btn-danger" @click="createFolder"><i class="fas fa-folder-plus"></i> NEW DIR</button>
@@ -457,7 +458,6 @@
             <div class="ctx-item" @click="fileAction('rename')"><i class="fas fa-edit"></i> Rename</div>
             <div class="ctx-item text-danger" @click="fileAction('delete')"><i class="fas fa-trash"></i> Delete</div>
         </div>
-
     </div>
 
     <!-- MAIN SYSTEM LOGIC -->
@@ -483,7 +483,8 @@
                 const files = ref([]);
                 const currentPath = ref('.');
                 const showCtx = ref(false);
-                const ctxX = ref(0); const ctxY = ref(0);
+                const ctxX = ref(0); 
+                const ctxY = ref(0);
                 const selectedFile = ref(null);
                 const queue = ref([]);
                 const mixerTarget = ref('');
@@ -506,8 +507,11 @@
                     const logs = document.getElementById('boot-log');
                     const bar = document.getElementById('boot-bar');
                     const lines = [
-                        "Initializing Kernel...", "Loading Modules [Audio, Network, Database]...",
-                        "Mounting File System...", "Establishing Secure Uplink...", "Starting AnnieX Daemon...",
+                        "Initializing Kernel...", 
+                        "Loading Modules [Audio, Network, Database]...",
+                        "Mounting File System...", 
+                        "Establishing Secure Uplink...", 
+                        "Starting AnnieX Daemon...",
                         "System Ready."
                     ];
                     
@@ -532,7 +536,6 @@
                         const res = await fetch('/login', { method: 'POST', body: formData });
                         if (res.redirected || res.url.includes('dashboard')) {
                             authenticated.value = true;
-                            // Wait for DOM
                             setTimeout(() => {
                                 systemReady.value = true;
                                 initCharts();
@@ -672,4 +675,142 @@
                 const formatBytes = (bytes, decimals = 2) => {
                     if (bytes === 0) return '0 Bytes';
                     const k = 1024;
-                    const dm = decimals < 0
+                    const dm = decimals < 0 ? 0 : decimals;
+                    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+                    const i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+                };
+
+                const uploadFile = async (e) => {
+                    const file = e.target.files[0];
+                    if(!file) return;
+                    const fd = new FormData();
+                    fd.append('file', file);
+                    fd.append('path', currentPath.value);
+                    await fetch('/api/files/upload', { method:'POST', body: fd });
+                    fetchFiles();
+                };
+
+                const createFolder = async () => {
+                    const { value: name } = await Swal.fire({ title: 'New Folder', input: 'text' });
+                    if(name) {
+                        await fetch('/api/files/action', {
+                            method:'POST', headers:{'Content-Type':'application/json'},
+                            body: JSON.stringify({ action:'create_folder', path: currentPath.value, name })
+                        });
+                        fetchFiles();
+                    }
+                };
+
+                const openCtxMenu = (e, file) => {
+                    selectedFile.value = file;
+                    ctxX.value = e.clientX; ctxY.value = e.clientY;
+                    showCtx.value = true;
+                };
+
+                const fileAction = async (act) => {
+                    showCtx.value = false;
+                    const path = selectedFile.value.path;
+                    if(act === 'delete') {
+                        await fetch('/api/files/action', {
+                            method:'POST', headers:{'Content-Type':'application/json'},
+                            body: JSON.stringify({ action:'delete', path })
+                        });
+                    } else if (act === 'rename') {
+                         const { value: name } = await Swal.fire({title: 'Rename', input: 'text', inputValue: selectedFile.value.name});
+                         if(name) {
+                             await fetch('/api/files/action', {
+                                method:'POST', headers:{'Content-Type':'application/json'},
+                                body: JSON.stringify({action:'rename', path, new_name: name})
+                             });
+                         }
+                    } else if (act === 'download') {
+                        window.open(`/api/files/download?path=${encodeURIComponent(path)}`);
+                    }
+                    fetchFiles();
+                };
+
+                // --- CONFIG EDITOR ---
+                let editor = null;
+                const loadConfig = async () => {
+                    try {
+                        const r = await fetch('/api/config/io');
+                        const d = await r.json();
+                        if(!editor) {
+                            editor = ace.edit("ace-editor");
+                            editor.setTheme("ace/theme/twilight");
+                            editor.session.setMode("ace/mode/python");
+                        }
+                        editor.setValue(d.content || '# Config File');
+                    } catch(e) {}
+                };
+
+                const saveConfig = async () => {
+                    if(!editor) return;
+                    const content = editor.getValue();
+                    await fetch('/api/config/io', {
+                        method:'POST', headers:{'Content-Type':'application/json'},
+                        body: JSON.stringify({content})
+                    });
+                    Swal.fire({title: 'Saved', icon: 'success', timer: 1500, showConfirmButton: false});
+                };
+                
+                const mixerAction = async (action) => {
+                     await fetch('/api/mixer/control', {
+                        method:'POST', headers:{'Content-Type':'application/json'},
+                        body: JSON.stringify({action, chat_id: mixerTarget.value, val:0})
+                    });
+                };
+
+                const togglePriority = async (enable) => {
+                    await fetch('/api/priority/toggle', {
+                        method:'POST', headers:{'Content-Type':'application/json'},
+                        body: JSON.stringify({chat_id: enable ? priorityTarget.value : 'OFF'})
+                    });
+                    const r = await fetch('/api/bot/stats');
+                    botStats.value = await r.json();
+                };
+
+                const systemAction = async (act) => {
+                    if(act === 'restart') {
+                         await Swal.fire({title:'Rebooting System...', timer: 2000, showConfirmButton:false});
+                         await fetch('/api/maintenance', {
+                            method:'POST', headers:{'Content-Type':'application/json'},
+                            body: JSON.stringify({action:'restart'})
+                        });
+                        location.reload();
+                    }
+                };
+
+                // INIT
+                onMounted(() => {
+                    runBootSequence();
+                    // Check initial auth state
+                    fetch('/login').then(r => {
+                        if(r.redirected || r.url.includes('dashboard')) {
+                            authenticated.value = true;
+                            setTimeout(() => { 
+                                systemReady.value = true; 
+                                initCharts(); 
+                                startPolling(); 
+                            }, 100);
+                        }
+                    });
+                });
+
+                return {
+                    authenticated, password, login, loginError, logout,
+                    systemReady, currentView, switchView,
+                    stats, botStats, currentTime, latency,
+                    termCmd, termHistory, execTerm,
+                    files, currentPath, fetchFiles, fileNav, fileClick, getFileIcon, formatBytes, uploadFile, createFolder,
+                    showCtx, ctxX, ctxY, openCtxMenu, fileAction,
+                    queue, mixerTarget, mixerAction, isPlaying, priorityTarget, togglePriority,
+                    saveConfig, systemAction, sfxHover, loadConfig
+                }
+            }
+        }).mount('#app');
+    </script>
+{% endraw %}
+</body>
+</html>
