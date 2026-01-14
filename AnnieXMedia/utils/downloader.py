@@ -1,6 +1,6 @@
-# Authored By Certified Coders © 2025
-# Full Fixed Downloader for AnnieXMedia - Telegram Native Video Support
-# Fixes: Telegram MP4 compatibility (H.264/AAC/yuv420p), M3U8, 403 Errors.
+# Authored By Certified Coders © 2026
+# Fixed Downloader for AnnieXMedia - Final Fix for Async Future Error & HLS
+# Fixes: TypeError (Future vs Coroutine), NoVideoSourceFound, Empty File.
 
 import asyncio
 import contextlib
@@ -21,7 +21,6 @@ from aiohttp import TCPConnector
 from yt_dlp import YoutubeDL
 
 # --- Imports from AnnieXMedia Project Structure ---
-# Ensure these match your actual project structure
 from AnnieXMedia.core.dir import CACHE_DIR, DOWNLOAD_DIR
 from AnnieXMedia.utils.cookie_handler import COOKIE_PATH as _COOKIES_FILE
 from AnnieXMedia.utils.tuning import CHUNK_SIZE, SEM
@@ -60,17 +59,14 @@ _cache_lock = asyncio.Lock()
 # ---------------------------------------------------------------------------------
 
 async def register_cache(path: str) -> None:
-    """Register file in cache system (Async)."""
     if not path: return
     try:
         async with _cache_lock:
             _cache_registry[path] = time.time() + CACHE_TTL
     except Exception:
-        # Fallback without lock if loop issue
         _cache_registry[path] = time.time() + CACHE_TTL
 
 def _register_cache_from_thread(path: str) -> None:
-    """Thread-safe cache registration."""
     if not path: return
     try:
         loop = asyncio.get_event_loop()
@@ -82,7 +78,6 @@ def _register_cache_from_thread(path: str) -> None:
         pass
 
 def _is_file_in_use(path: str) -> bool:
-    """Check if file is currently playing to prevent deletion."""
     try:
         for k, q in list(_GLOBAL_DB.items()):
             if not q: continue
@@ -91,11 +86,10 @@ def _is_file_in_use(path: str) -> bool:
                     if item.get("file") == path or item.get("speed_path") == path:
                         return True
     except Exception:
-        return True # Fail-safe: assume used
+        return True 
     return False
 
 async def _cache_cleaner_loop() -> None:
-    """Background loop to delete expired files."""
     LOGGER.info("Cache cleaner loop started.")
     while True:
         try:
@@ -135,18 +129,16 @@ def init_cache_cleaner() -> None:
 # ---------------------------------------------------------------------------------
 
 def _safe_title_for_filename(title: str) -> str:
-    """Create a filesystem-safe title."""
     if not title: return str(int(time.time()))
     try:
         s = html.unescape(title)
         s = re.sub(r"[^\w\s-]", "", s)
         s = re.sub(r"\s+", "_", s.strip())
-        return s[:40] # Limit length
+        return s[:40] 
     except:
         return str(int(time.time()))
 
 def extract_video_id(link: str) -> str:
-    """Extract YouTube ID or return empty string."""
     if not link: return ""
     s = link.strip()
     if YOUTUBE_ID_RE.match(s): return s
@@ -159,15 +151,12 @@ def extract_video_id(link: str) -> str:
     return ""
 
 def _make_link_id(link: str) -> str:
-    """Hash link for non-YouTube files."""
     if not link: return "unknown"
     return hashlib.sha256(link.encode()).hexdigest()[:12]
 
 def find_cached_file(video_id: str, kind: str) -> Optional[str]:
-    """Find file in specific directory."""
     if not video_id: return None
     
-    # Priority search in specific folder
     target_dir = AUDIO_DIR if kind == "audio" else VIDEO_DIR
     pattern = os.path.join(target_dir, f"{video_id}_{kind}_*.mp4")
     
@@ -176,15 +165,14 @@ def find_cached_file(video_id: str, kind: str) -> Optional[str]:
         matches += glob.glob(os.path.join(target_dir, f"{video_id}_{kind}_*.m4a"))
 
     if matches:
-        best = sorted(matches, key=os.path.getmtime, reverse=True)[0]
-        _register_cache_from_thread(best)
-        return best
+        # Verify file size > 0
+        valid_matches = [m for m in matches if os.path.getsize(m) > 0]
+        if valid_matches:
+            best = sorted(valid_matches, key=os.path.getmtime, reverse=True)[0]
+            _register_cache_from_thread(best)
+            return best
     
     return None
-
-def _is_m3u8_url(url: str) -> bool:
-    if not url: return False
-    return ".m3u8" in url.lower() or "manifest" in url.lower()
 
 
 # ---------------------------------------------------------------------------------
@@ -192,19 +180,9 @@ def _is_m3u8_url(url: str) -> bool:
 # ---------------------------------------------------------------------------------
 
 def _run_ffmpeg_convert(input_src: str, out_path: str, kind: str = "video") -> bool:
-    """
-    Convert Input to Telegram Compatible Format.
-    Video: MP4 Container, H.264 Codec, AAC Audio, yuv420p pixel format.
-    Audio: M4A/AAC.
-    """
     try:
-        # TELEGRAM VIDEO STANDARD:
-        # -c:v libx264 (H.264)
-        # -pix_fmt yuv420p (Crucial for mobile playback)
-        # -movflags +faststart (Web optimized)
-        # -c:a aac (AAC Audio)
-        
         if kind == "video":
+            # Force conversion to simple H.264/AAC for Telegram
             cmd = (
                 f'ffmpeg -y -hide_banner -loglevel error '
                 f'-i {shlex.quote(input_src)} '
@@ -215,7 +193,6 @@ def _run_ffmpeg_convert(input_src: str, out_path: str, kind: str = "video") -> b
                 f'{shlex.quote(out_path)}'
             )
         else:
-            # Audio Only
             cmd = (
                 f'ffmpeg -y -hide_banner -loglevel error '
                 f'-i {shlex.quote(input_src)} '
@@ -225,10 +202,10 @@ def _run_ffmpeg_convert(input_src: str, out_path: str, kind: str = "video") -> b
 
         proc = subprocess.run(cmd, shell=True, timeout=900)
         
-        if proc.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 100:
+        if proc.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 1024:
             return True
             
-        LOGGER.error(f"FFmpeg conversion failed with return code {proc.returncode}")
+        LOGGER.error(f"FFmpeg conversion failed. Return code: {proc.returncode}")
         return False
     except subprocess.TimeoutExpired:
         LOGGER.error("FFmpeg process timed out")
@@ -238,29 +215,28 @@ def _run_ffmpeg_convert(input_src: str, out_path: str, kind: str = "video") -> b
         return False
 
 def _ensure_named_final(path: str, vid: str, kind: str, title: str) -> Optional[str]:
-    """
-    Validate and finalize the downloaded file.
-    If it's M3U8/Manifest OR incompatible video -> Convert to Telegram Standard.
-    """
+    """Validates file exists and renames/converts it."""
     if not path or not os.path.exists(path):
+        LOGGER.error(f"File not found after download: {path}")
+        return None
+    
+    if os.path.getsize(path) < 100:
+        LOGGER.error("Downloaded file is empty or too small.")
+        try: os.remove(path)
+        except: pass
         return None
     
     out_dir = AUDIO_DIR if kind == "audio" else VIDEO_DIR
     safe_title = _safe_title_for_filename(title)
-    
-    # Force extension based on kind
     ext = "mp4" if kind == "video" else "m4a"
     final_name = os.path.join(out_dir, f"{vid}_{kind}_{safe_title}.{ext}")
 
-    # Check 1: Is it a manifest file?
+    # Check if we need conversion (e.g. m3u8 or raw stream)
     is_manifest = path.endswith(".m3u8") or "manifest" in path
     
-    # Check 2: For Video, is it likely incompatible? (Simple heuristic)
-    # We always re-encode manifests. For direct downloads, we trust yt-dlp unless specified.
-    needs_conversion = is_manifest
-    
-    if needs_conversion:
-        LOGGER.info(f"Converting raw file/manifest to Telegram Standard: {path}")
+    # Always convert if it's a manifest or if names don't match
+    if is_manifest or (kind == "video" and not path.endswith(".mp4")):
+        LOGGER.info(f"Converting file to Telegram Standard: {path}")
         if _run_ffmpeg_convert(path, final_name, kind):
             try: os.remove(path) 
             except: pass
@@ -268,7 +244,7 @@ def _ensure_named_final(path: str, vid: str, kind: str, title: str) -> Optional[
             return final_name
         return None
 
-    # Handle Regular Files (Just rename)
+    # Simple Rename
     if path != final_name:
         try:
             shutil.move(path, final_name)
@@ -286,7 +262,7 @@ def _ensure_named_final(path: str, vid: str, kind: str, title: str) -> Optional[
 # ---------------------------------------------------------------------------------
 
 def download_with_ytdlp_sync(link: str, kind: str, title_hint: str) -> Optional[str]:
-    """Sync wrapper for yt-dlp running in executor."""
+    """Blocking yt-dlp function."""
     try:
         vid = extract_video_id(link) or _make_link_id(link)
         out_dir = AUDIO_DIR if kind == "audio" else VIDEO_DIR
@@ -307,20 +283,16 @@ def download_with_ytdlp_sync(link: str, kind: str, title_hint: str) -> Optional[
         if _COOKIES_FILE and os.path.exists(_COOKIES_FILE):
             opts["cookiefile"] = _COOKIES_FILE
 
-        # Smart Aria2 Logic
-        # Disable aria2 for GoogleVideo/HLS to prevent 403 Forbidden
-        is_sensitive = "googlevideo" in link or "m3u8" in link or "manifest" in link
+        # Disable Aria2 for GoogleVideo links to prevent 403s
+        is_sensitive = "googlevideo" in link or "m3u8" in link
         if ARIA2_PATH and not is_sensitive:
             opts["external_downloader"] = "aria2c"
             opts["external_downloader_args"] = ["-x", "8", "-k", "1M"]
         
-        # Format Selection - TELEGRAM OPTIMIZED
         if kind == "audio":
             opts["format"] = "bestaudio[ext=m4a]/bestaudio/best"
         else:
-            # FORCE TELEGRAM COMPATIBLE VIDEO
-            # Prioritize 'avc1' (H.264) video codec.
-            # This avoids 'vp9' or 'av01' which Telegram doesn't play directly.
+            # Prefer AVC1 (H.264) for Telegram
             opts["format"] = "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
             opts["merge_output_format"] = "mp4"
 
@@ -333,20 +305,16 @@ def download_with_ytdlp_sync(link: str, kind: str, title_hint: str) -> Optional[
 
             if not info: return None
             
-            # Locate the file
+            # Find the actual downloaded file
             filename = ydl.prepare_filename(info)
-            
-            # If yt-dlp merged file, the filename might have changed extension
             if not os.path.exists(filename):
+                # Fallback search if merger changed extension
                 base = os.path.splitext(filename)[0]
-                for ext in ["mp4", "mkv", "webm", "m4a"]:
-                    if os.path.exists(f"{base}.{ext}"):
-                        filename = f"{base}.{ext}"
-                        break
+                possible = glob.glob(f"{base}*")
+                if possible:
+                    filename = max(possible, key=os.path.getctime)
             
-            # Finalize (Convert if M3U8, Rename)
-            final = _ensure_named_final(filename, vid, kind, title_hint or info.get("title", ""))
-            return final
+            return _ensure_named_final(filename, vid, kind, title_hint or info.get("title", ""))
 
     except Exception as e:
         LOGGER.error(f"Yt-dlp General Error: {e}")
@@ -365,7 +333,6 @@ async def get_session():
     return _session
 
 async def api_download(link: str, kind: str, title: str) -> Optional[str]:
-    """Download from External API."""
     if kind == "audio" and not USE_AUDIO_API: return None
     if kind == "video" and not USE_VIDEO_API: return None
     
@@ -377,26 +344,18 @@ async def api_download(link: str, kind: str, title: str) -> Optional[str]:
         session = await get_session()
         target_url = f"{base_url}/{endpoint}/{vid}?api={API_KEY}"
         
-        # Poll for completion (Max 30s)
         for _ in range(30):
             async with session.get(target_url) as r:
                 if r.status != 200: return None
                 data = await r.json()
-                
                 status = str(data.get("status", "")).lower()
 
                 if status == "done":
                     dlink = data.get("link")
                     if not dlink: return None
                     
-                    # Assume API returns something, but we might need to verify format
-                    # For safety, we treat API downloads as temp and pass to ensure_named_final
-                    # But to save bandwidth, we download directly to final if trustworthy
-                    
                     safe_title = _safe_title_for_filename(data.get("title", title))
                     ext = "mp4" if kind == "video" else "m4a"
-                    
-                    # Temp path for download
                     temp_path = os.path.join(VIDEO_DIR if kind == "video" else AUDIO_DIR, f"api_{vid}_{int(time.time())}.{ext}")
                     
                     async with session.get(dlink) as f_resp:
@@ -405,54 +364,54 @@ async def api_download(link: str, kind: str, title: str) -> Optional[str]:
                                 async for chunk in f_resp.content.iter_chunked(CHUNK_SIZE):
                                     await f.write(chunk)
                     
-                    # Finalize (Check headers/convert if needed)
-                    final = _ensure_named_final(temp_path, vid, kind, data.get("title", title))
-                    return final
+                    return _ensure_named_final(temp_path, vid, kind, data.get("title", title))
                 
                 if status == "error":
                     return None
-            
             await asyncio.sleep(1)
-            
     except Exception as e:
         LOGGER.debug(f"API Error: {e}")
     return None
 
+# --- FIXED RACE HANDLER ---
 async def race_handler(link: str, kind: str, title: str) -> Optional[str]:
-    """Race between yt-dlp and API."""
+    """Properly handles race between sync (yt-dlp) and async (api)."""
     loop = asyncio.get_event_loop()
     
-    # Define Tasks
-    t1 = loop.run_in_executor(None, download_with_ytdlp_sync, link, kind, title)
-    t2 = api_download(link, kind, title)
+    # WRAPPER to convert sync function to awaitable coroutine
+    async def run_ytdlp():
+        return await loop.run_in_executor(None, download_with_ytdlp_sync, link, kind, title)
+
+    # Now we create tasks from coroutines, NOT futures
+    t1 = asyncio.create_task(run_ytdlp())
+    t2 = asyncio.create_task(api_download(link, kind, title))
     
-    tasks = [asyncio.create_task(t1), asyncio.create_task(t2)]
+    tasks = [t1, t2]
     
-    # Wait for FIRST success
+    # Wait for the first one to complete
     done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     
     result = None
     for t in done:
         try:
             res = t.result()
-            if res and os.path.exists(res):
+            if res and os.path.exists(res) and os.path.getsize(res) > 0:
                 result = res
                 break
-        except: pass
+        except Exception as e:
+            LOGGER.error(f"Task exception in race: {e}")
+            pass
         
-    # If first failed, check pending
+    # If first one failed, verify pending
     if not result and pending:
+        # Give remaining task a bit more time or cancel
+        # Here we just cancel to fail fast, or wait? Let's wait briefly if t2 is API
         for p in pending:
-            try:
-                res = await p
-                if res and os.path.exists(res):
-                    result = res
-                    break
-            except: pass
-            
-    # Cancel losers
-    for p in pending: p.cancel()
-    
+            p.cancel()
+    else:
+         for p in pending:
+            p.cancel()
+
     return result
 
 
@@ -461,10 +420,6 @@ async def race_handler(link: str, kind: str, title: str) -> Optional[str]:
 # ---------------------------------------------------------------------------------
 
 async def yt_dlp_download(link: str, type: str = "audio", title: str = "") -> Optional[str]:
-    """
-    Main entry point.
-    type: 'audio' | 'video'
-    """
     kind = "video" if type == "video" else "audio"
     vid = extract_video_id(link) or _make_link_id(link)
     
@@ -473,7 +428,7 @@ async def yt_dlp_download(link: str, type: str = "audio", title: str = "") -> Op
         LOGGER.info(f"Cache Hit: {os.path.basename(cached)}")
         return cached
 
-    # 2. In-flight protection (Anti-Spam)
+    # 2. In-flight protection
     key = f"{vid}_{kind}"
     async with _inflight_lock:
         if key in _inflight:
@@ -481,23 +436,24 @@ async def yt_dlp_download(link: str, type: str = "audio", title: str = "") -> Op
                 LOGGER.info(f"Waiting for existing download: {key}")
                 return await asyncio.wait_for(_inflight[key], timeout=300)
             except:
-                pass # If wait failed, start new
+                pass 
         
-        # Create new future
         future = asyncio.get_event_loop().create_future()
         _inflight[key] = future
 
     try:
         # 3. Start Download Race
-        async with SEM: # Limit concurrency
+        async with SEM: 
             result = await race_handler(link, kind, title)
         
-        if result:
+        if result and os.path.exists(result):
             LOGGER.info(f"Download Success: {os.path.basename(result)}")
-        
-        if not future.done():
-            future.set_result(result)
-        return result
+            if not future.done(): future.set_result(result)
+            return result
+        else:
+            LOGGER.error("Download returned None or file missing.")
+            if not future.done(): future.set_result(None)
+            return None
 
     except Exception as e:
         LOGGER.exception(f"Fatal Download Error: {e}")
