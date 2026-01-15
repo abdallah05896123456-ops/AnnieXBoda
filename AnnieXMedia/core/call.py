@@ -46,7 +46,7 @@ from AnnieXMedia.utils.errors import capture_internal_err
 autoend = {}
 counter = {}
 
-# --- Helper Function for Streams (Optimized) ---
+# --- Helper Function for Streams (Optimized for TitanOS) ---
 def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
     if video:
         return MediaStream(
@@ -77,7 +77,7 @@ async def _clear_(chat_id: int) -> None:
 
 class Call:
     def __init__(self):
-        # 🔥 ALEXA OPTIMIZATION: cache_duration=100 added to all clients
+        # 🔥 TitanOS Update: Cache maintained at 100 for stability
         self.userbot1 = Client(
             "AnnieXAssis1", config.API_ID, config.API_HASH, session_string=config.STRING1
         ) if config.STRING1 else None
@@ -104,6 +104,8 @@ class Call:
         self.five = PyTgCalls(self.userbot5, cache_duration=100) if self.userbot5 else None
 
         self.active_calls: set[int] = set()
+        # 🔥 TitanOS: Turbo Variable added for Web Control
+        self.turbo_mode = {} 
 
     @capture_internal_err
     async def pause_stream(self, chat_id: int) -> None:
@@ -113,7 +115,11 @@ class Call:
     @capture_internal_err
     async def resume_stream(self, chat_id: int) -> None:
         assistant = await group_assistant(self, chat_id)
-        await assistant.resume(chat_id)
+        # 🔥 TitanOS Fix: Force Resume (If resume fails, unmute)
+        try:
+            await assistant.resume(chat_id)
+        except:
+            await assistant.unmute(chat_id)
 
     @capture_internal_err
     async def mute_stream(self, chat_id: int) -> None:
