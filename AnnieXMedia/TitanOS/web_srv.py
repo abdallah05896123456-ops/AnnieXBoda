@@ -39,11 +39,19 @@ except ImportError as e:
     print("👉 Run: pip3 install fastapi uvicorn gitpython aiofiles python-multipart jinja2\n")
     sys.exit()
 
-# [2] Paths & Configuration Logic
+# [2] Paths & Configuration Logic (ADJUSTED FOR FLAT STRUCTURE)
 # ──────────────────────────────────────────────────────────────────────────────
-# تحديد المسارات بناءً على موقع الملف الحالي
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # AnnieXMedia/TitanOS/
-ROOT_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "..")) # Root Directory
+# تحديد المسار الحالي (حيث يوجد ملف web_srv.py)
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# المجلد الجذري للسورس (نخرج خطوة واحدة للوراء للوصول لمجلد AnnieXMedia الرئيسي)
+ROOT_DIR = os.path.abspath(os.path.join(CURRENT_DIR, "..")) 
+
+# ⚠️ تعديل هام: بما أن html بجوار البايثون، نجعل مسار القوالب هو نفس المسار الحالي
+TEMPLATES_DIR = CURRENT_DIR
+STATIC_DIR = os.path.join(CURRENT_DIR, "static")
+
+# مسارات البوت المعتادة
 DOWNLOADS_DIR = os.path.join(ROOT_DIR, "downloads")
 CACHE_DIR = os.path.join(ROOT_DIR, "cache")
 RAW_FILES_DIR = os.path.join(ROOT_DIR, "raw_files")
@@ -152,18 +160,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Template & Static Files Setup
-TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
-STATIC_DIR = os.path.join(BASE_DIR, "static")
-
-# التأكد من وجود المجلدات (إنشاءها إذا لم تكن موجودة لمنع الأخطاء)
-os.makedirs(TEMPLATES_DIR, exist_ok=True)
-os.makedirs(STATIC_DIR, exist_ok=True)
-
+# Template Setup
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
-# Mount Static Directories
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+# Mount Static Directories (Only if exists)
+if os.path.exists(STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 if os.path.exists(DOWNLOADS_DIR):
     app.mount("/downloads", StaticFiles(directory=DOWNLOADS_DIR), name="downloads")
 
@@ -658,7 +660,7 @@ async def page_dashboard(request: Request):
     if not request.session.get("user"):
         return RedirectResponse("/login")
     
-    # Check if template exists, otherwise render basic HTML
+    # ⚠️ Check for dashboard.html in CURRENT_DIR (Not templates/ folder)
     tpl_path = os.path.join(TEMPLATES_DIR, "dashboard.html")
     if os.path.exists(tpl_path):
         return templates.TemplateResponse("dashboard.html", {
@@ -668,12 +670,12 @@ async def page_dashboard(request: Request):
         })
     
     # Fallback HTML Generator
-    return HTMLResponse("""
-    <html><head><title>TitanOS</title></head>
+    return HTMLResponse(f"""
+    <html><head><title>TitanOS Error</title></head>
     <body style="background:#1a1a1a;color:white;font-family:sans-serif;text-align:center;padding:50px;">
-        <h1>TitanOS Kernel is Active 🟢</h1>
-        <p>Templates not found in /templates/. Please add dashboard.html</p>
-        <a href="/logout" style="color:#ff5555;">Logout</a>
+        <h1>Dashboard Template Missing</h1>
+        <p>Could not find <code>dashboard.html</code> in {TEMPLATES_DIR}</p>
+        <p>Please upload the HTML file to the TitanOS folder.</p>
     </body></html>
     """)
 
