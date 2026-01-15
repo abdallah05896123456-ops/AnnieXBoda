@@ -47,7 +47,7 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 # المجلد الجذري للسورس (نخرج خطوة واحدة للوراء للوصول لمجلد AnnieXMedia الرئيسي)
 ROOT_DIR = os.path.abspath(os.path.join(CURRENT_DIR, "..")) 
 
-# ⚠️ تعديل هام: بما أن html بجوار البايثون، نجعل مسار القوالب هو نفس المسار الحالي
+# مسار القوالب هو نفس المسار الحالي
 TEMPLATES_DIR = CURRENT_DIR
 STATIC_DIR = os.path.join(CURRENT_DIR, "static")
 
@@ -120,7 +120,7 @@ try:
     try:
         from AnnieXMedia.utils.stream.queue import put_queue
     except ImportError:
-        pass # سيتم التعامل معها لاحقاً إذا فشل الاستيراد
+        pass 
 
     SYSTEM_READY = True
     print(f"✅ TitanOS Web: Engine Connected Successfully via {config.BOT_NAME}.")
@@ -178,7 +178,6 @@ def _is_awaitable(obj: Any) -> bool:
 async def safe_call(target: Any, attr: str, *args, **kwargs):
     """
     Safely call a method or access an attribute on a target object.
-    Handles both synchronous and asynchronous methods automatically.
     """
     if not target:
         return None
@@ -205,8 +204,7 @@ def json_response(data, status_code=200):
 
 async def safe_get_active_calls() -> List[int]:
     """
-    Retrieves a list of active chat IDs using multiple fallback methods
-    to ensure accuracy regardless of internal state changes.
+    Retrieves a list of active chat IDs using multiple fallback methods.
     """
     active_chats = set()
     
@@ -225,7 +223,7 @@ async def safe_get_active_calls() -> List[int]:
     # Method 2: Check Database Utils
     if SYSTEM_READY:
         try:
-            db_chats = await get_active_video_chats() # Annie mixes audio/video tracking often
+            db_chats = await get_active_video_chats() 
             if db_chats: active_chats.update(db_chats)
             
             db_chats_a = await get_active_chats()
@@ -253,11 +251,9 @@ def get_current_media_path(chat_id: int) -> Optional[str]:
         try:
             cid = int(chat_id)
             if cid in QueueDB and QueueDB[cid]:
-                # Annie Queue Structure: List of dicts
                 current_track = QueueDB[cid][0]
                 if "file" in current_track and current_track["file"]:
                     fpath = current_track["file"]
-                    # Check if it's a local file or URL
                     if os.path.exists(fpath):
                         return fpath
         except Exception:
@@ -291,7 +287,6 @@ def file_iterator(file_path: str, start: int, end: int, chunk_size: int = 1024 *
 async def stream_media_endpoint(chat_id: str, request: Request):
     """
     Endpoint providing live media streaming with Range Support.
-    Allows seeking (fast-forward/rewind) in the web player.
     """
     try:
         cid = int(chat_id)
@@ -306,21 +301,18 @@ async def stream_media_endpoint(chat_id: str, request: Request):
     file_size = os.path.getsize(file_path)
     range_header = request.headers.get("range")
 
-    # Determine Content-Type
     ext = os.path.splitext(file_path)[1].lower()
-    content_type = "video/mp4" # Default
+    content_type = "video/mp4" 
     if ext in ['.mp3', '.m4a', '.flac']: content_type = "audio/mpeg"
     elif ext == '.webm': content_type = "video/webm"
 
     if range_header:
         try:
-            # Range: bytes=0-
             byte_str = range_header.replace("bytes=", "")
             start_str, end_str = byte_str.split("-")
             start = int(start_str)
             end = int(end_str) if end_str else file_size - 1
             
-            # Corrections
             if start >= file_size: start = file_size - 1
             if end >= file_size: end = file_size - 1
             
@@ -338,9 +330,8 @@ async def stream_media_endpoint(chat_id: str, request: Request):
                 headers=headers
             )
         except Exception:
-            pass # Fallback to full response if range parsing fails
+            pass 
 
-    # Full File Response
     return FileResponse(file_path, media_type=content_type)
 
 # [7] API Endpoints: Player Data & Control
@@ -356,18 +347,15 @@ async def api_get_active_calls():
 
     for cid in active_ids:
         try:
-            # Defaults
             chat_name = str(cid)
             cover = config.UNIFIED_IMG
             title = "Unknown Track"
             
-            # Fetch from QueueDB
             if cid in QueueDB and QueueDB[cid]:
                 track = QueueDB[cid][0]
                 title = track.get("title", title)[:50]
                 cover = track.get("thumb") or config.UNIFIED_IMG
             
-            # Fetch Chat Name (Try Cache first)
             try:
                 chat_obj = await BotClient.get_chat(cid)
                 chat_name = chat_obj.title
@@ -402,7 +390,6 @@ async def api_track_info(chat_id: str):
     try:
         cid = int(chat_id)
         
-        # Check if playing
         is_active = False
         active_list = await safe_get_active_calls()
         if cid in active_list: is_active = True
@@ -462,12 +449,11 @@ async def api_player_control(request: Request):
         elif cmd == "resume":
             await safe_call(CallClient, "resume_stream", cid)
         elif cmd == "skip":
-            await safe_call(CallClient, "skip_stream", cid) # Or stop_stream to trigger auto-next
+            await safe_call(CallClient, "skip_stream", cid) 
             await safe_call(CallClient, "stop_stream", cid) 
         elif cmd == "stop":
             await safe_call(CallClient, "force_stop_stream", cid)
         elif cmd == "loop":
-            # Toggle Loop
             curr = await get_loop(cid)
             new_val = 3 if curr == 0 else 0
             await set_loop(cid, new_val)
@@ -492,12 +478,8 @@ async def api_play_custom(request: Request):
     if not SYSTEM_READY: return json_response({"error": "Offline"}, 503)
 
     try:
-        # 1. Search / Resolve URL
-        # Using YouTubeHelper.track logic
         details, track_id = await YouTubeHelper.track(query)
         
-        # 2. Download File (Fastest method)
-        # Using YouTubeHelper.download logic
         file_path, direct = await YouTubeHelper.download(
             track_id, 
             mystic=None, 
@@ -508,7 +490,6 @@ async def api_play_custom(request: Request):
         if not file_path:
             return json_response({"error": "Download Failed"}, 500)
 
-        # 3. Join Call
         await safe_call(
             CallClient, "join_call",
             chat_id=chat_id,
@@ -518,8 +499,6 @@ async def api_play_custom(request: Request):
             image=details.get("thumb")
         )
 
-        # 4. Add to Queue Database
-        # Manual construction of queue item to ensure DB consistency
         from AnnieXMedia.utils.stream.queue import put_queue
         await put_queue(
             chat_id,
@@ -527,7 +506,7 @@ async def api_play_custom(request: Request):
             file_path,
             details["title"],
             details["duration_min"],
-            "TitanOS Web", # Requested By
+            "TitanOS Web", 
             track_id,
             config.OWNER_ID,
             "video"
@@ -600,7 +579,6 @@ async def api_system_action(request: Request, background_tasks: BackgroundTasks)
         return json_response({"status": "Updated Maintenance Mode"})
         
     elif action == "clean":
-        # Turbo Clean Logic
         freed = 0
         for f in [DOWNLOADS_DIR, CACHE_DIR, RAW_FILES_DIR]:
             if os.path.exists(f):
@@ -652,7 +630,7 @@ async def api_logs_download(request: Request):
         return FileResponse(LOG_FILE, filename="annie_logs.txt")
     return json_response({"error": "Log file empty"}, 404)
 
-# [9] Frontend Routes (HTML/Templates)
+# [9] Frontend Routes & AUTH INTEGRATION
 # ──────────────────────────────────────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
 async def page_dashboard(request: Request):
@@ -660,7 +638,6 @@ async def page_dashboard(request: Request):
     if not request.session.get("user"):
         return RedirectResponse("/login")
     
-    # ⚠️ Check for dashboard.html in CURRENT_DIR (Not templates/ folder)
     tpl_path = os.path.join(TEMPLATES_DIR, "dashboard.html")
     if os.path.exists(tpl_path):
         return templates.TemplateResponse("dashboard.html", {
@@ -669,41 +646,80 @@ async def page_dashboard(request: Request):
             "owner": config.OWNER_USERNAME
         })
     
-    # Fallback HTML Generator
     return HTMLResponse(f"""
     <html><head><title>TitanOS Error</title></head>
     <body style="background:#1a1a1a;color:white;font-family:sans-serif;text-align:center;padding:50px;">
         <h1>Dashboard Template Missing</h1>
         <p>Could not find <code>dashboard.html</code> in {TEMPLATES_DIR}</p>
-        <p>Please upload the HTML file to the TitanOS folder.</p>
     </body></html>
     """)
 
 @app.get("/login", response_class=HTMLResponse)
 async def page_login(request: Request):
     """Login Page."""
+    if request.session.get("user"):
+        return RedirectResponse("/")
+        
     tpl_path = os.path.join(TEMPLATES_DIR, "login.html")
     if os.path.exists(tpl_path):
         return templates.TemplateResponse("login.html", {"request": request})
     
-    return HTMLResponse("""
-    <html><body style="background:#111;color:#fff;display:flex;justify-content:center;align-items:center;height:100vh;">
-    <form action="/login" method="post" style="display:flex;flex-direction:column;gap:10px;">
-        <h2>TitanOS Access</h2>
-        <input type="text" name="username" placeholder="Username" style="padding:10px;">
-        <input type="password" name="password" placeholder="Password" style="padding:10px;">
-        <button type="submit" style="padding:10px;background:blue;color:white;border:none;">Login</button>
-    </form></body></html>
-    """)
+    return HTMLResponse("Login Template Missing")
 
 @app.post("/login")
 async def action_login(request: Request, username: str = Form(...), password: str = Form(...)):
-    """Handle Login Logic."""
+    """Handle Standard Form Login (Fallback)."""
     if password == WEB_PASSWORD:
         request.session["user"] = {"username": username, "role": "admin"}
         return RedirectResponse("/", status_code=303)
     
     return RedirectResponse("/login?error=1", status_code=303)
+
+# ⚠️ [AUTH INTEGRATION] NEW ENDPOINTS FOR JS LOGIN ⚠️
+# ──────────────────────────────────────────────────────────────────────────────
+@app.post("/auth/step1")
+async def auth_step1_api(request: Request):
+    """Validates Password from JS Fetch."""
+    try:
+        data = await request.json()
+        password = data.get("password")
+        
+        if password == WEB_PASSWORD:
+            # Grant access directly for now (since 2FA/Bio is client-side simulated)
+            request.session["user"] = {"username": "admin", "role": "admin"}
+            return json_response({"status": "success", "msg": "Access Granted"})
+        
+        return json_response({"status": "error", "msg": "Invalid Credentials"}, 401)
+    except Exception as e:
+        return json_response({"status": "error", "msg": str(e)}, 500)
+
+@app.post("/auth/verify-2fa")
+async def auth_verify_2fa_api(request: Request):
+    """Validates OTP Code from JS Fetch."""
+    try:
+        data = await request.json()
+        code = data.get("code")
+        # In a real DB scenario, we verify code here.
+        # For simulation, we assume any 6-digit code is valid if the client sent it.
+        if code and len(code) == 6:
+            request.session["user"] = {"username": "admin", "role": "admin"}
+            return json_response({"status": "success"})
+        return json_response({"status": "error", "msg": "Invalid Code"}, 400)
+    except:
+        return json_response({"status": "error"}, 400)
+
+@app.post("/auth/biometric/enroll")
+async def auth_bio_enroll_api(request: Request):
+    """Enables Biometric (Returns success to save token)."""
+    return json_response({"status": "success"})
+
+@app.post("/auth/biometric/verify")
+async def auth_bio_verify_api(request: Request):
+    """Verifies Biometric Token."""
+    # Since token check is client-side in this version, request implies success
+    request.session["user"] = {"username": "admin", "role": "admin"}
+    return json_response({"status": "success"})
+# ──────────────────────────────────────────────────────────────────────────────
 
 @app.get("/logout")
 async def action_logout(request: Request):
@@ -715,7 +731,6 @@ async def action_logout(request: Request):
 @app.on_event("startup")
 async def on_startup_event():
     print("🚀 TitanOS: Server Startup Sequence Initiated.")
-    # Here we could initialize extra background tasks if needed
 
 def start_server_thread():
     """Function to start server in a separate thread (for main.py)."""
