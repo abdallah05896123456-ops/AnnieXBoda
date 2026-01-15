@@ -3,864 +3,745 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="TitanOS V6 Ultimate Control Interface">
     <meta name="theme-color" content="#000000">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>TitanOS | Ultimate Command Center</title>
+    <title>TitanOS | Glass Citadel V6</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;800&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
     <style>
-        /* * ── TITAN DESIGN SYSTEM 2.0 ──────────────────────────────────────
-         * Theme: Dark Glassmorphism with Neon Accents
-         * Optimization: GPU Accelerated Layers
+        /* * ── TITAN OS DESIGN SYSTEM: GLASS CITADEL ──────────────────────────
+         * Architecture: CSS Grid + Glassmorphism
+         * Renderer: GPU Accelerated
          * ─────────────────────────────────────────────────────────────────
          */
 
         :root {
-            /* Palette */
-            --bg-void: #050505;
-            --bg-panel: rgba(22, 22, 24, 0.75);
-            --bg-card: rgba(255, 255, 255, 0.03);
-            --glass-border: rgba(255, 255, 255, 0.08);
-            --glass-shine: rgba(255, 255, 255, 0.05);
+            /* ── PALETTE: NEON VOID ── */
+            --bg-deep: #030305;
+            --bg-glass: rgba(20, 20, 23, 0.65);
+            --bg-glass-heavy: rgba(10, 10, 12, 0.85);
+            --bg-hover: rgba(255, 255, 255, 0.05);
             
-            /* Brand Colors */
-            --primary: #2997ff;       /* Apple Blue */
-            --secondary: #bf5af2;     /* Neon Purple */
-            --success: #30d158;       /* Matrix Green */
-            --danger: #ff453a;        /* Alert Red */
-            --warning: #ff9f0a;       /* Safety Orange */
-            
-            /* Typography */
-            --font-main: 'Cairo', sans-serif;
-            --font-tech: 'Rajdhani', monospace;
-            --text-white: #ffffff;
-            --text-muted: #86868b;
-            
-            /* Dimensions */
+            /* ── BORDERS & GLOWS ── */
+            --border-glass: 1px solid rgba(255, 255, 255, 0.08);
+            --border-active: 1px solid rgba(41, 151, 255, 0.5);
+            --shadow-soft: 0 10px 30px -10px rgba(0,0,0,0.5);
+            --shadow-neon: 0 0 20px rgba(41, 151, 255, 0.15);
+
+            /* ── BRAND COLORS ── */
+            --titan-blue: #2997ff;
+            --titan-purple: #bf5af2;
+            --titan-green: #30d158;
+            --titan-red: #ff453a;
+            --titan-gold: #ffd60a;
+
+            /* ── METRICS ── */
+            --radius-outer: 24px;
+            --radius-inner: 16px;
+            --blur-strength: 30px;
             --sidebar-width: 280px;
             --header-height: 80px;
-            --radius-xl: 24px;
-            --radius-md: 16px;
-            --radius-sm: 8px;
-            
-            /* Effects */
-            --blur-val: 25px;
-            --shadow-card: 0 20px 40px rgba(0,0,0,0.4);
-            --glow-primary: 0 0 20px rgba(41, 151, 255, 0.4);
-            --ease-elastic: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+
+            /* ── FONTS ── */
+            --font-ui: 'Cairo', sans-serif;
+            --font-hud: 'Rajdhani', sans-serif;
+            --font-code: 'JetBrains Mono', monospace;
         }
 
-        /* Reset & Base */
-        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; outline: none; }
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
-
+        /* ── RESET & CORE ── */
+        * { box-sizing: border-box; outline: none; -webkit-tap-highlight-color: transparent; }
+        
         body {
             margin: 0; padding: 0;
-            background-color: var(--bg-void);
-            color: var(--text-white);
-            font-family: var(--font-main);
+            background-color: var(--bg-deep);
+            color: #ffffff;
+            font-family: var(--font-ui);
             height: 100vh; width: 100vw;
             overflow: hidden;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            display: flex; justify-content: center; align-items: center;
         }
 
-        /* Animated Background */
-        #cosmos-bg {
-            position: fixed; top: 0; left: 0;
-            width: 100%; height: 100%;
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--titan-blue); }
+
+        /* ── ANIMATED BACKGROUND ── */
+        .void-canvas {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             z-index: 0; pointer-events: none;
-            background: radial-gradient(circle at 50% 120%, #1a1a2e 0%, #000 70%);
+            background: radial-gradient(circle at 50% -20%, #1a1a2e 0%, #000 60%);
         }
-        .star {
-            position: absolute; background: white; border-radius: 50%;
-            animation: twinkle infinite alternate;
+        .orb {
+            position: absolute; border-radius: 50%;
+            filter: blur(80px); opacity: 0.4;
+            animation: floatOrb 10s infinite ease-in-out;
         }
+        @keyframes floatOrb { 0%,100%{transform:translate(0,0);} 50%{transform:translate(20px,-20px);} }
 
-        @keyframes twinkle { from { opacity: 0.2; } to { opacity: 1; } }
-
-        /* * ── LAYOUT STRUCTURE ─────────────────────────────────────────────
-         */
-        .app-layout {
+        /* ── LAYOUT GRID (The Citadel) ── */
+        .citadel-grid {
             position: relative; z-index: 10;
-            width: 96%; height: 94%;
-            max-width: 1800px;
+            width: 96vw; height: 94vh;
+            max-width: 1920px;
             display: grid;
-            grid-template-columns: var(--sidebar-width) 1fr;
+            grid-template-columns: var(--sidebar-width) 1fr 350px; /* Sidebar | Main | Right Panel */
+            grid-template-rows: var(--header-height) 1fr 180px;   /* Header  | Stage | Console */
             gap: 20px;
-            transition: all 0.3s ease;
+            transition: all 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
         }
 
-        /* Utility: Glass Panel */
-        .glass-panel {
-            background: var(--bg-panel);
-            backdrop-filter: blur(var(--blur-val));
-            -webkit-backdrop-filter: blur(var(--blur-val));
-            border: 1px solid var(--glass-border);
-            box-shadow: var(--shadow-card);
-            border-radius: var(--radius-xl);
+        /* ── GLASS MODULES ── */
+        .module {
+            background: var(--bg-glass);
+            backdrop-filter: blur(var(--blur-strength));
+            -webkit-backdrop-filter: blur(var(--blur-strength));
+            border: var(--border-glass);
+            border-radius: var(--radius-outer);
+            box-shadow: var(--shadow-soft);
             overflow: hidden;
-        }
-
-        /* * ── SIDEBAR SECTION ──────────────────────────────────────────────
-         */
-        .sidebar {
             display: flex; flex-direction: column;
-            padding: 25px;
+            position: relative;
         }
-        
-        .brand {
-            margin-bottom: 30px; text-align: center;
-            border-bottom: 1px solid var(--glass-border);
-            padding-bottom: 20px;
+        .module::before {
+            content: ''; position: absolute; inset: 0;
+            background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 100%);
+            pointer-events: none;
         }
-        .brand h1 {
-            font-family: var(--font-tech); margin: 0; font-size: 28px;
-            background: linear-gradient(135deg, #fff, var(--primary));
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-            letter-spacing: 2px;
-        }
-        .brand span { font-size: 10px; color: var(--text-muted); letter-spacing: 4px; text-transform: uppercase; }
 
-        .nav-links { flex: 1; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
-        .nav-item {
+        /* ── 1. SIDEBAR (Navigation) ── */
+        .area-sidebar { grid-column: 1; grid-row: 1 / -1; display: flex; flex-direction: column; padding: 25px; }
+        
+        .brand-lockup { text-align: center; margin-bottom: 40px; }
+        .brand-title { font-family: var(--font-hud); font-size: 32px; font-weight: 700; letter-spacing: 2px; background: linear-gradient(45deg, #fff, var(--titan-blue)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0; }
+        .brand-ver { font-size: 10px; color: rgba(255,255,255,0.4); letter-spacing: 4px; text-transform: uppercase; }
+
+        .nav-menu { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+        .nav-btn {
             display: flex; align-items: center; gap: 15px;
-            padding: 14px 20px; border-radius: var(--radius-md);
-            color: var(--text-muted); text-decoration: none;
-            font-weight: 600; transition: 0.3s; cursor: pointer;
-            border: 1px solid transparent;
+            padding: 16px 20px; border-radius: var(--radius-inner);
+            color: #888; text-decoration: none; font-weight: 600;
+            transition: 0.3s; cursor: pointer; border: 1px solid transparent;
         }
-        .nav-item:hover { background: var(--glass-shine); color: #fff; transform: translateX(-5px); }
-        .nav-item.active {
+        .nav-btn:hover { background: var(--bg-hover); color: #fff; transform: translateX(-5px); }
+        .nav-btn.active {
             background: rgba(41, 151, 255, 0.1);
-            border-color: rgba(41, 151, 255, 0.2);
-            color: var(--primary);
-            box-shadow: var(--glow-primary);
+            border: var(--border-active);
+            color: var(--titan-blue);
+            box-shadow: var(--shadow-neon);
         }
-        .nav-item i { width: 24px; text-align: center; }
+        .nav-btn i { width: 24px; text-align: center; font-size: 18px; }
 
-        /* Active Chats List */
-        .chats-wrapper {
-            margin-top: 20px;
-            border-top: 1px solid var(--glass-border);
-            padding-top: 15px;
-            max-height: 250px; overflow-y: auto;
-        }
-        .chats-label { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; display: flex; justify-content: space-between; }
-        .chat-row {
-            display: flex; align-items: center; gap: 12px;
-            padding: 10px; border-radius: var(--radius-sm);
-            cursor: pointer; transition: 0.2s;
-        }
-        .chat-row:hover { background: var(--bg-card); }
-        .chat-row.active { background: rgba(48, 209, 88, 0.1); border: 1px solid rgba(48, 209, 88, 0.2); }
+        /* ── 2. HEADER (Top Bar) ── */
+        .area-header { grid-column: 2 / -1; grid-row: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 30px; }
         
-        .chat-icon {
-            width: 35px; height: 35px; border-radius: 50%;
-            background: #333; display: flex; align-items: center; justify-content: center;
-            font-size: 14px; font-weight: bold; color: #fff;
+        .live-indicator { 
+            display: flex; align-items: center; gap: 10px; 
+            font-family: var(--font-code); font-size: 12px; color: var(--titan-green);
+            background: rgba(48, 209, 88, 0.1); padding: 8px 16px; border-radius: 30px; border: 1px solid rgba(48, 209, 88, 0.2);
         }
-        .chat-info h4 { margin: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
-        .chat-info span { font-size: 10px; color: var(--text-muted); }
-        .live-dot { width: 8px; height: 8px; background: var(--success); border-radius: 50%; box-shadow: 0 0 8px var(--success); animation: pulse 2s infinite; }
+        .pulse-dot { width: 8px; height: 8px; background: var(--titan-green); border-radius: 50%; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% {box-shadow: 0 0 0 0 rgba(48, 209, 88, 0.7);} 70% {box-shadow: 0 0 0 10px rgba(48, 209, 88, 0);} 100% {box-shadow: 0 0 0 0 rgba(48, 209, 88, 0);} }
 
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        /* ── 3. MAIN STAGE (Player) ── */
+        .area-stage { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; gap: 20px; padding: 20px; overflow-y: auto; }
 
-        /* * ── MAIN STAGE ───────────────────────────────────────────────────
-         */
-        .main-stage {
-            display: flex; flex-direction: column;
-            overflow: hidden; /* Important for inner scrolling */
-        }
-
-        /* Header */
-        .top-bar {
-            height: var(--header-height);
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 0 30px;
-            border-bottom: 1px solid var(--glass-border);
-        }
-        .page-title h2 { margin: 0; font-size: 22px; font-weight: 700; }
-        .page-title span { font-size: 12px; color: var(--secondary); }
-
-        .user-profile {
-            display: flex; align-items: center; gap: 15px;
-            background: var(--bg-card); padding: 8px 15px;
-            border-radius: 30px; border: 1px solid var(--glass-border);
-        }
-        .avatar { width: 38px; height: 38px; border-radius: 50%; border: 2px solid var(--primary); }
-
-        /* Content Area (Scrollable) */
-        .content-area {
-            flex: 1; overflow-y: auto; overflow-x: hidden;
-            padding: 30px;
-            display: flex; flex-direction: column; gap: 25px;
-        }
-
-        /* * ── SECTION A: CINEMA & PLAYER ───────────────────────────────────
-         */
-        .cinema-grid {
-            display: grid; grid-template-columns: 2.5fr 1fr; gap: 25px;
-        }
-
-        .video-container {
-            position: relative; width: 100%; aspect-ratio: 16/9;
-            background: #000; border-radius: var(--radius-md);
-            overflow: hidden; border: 1px solid var(--glass-border);
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            group: isolate;
+        .player-card {
+            background: #000; border-radius: var(--radius-inner);
+            aspect-ratio: 16/9; position: relative; overflow: hidden;
+            border: var(--border-glass); box-shadow: 0 20px 50px rgba(0,0,0,0.6);
         }
         video { width: 100%; height: 100%; object-fit: contain; }
-
-        /* Custom Video Overlay (The Magic) */
-        .video-overlay {
+        
+        .player-overlay {
             position: absolute; inset: 0;
-            background: linear-gradient(to top, rgba(0,0,0,0.9), transparent 50%);
+            background: linear-gradient(0deg, rgba(0,0,0,0.95) 0%, transparent 60%);
             display: flex; flex-direction: column; justify-content: flex-end;
-            padding: 25px;
-            opacity: 0; transition: opacity 0.3s;
+            padding: 30px; opacity: 1; transition: opacity 0.3s;
         }
-        .video-container:hover .video-overlay { opacity: 1; }
+        .track-info-lg h1 { font-size: 28px; font-weight: 800; margin: 0; text-shadow: 0 2px 10px rgba(0,0,0,1); }
+        .track-info-lg p { font-size: 14px; color: var(--titan-blue); margin: 5px 0 0 0; font-family: var(--font-hud); letter-spacing: 1px; }
 
-        .track-meta { transform: translateY(20px); transition: 0.4s; }
-        .video-container:hover .track-meta { transform: translateY(0); }
-        .track-title { font-size: 24px; font-weight: 800; margin: 0; text-shadow: 0 2px 10px rgba(0,0,0,1); }
-        .track-artist { font-size: 14px; color: #ddd; margin-top: 5px; display: block; }
-
-        /* Section B: Control Deck */
-        .controls-deck {
-            margin-top: 15px; display: flex; align-items: center; justify-content: center; gap: 20px;
+        /* Seek Bar V6 */
+        .seek-wrapper { margin-top: 20px; display: flex; align-items: center; gap: 15px; font-family: var(--font-code); font-size: 12px; color: #aaa; }
+        .seek-track {
+            flex: 1; height: 6px; background: rgba(255,255,255,0.1);
+            border-radius: 3px; position: relative; cursor: pointer;
         }
-        .ctrl-btn {
-            background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
-            color: #fff; width: 45px; height: 45px; border-radius: 50%;
+        .seek-fill {
+            position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
+            background: var(--titan-blue); border-radius: 3px;
+            box-shadow: 0 0 15px var(--titan-blue);
+            transition: width 0.1s linear; /* Smooth sync */
+        }
+        /* Invisible input for interaction */
+        .seek-input {
+            position: absolute; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 2;
+        }
+
+        /* Controls */
+        .controls-row {
+            display: flex; justify-content: center; align-items: center; gap: 25px; margin-top: 20px;
+        }
+        .c-btn {
+            background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.1);
+            width: 50px; height: 50px; border-radius: 50%;
             display: flex; align-items: center; justify-content: center;
-            font-size: 16px; cursor: pointer; transition: 0.2s var(--ease-elastic);
-            backdrop-filter: blur(5px);
+            font-size: 18px; cursor: pointer; transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
-        .ctrl-btn:hover { background: rgba(255,255,255,0.25); transform: scale(1.1); }
-        .ctrl-btn.main-play {
-            width: 60px; height: 60px; font-size: 24px;
-            background: var(--primary); border: none;
-            box-shadow: var(--glow-primary);
+        .c-btn:hover { background: rgba(255,255,255,0.2); transform: scale(1.1); }
+        .c-btn.main {
+            width: 70px; height: 70px; font-size: 28px;
+            background: var(--titan-blue); border-color: var(--titan-blue);
+            box-shadow: 0 0 30px rgba(41, 151, 255, 0.4);
         }
-        .ctrl-btn.main-play:hover { background: #4dabff; transform: scale(1.1) rotate(5deg); }
+        .c-btn.main:hover { transform: scale(1.05); box-shadow: 0 0 50px rgba(41, 151, 255, 0.6); }
 
-        /* Seek Bar Logic */
-        .seek-container {
-            display: flex; align-items: center; gap: 15px;
-            margin-top: 10px; font-family: var(--font-tech); font-size: 13px; color: #ccc;
-        }
-        .seek-slider {
-            flex: 1; -webkit-appearance: none; height: 4px; background: rgba(255,255,255,0.2);
-            border-radius: 2px; cursor: pointer; position: relative;
-        }
-        .seek-slider::-webkit-slider-thumb {
-            -webkit-appearance: none; width: 12px; height: 12px; background: #fff;
-            border-radius: 50%; box-shadow: 0 0 10px rgba(255,255,255,0.8);
-            transition: 0.2s;
-        }
-        .seek-slider:hover::-webkit-slider-thumb { transform: scale(1.5); }
+        /* ── 4. RIGHT PANEL (Ops & Queue) ── */
+        .area-aside { grid-column: 3; grid-row: 2 / -1; display: flex; flex-direction: column; gap: 20px; padding: 20px 20px 20px 0; overflow: hidden; }
 
-        /* * ── SECTION C: OPERATORS & QUEUE (Right Column) ──────────────────
-         */
-        .side-widget {
-            display: flex; flex-direction: column; gap: 20px; height: 100%;
+        /* Operators Module */
+        .ops-module {
+            background: var(--bg-glass-heavy); border-radius: var(--radius-inner);
+            padding: 20px; border: var(--border-glass); max-height: 40%;
+            display: flex; flex-direction: column;
         }
+        .mod-title { font-family: var(--font-hud); font-size: 14px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; display: flex; justify-content: space-between; }
         
-        /* Operators */
-        .operators-card {
-            background: var(--bg-card); border-radius: var(--radius-md);
-            padding: 20px; border: 1px solid var(--glass-border);
-        }
-        .section-head { font-size: 14px; color: var(--text-muted); font-weight: 700; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }
-        
-        .avatars-row { display: flex; gap: 10px; flex-wrap: wrap; }
-        .op-avatar {
-            width: 45px; height: 45px; border-radius: 50%; position: relative;
-            background-size: cover; border: 2px solid var(--bg-void);
-            cursor: pointer; transition: 0.2s;
-        }
-        .op-avatar:hover { transform: translateY(-3px); border-color: var(--secondary); }
-        .op-avatar::after {
-            content: ''; position: absolute; bottom: 0; right: 0;
-            width: 10px; height: 10px; background: var(--success);
-            border: 2px solid var(--bg-void); border-radius: 50%;
-        }
-
-        /* Queue List */
-        .queue-card {
-            flex: 1; background: var(--bg-card); border-radius: var(--radius-md);
-            padding: 20px; border: 1px solid var(--glass-border);
-            display: flex; flex-direction: column; overflow: hidden;
-        }
-        .queue-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
-        .queue-item {
+        .ops-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        .op-card {
             display: flex; align-items: center; gap: 12px;
-            padding: 10px; background: rgba(255,255,255,0.02);
-            border-radius: var(--radius-sm); border: 1px solid transparent;
-            transition: 0.2s;
+            background: rgba(255,255,255,0.03); padding: 10px;
+            border-radius: 12px; border: 1px solid transparent; transition: 0.2s;
         }
-        .queue-item:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); }
-        .q-thumb { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; }
-        .q-meta { flex: 1; }
-        .q-title { font-size: 13px; font-weight: 600; color: #eee; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
-        .q-dur { font-size: 11px; color: var(--text-muted); }
-
-        /* * ── SECTION D: DASHBOARD WIDGETS ─────────────────────────────────
-         */
-        .stats-grid {
-            display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px;
-        }
-        .stat-box {
-            background: var(--bg-card); padding: 20px; border-radius: var(--radius-md);
-            border: 1px solid var(--glass-border); text-align: center;
-        }
-        .stat-val { font-family: var(--font-tech); font-size: 28px; font-weight: 700; color: var(--primary); margin: 5px 0; }
-        .stat-lbl { font-size: 12px; color: var(--text-muted); }
-
-        /* * ── UTILS & MODALS ───────────────────────────────────────────────
-         */
-        .input-glass {
-            width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border);
-            padding: 12px 15px; border-radius: var(--radius-sm); color: #fff;
-            font-family: var(--font-main); transition: 0.3s;
-        }
-        .input-glass:focus { border-color: var(--primary); box-shadow: 0 0 10px rgba(41, 151, 255, 0.2); }
+        .op-card:hover { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.1); }
         
-        .btn-action {
-            width: 100%; padding: 12px; border: none; border-radius: var(--radius-sm);
-            background: rgba(255,255,255,0.1); color: #fff; font-weight: bold; cursor: pointer;
-            transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px;
+        .op-avatar-wrap { position: relative; width: 40px; height: 40px; }
+        .op-img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; border: 2px solid #222; }
+        .op-badge { position: absolute; bottom: -2px; right: -2px; width: 14px; height: 14px; background: var(--titan-blue); border: 2px solid #222; border-radius: 50%; font-size: 8px; display: flex; align-items: center; justify-content: center; }
+        
+        /* Speaking Animation */
+        .speaking-wave {
+            position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--titan-green);
+            opacity: 0; transition: 0.2s;
         }
-        .btn-action:hover { background: rgba(255,255,255,0.2); }
-        .btn-primary { background: var(--primary); }
-        .btn-primary:hover { background: #1a8aff; }
-        .btn-danger { background: rgba(255, 69, 58, 0.2); color: var(--danger); border: 1px solid rgba(255,69,58,0.3); }
-        .btn-danger:hover { background: var(--danger); color: #fff; }
+        .op-card.is-speaking .speaking-wave { opacity: 1; animation: speakPulse 1s infinite; }
+        @keyframes speakPulse { 0% {transform: scale(1); opacity: 1;} 100% {transform: scale(1.4); opacity: 0;} }
 
-        .hidden { display: none !important; }
-        .mobile-menu-trigger { display: none; font-size: 20px; background: none; border: none; color: #fff; }
+        .op-info { flex: 1; min-width: 0; }
+        .op-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .op-role { font-size: 10px; color: #aaa; font-family: var(--font-code); }
 
-        /* Modal */
-        .modal-overlay {
-            position: fixed; inset: 0; z-index: 100;
-            background: rgba(0,0,0,0.8); backdrop-filter: blur(10px);
+        /* Queue Module */
+        .queue-module {
+            flex: 1; background: var(--bg-glass); border-radius: var(--radius-inner);
+            padding: 20px; border: var(--border-glass); display: flex; flex-direction: column;
+        }
+        .q-item { 
+            display: flex; gap: 10px; padding: 10px; border-radius: 8px; margin-bottom: 5px; cursor: pointer; 
+        }
+        .q-item.active { background: rgba(41, 151, 255, 0.1); border-left: 3px solid var(--titan-blue); }
+        .q-thumb { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; }
+        
+        /* ── 5. CONSOLE (Terminal) ── */
+        .area-console { 
+            grid-column: 2; grid-row: 3; 
+            margin: 0 20px 20px 20px;
+            background: #0d0d10; border: 1px solid #333;
+            border-radius: 12px; padding: 15px;
+            font-family: var(--font-code); font-size: 12px;
+            overflow: hidden; display: flex; flex-direction: column;
+        }
+        .term-header { display: flex; gap: 10px; margin-bottom: 10px; border-bottom: 1px solid #333; padding-bottom: 5px; color: #666; font-size: 10px; text-transform: uppercase; }
+        .term-logs { flex: 1; overflow-y: auto; color: #aaa; display: flex; flex-direction: column; gap: 4px; }
+        .log-line { display: flex; gap: 10px; }
+        .log-ts { color: #555; }
+        .log-info { color: var(--titan-blue); }
+        .log-err { color: var(--titan-red); }
+        .log-succ { color: var(--titan-green); }
+
+        /* ── UTILS & MODAL ── */
+        .modal-wrap {
+            position: fixed; inset: 0; z-index: 1000;
+            background: rgba(0,0,0,0.8); backdrop-filter: blur(15px);
             display: flex; align-items: center; justify-content: center;
             opacity: 0; pointer-events: none; transition: 0.3s;
         }
-        .modal-overlay.active { opacity: 1; pointer-events: all; }
-        .modal-box {
-            width: 90%; max-width: 500px;
-            background: #1c1c1e; border: 1px solid var(--glass-border);
-            border-radius: var(--radius-xl); padding: 30px;
-            transform: scale(0.9); transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        .modal-wrap.active { opacity: 1; pointer-events: all; }
+        .modal-body {
+            width: 500px; background: #151518; border: 1px solid #333;
+            border-radius: 20px; padding: 30px;
+            transform: scale(0.9); transition: 0.3s; box-shadow: 0 0 50px rgba(0,0,0,0.5);
         }
-        .modal-overlay.active .modal-box { transform: scale(1); }
+        .modal-wrap.active .modal-body { transform: scale(1); }
 
-        /* * ── RESPONSIVE ───────────────────────────────────────────────────
-         */
+        .titan-input {
+            width: 100%; background: #000; border: 1px solid #333;
+            padding: 15px; border-radius: 10px; color: #fff; font-family: var(--font-ui);
+            margin: 20px 0; transition: 0.3s;
+        }
+        .titan-input:focus { border-color: var(--titan-blue); box-shadow: 0 0 15px rgba(41, 151, 255, 0.1); }
+        
+        .btn-action {
+            width: 100%; padding: 14px; background: var(--titan-blue); color: #fff;
+            border: none; border-radius: 10px; font-weight: 700; cursor: pointer;
+        }
+        .btn-action:hover { background: #4dabff; }
+
+        /* ── RESPONSIVE MOBILE ── */
         @media (max-width: 1024px) {
-            .app-layout { grid-template-columns: 1fr; width: 100%; height: 100%; border-radius: 0; }
-            .sidebar {
-                position: fixed; left: -100%; top: 0; bottom: 0;
-                width: 280px; z-index: 50; background: #111;
-                transition: 0.3s;
+            .citadel-grid {
+                display: flex; flex-direction: column;
+                width: 100%; height: 100vh; max-height: 100vh;
+                overflow-y: auto; overflow-x: hidden; gap: 0;
             }
-            .sidebar.active { left: 0; }
-            .mobile-menu-trigger { display: block; }
-            .cinema-grid { grid-template-columns: 1fr; }
-            .glass-panel { border-radius: 0; }
-            .side-widget { height: auto; }
+            .area-sidebar { display: none; /* Add drawer later */ }
+            .area-header { height: 60px; padding: 0 15px; position: sticky; top: 0; background: rgba(0,0,0,0.8); z-index: 50; }
+            .area-stage { padding: 10px; overflow: visible; }
+            .area-aside { padding: 10px; overflow: visible; height: auto; }
+            .ops-module { max-height: 300px; }
+            .area-console { display: none; } /* Hide console on mobile */
+            .module { border-radius: 16px; margin-bottom: 15px; }
         }
     </style>
 </head>
 <body>
 
-    <div id="cosmos-bg"></div>
+    <div class="void-canvas">
+        <div class="orb" style="top:20%; left:30%; background:var(--titan-blue); width:300px; height:300px;"></div>
+        <div class="orb" style="bottom:10%; right:20%; background:var(--titan-purple); width:400px; height:400px;"></div>
+    </div>
 
-    <div class="modal-overlay" id="playModal">
-        <div class="modal-box glass-panel">
-            <h2 style="margin-top:0"><i class="fa-brands fa-youtube" style="color:#ff0000"></i> تشغيل ميديا</h2>
-            <p style="color:#aaa; font-size:14px; margin-bottom:20px;">أدخل اسم الأغنية أو رابط مباشر (YouTube/SoundCloud) للتشغيل في المجموعة الحالية.</p>
+    <div class="citadel-grid">
+        
+        <aside class="area-sidebar module">
+            <div class="brand-lockup">
+                <h1 class="brand-title">TITAN OS</h1>
+                <span class="brand-ver">KERNEL V6.0</span>
+            </div>
             
-            <input type="text" id="searchQuery" class="input-glass" placeholder="البحث..." autofocus>
-            <div style="margin-top:20px; display:flex; gap:10px;">
-                <button class="btn-action btn-primary" onclick="reqPlay()">تشغيل الآن</button>
-                <button class="btn-action" onclick="toggleModal('playModal')">إلغاء</button>
+            <nav class="nav-menu">
+                <a href="#" class="nav-btn active"><i class="fa-solid fa-layer-group"></i> <span>Dashboard</span></a>
+                <a href="#" class="nav-btn" onclick="alert('Feature coming in V6.1')"><i class="fa-solid fa-server"></i> <span>System</span></a>
+                <a href="#" class="nav-btn" onclick="alert('Feature coming in V6.1')"><i class="fa-solid fa-shield-cat"></i> <span>Security</span></a>
+            </nav>
+
+            <div style="margin-top:auto">
+                <div class="mod-title">
+                    <span>Active Groups</span>
+                    <i class="fa-solid fa-sync fa-spin" style="font-size:10px; opacity:0; transition:0.3s" id="syncIcon"></i>
+                </div>
+                <div id="chatList" style="display:flex; flex-direction:column; gap:8px; max-height:200px; overflow-y:auto; margin-top:10px;">
+                    </div>
+            </div>
+        </aside>
+
+        <header class="area-header module" style="background:transparent; border:none; box-shadow:none;">
+            <div class="live-indicator">
+                <div class="pulse-dot"></div>
+                <span id="pingVal">PING: --ms</span>
+            </div>
+            
+            <div style="display:flex; align-items:center; gap:15px;">
+                <div style="text-align:right;">
+                    <div style="font-weight:700; font-size:14px;">Lead Architect</div>
+                    <div style="font-size:10px; color:#888;">Root Privileges</div>
+                </div>
+                <img src="https://ui-avatars.com/api/?name=Admin&background=0D8ABC&color=fff" style="width:40px; height:40px; border-radius:50%; border:2px solid var(--titan-blue);">
+            </div>
+        </header>
+
+        <main class="area-stage">
+            <div class="player-card">
+                <video id="audioStream" poster="/static/poster.jpg" playsinline></video>
+                <div class="player-overlay">
+                    <div class="track-info-lg">
+                        <h1 id="metaTitle">System Idle</h1>
+                        <p id="metaArtist">Connect to a frequency to begin</p>
+                    </div>
+
+                    <div class="seek-wrapper">
+                        <span id="timeCurr">00:00</span>
+                        
+                        <div class="seek-track">
+                            <div class="seek-fill" id="seekFill"></div>
+                            <input type="range" class="seek-input" id="seekInput" min="0" max="100" value="0" step="1">
+                        </div>
+
+                        <span id="timeTotal">00:00</span>
+                    </div>
+
+                    <div class="controls-row">
+                        <div class="c-btn" onclick="api('loop')"><i class="fa-solid fa-repeat"></i></div>
+                        <div class="c-btn" onclick="api('seek', -10)"><i class="fa-solid fa-rotate-left"></i></div>
+                        
+                        <div class="c-btn main" id="playBtn" onclick="togglePlay()">
+                            <i class="fa-solid fa-play"></i>
+                        </div>
+                        
+                        <div class="c-btn" onclick="api('seek', 10)"><i class="fa-solid fa-rotate-right"></i></div>
+                        <div class="c-btn" onclick="api('skip')"><i class="fa-solid fa-forward-step"></i></div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+                <button class="btn-action" onclick="toggleModal()" style="background:linear-gradient(45deg, var(--titan-blue), #2a52be);">
+                    <i class="fa-brands fa-youtube"></i> PLAY MEDIA
+                </button>
+                <button class="btn-action" onclick="api('stop')" style="background:rgba(255, 69, 58, 0.2); color:var(--titan-red); border:1px solid var(--titan-red);">
+                    <i class="fa-solid fa-power-off"></i> FORCE STOP
+                </button>
+            </div>
+        </main>
+
+        <aside class="area-aside">
+            <div class="ops-module">
+                <div class="mod-title">
+                    <span>Active Operators</span>
+                    <span id="opsCount">0</span>
+                </div>
+                <div class="ops-list" id="opsContainer">
+                    <div style="text-align:center; padding:20px; color:#555; font-size:12px;">Waiting for signal...</div>
+                </div>
+            </div>
+
+            <div class="queue-module">
+                <div class="mod-title">
+                    <span>Up Next</span>
+                    <i class="fa-solid fa-list"></i>
+                </div>
+                <div style="flex:1; overflow-y:auto;" id="queueContainer">
+                    </div>
+            </div>
+        </aside>
+
+        <footer class="area-console">
+            <div class="term-header">
+                <i class="fa-solid fa-terminal"></i> Titan Core Logs
+            </div>
+            <div class="term-logs" id="termLogs">
+                <div class="log-line">
+                    <span class="log-ts">[INIT]</span>
+                    <span class="log-succ">System initialized. Waiting for handshake...</span>
+                </div>
+            </div>
+        </footer>
+
+    </div>
+
+    <div class="modal-wrap" id="playModal">
+        <div class="modal-body">
+            <h2 style="margin-top:0"><i class="fa-brands fa-youtube" style="color:red"></i> Play Request</h2>
+            <p style="color:#aaa; font-size:13px;">Enter a Song Name, YouTube Link, or SoundCloud URL.</p>
+            
+            <input type="text" class="titan-input" id="searchQuery" placeholder="Search or Paste Link..." autofocus>
+            
+            <div style="display:flex; gap:10px;">
+                <button class="btn-action" onclick="reqPlay()">LOAD TRACK</button>
+                <button class="btn-action" onclick="toggleModal()" style="background:#333;">CANCEL</button>
             </div>
         </div>
     </div>
 
-    <div id="toast" style="position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.9); color:#000; padding:10px 20px; border-radius:30px; font-weight:bold; opacity:0; transition:0.3s; pointer-events:none; z-index:200;">Action Completed</div>
-
-    <div class="app-layout glass-panel">
-
-        <aside class="sidebar" id="appSidebar">
-            <div class="brand">
-                <h1>TITAN OS</h1>
-                <span>Ultimate Kernel V5</span>
-            </div>
-
-            <nav class="nav-links">
-                <div class="nav-item active" onclick="nav('dashboard', this)">
-                    <i class="fa-solid fa-satellite-dish"></i> لوحة التحكم
-                </div>
-                <div class="nav-item" onclick="nav('system', this)">
-                    <i class="fa-solid fa-microchip"></i> حالة السيرفر
-                </div>
-                <div class="nav-item" onclick="nav('security', this)">
-                    <i class="fa-solid fa-shield-halved"></i> نظام الحماية
-                </div>
-            </nav>
-
-            <div style="margin-top:auto">
-                <div class="chats-label">
-                    <span>المجموعات النشطة</span>
-                    <i class="fa-solid fa-rotate-right" style="cursor:pointer" onclick="updateActiveChats()"></i>
-                </div>
-                <div class="chats-wrapper" id="chatsList">
-                    <div style="text-align:center; padding:20px; color:#555;">جاري التحميل...</div>
-                </div>
-                <button class="btn-action btn-danger" onclick="location.href='/logout'" style="margin-top:15px;">
-                    <i class="fa-solid fa-power-off"></i> خروج
-                </button>
-            </div>
-        </aside>
-
-        <main class="main-stage">
-            
-            <header class="top-bar">
-                <button class="mobile-menu-trigger" onclick="toggleSidebar()"><i class="fa-solid fa-bars"></i></button>
-                
-                <div class="page-title">
-                    <h2 id="pageTitle">Command Center</h2>
-                    <span id="connStatus" style="color:var(--success)">● System Online</span>
-                </div>
-
-                <div class="user-profile">
-                    <div style="text-align:right">
-                        <div style="font-weight:700; font-size:14px;">Root Admin</div>
-                        <div style="font-size:10px; color:#aaa;">Titan Permissions</div>
-                    </div>
-                    <img src="https://ui-avatars.com/api/?name=Admin&background=2997ff&color=fff" class="avatar">
-                </div>
-            </header>
-
-            <div class="content-area">
-
-                <div id="view-dashboard" class="view-section">
-                    
-                    <div class="cinema-grid">
-                        <div style="display:flex; flex-direction:column; gap:20px;">
-                            
-                            <div class="video-container">
-                                <video id="titanPlayer" poster="https://telegra.ph/file/5eb6df308e92f4477813d.jpg" playsinline></video>
-                                <div class="video-overlay">
-                                    <div class="track-meta">
-                                        <h1 class="track-title" id="metaTitle">Titan OS Idle</h1>
-                                        <span class="track-artist" id="metaArtist">Select a group to start monitoring</span>
-                                    </div>
-
-                                    <div class="seek-container">
-                                        <span id="currTime">00:00</span>
-                                        <input type="range" class="seek-slider" id="seekBar" value="0" min="0" max="100">
-                                        <span id="totalTime">LIVE</span>
-                                    </div>
-
-                                    <div class="controls-deck">
-                                        <button class="ctrl-btn" onclick="api('loop')"><i class="fa-solid fa-repeat"></i></button>
-                                        <button class="ctrl-btn" onclick="api('seek_back')"><i class="fa-solid fa-rotate-left"></i></button>
-                                        
-                                        <button class="ctrl-btn main-play" id="playBtn" onclick="togglePlay()">
-                                            <i class="fa-solid fa-play"></i>
-                                        </button>
-                                        
-                                        <button class="ctrl-btn" onclick="api('skip')"><i class="fa-solid fa-forward-step"></i></button>
-                                        <button class="ctrl-btn" onclick="toggleMute()"><i class="fa-solid fa-volume-high" id="volIcon"></i></button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="stats-grid" style="grid-template-columns: repeat(2, 1fr);">
-                                <button class="btn-action btn-primary" onclick="toggleModal('playModal')" style="height:50px; font-size:16px;">
-                                    <i class="fa-brands fa-youtube"></i> طلب تشغيل جديد
-                                </button>
-                                <button class="btn-action btn-danger" onclick="api('stop')" style="height:50px; font-size:16px;">
-                                    <i class="fa-solid fa-stop"></i> إيقاف قسري
-                                </button>
-                            </div>
-                        </div>
-
-                        <div class="side-widget">
-                            
-                            <div class="operators-card">
-                                <div class="section-head"><i class="fa-solid fa-users-gear"></i> المشغلين (Operators)</div>
-                                <div class="avatars-row" id="opsList">
-                                    <div class="op-avatar" style="background-image:url('https://ui-avatars.com/api/?name=Bot')"></div>
-                                    <span style="font-size:12px; color:#777; align-self:center;">...</span>
-                                </div>
-                            </div>
-
-                            <div class="queue-card">
-                                <div class="section-head"><i class="fa-solid fa-list-ol"></i> الطابور (Playlist)</div>
-                                <div class="queue-list" id="queueList">
-                                    <div style="text-align:center; color:#555; margin-top:20px;">الطابور فارغ</div>
-                                </div>
-                            </div>
-
-                        </div>
-                    </div>
-                </div>
-
-                <div id="view-system" class="view-section hidden">
-                    <h3 style="margin-bottom:20px;">System Diagnostics</h3>
-                    <div class="stats-grid">
-                        <div class="stat-box">
-                            <div class="stat-lbl">CPU LOAD</div>
-                            <div class="stat-val" id="sysCpu">0%</div>
-                        </div>
-                        <div class="stat-box">
-                            <div class="stat-lbl">RAM USAGE</div>
-                            <div class="stat-val" id="sysRam">0%</div>
-                        </div>
-                        <div class="stat-box">
-                            <div class="stat-lbl">PING</div>
-                            <div class="stat-val" id="sysPing">0ms</div>
-                        </div>
-                        <div class="stat-box">
-                            <div class="stat-lbl">UPTIME</div>
-                            <div class="stat-val">∞</div>
-                        </div>
-                    </div>
-
-                    <h3 style="margin-top:30px;">Server Actions</h3>
-                    <div class="stats-grid">
-                        <button class="btn-action" onclick="sysApi('clean')"><i class="fa-solid fa-broom"></i> Clean Cache</button>
-                        <button class="btn-action" onclick="sysApi('update')"><i class="fa-brands fa-git-alt"></i> Git Pull</button>
-                        <button class="btn-action btn-danger" onclick="sysApi('restart')"><i class="fa-solid fa-power-off"></i> Reboot Bot</button>
-                    </div>
-                </div>
-
-                <div id="view-security" class="view-section hidden">
-                    <h3 style="margin-bottom:20px;">Global Ban System (GBAN)</h3>
-                    <div style="background:var(--bg-card); padding:25px; border-radius:var(--radius-md); max-width:600px;">
-                        <label style="display:block; margin-bottom:10px; color:#aaa;">Telegram User ID</label>
-                        <input type="number" id="banId" class="input-glass" placeholder="ex: 123456789">
-                        <div style="margin-top:15px; display:flex; gap:10px;">
-                            <button class="btn-action btn-danger" onclick="secApi(true)">Block User</button>
-                            <button class="btn-action btn-primary" onclick="secApi(false)">Unblock</button>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-        </main>
-    </div>
-
     <script>
         /**
-         * ── TITAN OS KERNEL V5.0 ──────────────────────────────────────────
-         * Handles all logic, API communication, and UI rendering.
-         * ──────────────────────────────────────────────────────────────────
+         * ── TITAN OS KERNEL V6.0 (Client Side) ─────────────────────────────
+         * Architect: Boda
+         * Features: Real-Time Sync, Operator Fetching, Console Logging
+         * ───────────────────────────────────────────────────────────────────
          */
-        
-        // System State
-        const State = {
-            chatId: localStorage.getItem('titan_chat_id'),
+
+        // State Store
+        const Store = {
+            chatId: localStorage.getItem('titan_active_chat_id'),
+            duration: 0,
             isPlaying: false,
-            pollTimer: null
+            isDragging: false,
+            lastPing: 0
         };
 
-        // DOM Elements Cache
+        // DOM Cache
         const UI = {
-            player: document.getElementById('titanPlayer'),
             playBtn: document.getElementById('playBtn'),
-            seekBar: document.getElementById('seekBar'),
-            metaTitle: document.getElementById('metaTitle'),
-            metaArtist: document.getElementById('metaArtist'),
-            chatsList: document.getElementById('chatsList'),
-            queueList: document.getElementById('queueList'),
-            opsList: document.getElementById('opsList')
+            seekFill: document.getElementById('seekFill'),
+            seekInput: document.getElementById('seekInput'),
+            currTime: document.getElementById('timeCurr'),
+            totTime: document.getElementById('timeTotal'),
+            video: document.getElementById('audioStream'),
+            opsList: document.getElementById('opsContainer'),
+            console: document.getElementById('termLogs')
         };
 
-        /* ── INITIALIZATION ── */
+        /* ── INIT ── */
         document.addEventListener('DOMContentLoaded', () => {
-            initStars();
-            updateActiveChats();
-            startPolling();
+            log('KERNEL', 'Booting TitanOS V6 Interface...');
+            refreshChats();
+            startTicker();
+
+            // Seek Bar Interactions (V6 Critical)
+            UI.seekInput.addEventListener('mousedown', () => { Store.isDragging = true; });
+            UI.seekInput.addEventListener('touchstart', () => { Store.isDragging = true; });
             
-            if (State.chatId) console.log(`[TITAN] Restored Session: ${State.chatId}`);
-            
-            // Player Events
-            UI.player.addEventListener('timeupdate', updateSeekUI);
-            UI.seekBar.addEventListener('input', (e) => {
-                // Local seek simulation
-                const percent = e.target.value;
-                // In real implementation, this should fetch duration from metadata
+            UI.seekInput.addEventListener('input', (e) => {
+                // Visual update only while dragging
+                const pct = (e.target.value / Store.duration) * 100;
+                UI.seekFill.style.width = pct + '%';
+                UI.currTime.innerText = fmtTime(e.target.value);
+            });
+
+            UI.seekInput.addEventListener('change', (e) => {
+                // The crucial SEEK API trigger
+                Store.isDragging = false;
+                api('seek', null, e.target.value); // Send timestamp
+                log('PLAYER', `Seeking to ${fmtTime(e.target.value)}...`);
             });
         });
 
-        /* ── BACKGROUND ANIMATION ── */
-        function initStars() {
-            const bg = document.getElementById('cosmos-bg');
-            for(let i=0; i<80; i++) {
-                const star = document.createElement('div');
-                star.className = 'star';
-                const xy = Math.random() * 100;
-                const dur = Math.random() * 2 + 1;
-                star.style.left = Math.random() * 100 + '%';
-                star.style.top = Math.random() * 100 + '%';
-                star.style.width = Math.random() * 2 + 'px';
-                star.style.height = star.style.width;
-                star.style.animationDuration = dur + 's';
-                bg.appendChild(star);
-            }
+        /* ── CORE LOOP (1s Ticker) ── */
+        function startTicker() {
+            setInterval(() => {
+                if(Store.chatId) {
+                    fetchTrackData();
+                    fetchOperators(); // V6 Feature
+                    
+                    // Ping Calculation
+                    const start = Date.now();
+                    fetch('/api/system/status').then(() => {
+                        const ms = Date.now() - start;
+                        document.getElementById('pingVal').innerText = `PING: ${ms}ms`;
+                        // Color coding ping
+                        const color = ms < 100 ? 'var(--titan-green)' : (ms < 300 ? 'var(--titan-gold)' : 'var(--titan-red)');
+                        document.getElementById('pingVal').style.color = color;
+                    });
+                }
+            }, 1000);
         }
 
-        /* ── NAVIGATION ── */
-        function nav(viewId, el) {
-            document.querySelectorAll('.view-section').forEach(d => d.classList.add('hidden'));
-            document.getElementById('view-' + viewId).classList.remove('hidden');
-            
-            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-            if(el) el.classList.add('active');
-            
-            const titles = { 'dashboard': 'Command Center', 'system': 'System Monitor', 'security': 'Security Grid' };
-            document.getElementById('pageTitle').innerText = titles[viewId];
-
-            if(window.innerWidth < 1024) toggleSidebar();
-        }
-
-        function toggleSidebar() {
-            document.getElementById('appSidebar').classList.toggle('active');
-        }
-
-        function toggleModal(id) {
-            const m = document.getElementById(id);
-            m.classList.toggle('active');
-        }
-
-        function showToast(msg) {
-            const t = document.getElementById('toast');
-            t.innerText = msg;
-            t.style.opacity = '1';
-            t.style.bottom = '50px';
-            setTimeout(() => {
-                t.style.opacity = '0';
-                t.style.bottom = '20px';
-            }, 3000);
-        }
-
-        /* ── CORE API LOGIC ── */
-        async function updateActiveChats() {
-            UI.chatsList.innerHTML = '<div style="text-align:center; padding:10px;"><i class="fa-solid fa-circle-notch fa-spin"></i></div>';
+        /* ── V6 FEATURE: OPERATORS ── */
+        async function fetchOperators() {
             try {
-                const res = await fetch('/api/player/active_calls');
+                const res = await fetch(`/api/player/participants/${Store.chatId}`);
                 const data = await res.json();
-                UI.chatsList.innerHTML = '';
+                
+                if(data.participants) {
+                    document.getElementById('opsCount').innerText = data.participants.length;
+                    
+                    let html = '';
+                    data.participants.forEach(p => {
+                        // V6: Determine if speaking (mock logic or if API provided voice status)
+                        // For now we assume admins are "active"
+                        const isSpeaking = Math.random() > 0.7 ? 'is-speaking' : ''; 
+                        
+                        html += `
+                        <div class="op-card ${isSpeaking}">
+                            <div class="op-avatar-wrap">
+                                <img src="${p.photo_url}" class="op-img">
+                                <div class="speaking-wave"></div>
+                                ${p.role === 'Operator' ? '<div class="op-badge"><i class="fa-solid fa-star"></i></div>' : ''}
+                            </div>
+                            <div class="op-info">
+                                <div class="op-name">${p.name}</div>
+                                <div class="op-role">${p.role}</div>
+                            </div>
+                            <i class="fa-solid fa-microphone${isSpeaking ? '' : '-slash'}" style="color:${isSpeaking ? '#30d158':'#555'}; font-size:12px;"></i>
+                        </div>`;
+                    });
+                    UI.opsList.innerHTML = html;
+                }
+            } catch(e) { }
+        }
 
-                if(!data.chats || data.chats.length === 0) {
-                    UI.chatsList.innerHTML = '<div style="padding:15px; text-align:center; color:#666; font-size:12px;">No Active Calls</div>';
-                    return;
+        /* ── V6 FEATURE: REAL-TIME SYNC ── */
+        async function fetchTrackData() {
+            try {
+                const res = await fetch(`/api/player/track_info/${Store.chatId}`);
+                const data = await res.json();
+
+                // 1. Update Metadata
+                document.getElementById('metaTitle').innerText = data.title;
+                document.getElementById('metaArtist').innerText = data.artist;
+                
+                // 2. Play/Pause State
+                Store.isPlaying = data.is_playing;
+                UI.playBtn.innerHTML = Store.isPlaying 
+                    ? '<i class="fa-solid fa-pause"></i>' 
+                    : '<i class="fa-solid fa-play"></i>';
+
+                // 3. Time & Seek Logic
+                // Parse duration string "MM:SS" to seconds for max value
+                const durParts = data.duration.split(':');
+                const durSec = (+durParts[0]) * 60 + (+durParts[1]);
+                Store.duration = durSec || 100; // fallback
+                
+                // Update Max
+                UI.seekInput.max = Store.duration;
+                UI.totTime.innerText = data.duration;
+
+                // Update Position (Only if not dragging)
+                if(!Store.isDragging && data.position !== undefined) {
+                    UI.seekInput.value = data.position;
+                    const pct = (data.position / Store.duration) * 100;
+                    UI.seekFill.style.width = pct + '%';
+                    UI.currTime.innerText = fmtTime(data.position);
                 }
 
-                data.chats.forEach(chat => {
-                    const isActive = State.chatId == chat.chat_id ? 'active' : '';
-                    const html = `
-                    <div class="chat-row ${isActive}" onclick="selectChat('${chat.chat_id}', '${chat.name}')">
-                        <div class="chat-icon">${chat.name.charAt(0)}</div>
-                        <div class="chat-info">
-                            <h4>${chat.name}</h4>
-                            <span>ID: ${chat.chat_id}</span>
-                        </div>
-                        <div class="live-dot"></div>
-                    </div>`;
-                    UI.chatsList.innerHTML += html;
-                });
-            } catch(e) { console.error("API Error", e); }
+                // 4. Update Queue (Visual)
+                renderQueue(data);
+
+            } catch(e) { console.error(e); }
         }
 
-        function selectChat(id, name) {
-            State.chatId = id;
-            localStorage.setItem('titan_chat_id', id);
-            updateActiveChats(); // Refresh highlight
-            
-            // Reload Player
-            UI.player.src = `/stream/live/${id}?t=${Date.now()}`;
-            UI.player.load();
-            UI.player.play().catch(e => console.log("Auto-play blocked"));
-            
-            showToast(`Connected to: ${name}`);
-            fetchTrackData();
-        }
+        /* ── CONTROL API ── */
+        async function api(cmd, modifier = null, seekVal = null) {
+            if(!Store.chatId) { log('ERR', 'No active channel linked.'); return; }
 
-        /* ── PLAYER CONTROL ── */
-        async function api(cmd) {
-            if(!State.chatId) return showToast("Please select a group first!");
+            // Optimistic UI
+            if(cmd === 'pause') UI.video.pause();
+            if(cmd === 'resume') UI.video.play();
+
+            // Construct Payload
+            let payload = { cmd: cmd, chat_id: Store.chatId };
             
-            // Optimistic UI updates
-            if(cmd === 'pause') UI.player.pause();
-            if(cmd === 'resume') UI.player.play();
+            // Handle Seek
+            if(cmd === 'seek') {
+                if(seekVal !== null) {
+                    payload.value = seekVal; // Absolute seek
+                } else if(modifier) {
+                    // Relative seek (button press)
+                    let current = parseInt(UI.seekInput.value);
+                    payload.value = current + modifier;
+                }
+            }
 
             try {
                 await fetch('/api/player/control', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ cmd: cmd, chat_id: State.chatId })
+                    body: JSON.stringify(payload)
                 });
-                showToast(`Command: ${cmd}`);
-                setTimeout(fetchTrackData, 800);
-            } catch(e) { showToast("Connection Error"); }
+                log('CMD', `Executed: ${cmd.toUpperCase()} ${payload.value ? '@'+payload.value : ''}`);
+            } catch(e) { log('ERR', 'Command failed transmission.'); }
         }
 
         async function reqPlay() {
             const q = document.getElementById('searchQuery').value;
-            if(!q || !State.chatId) return showToast("Invalid Input or No Group Selected");
-            
-            toggleModal('playModal');
-            showToast("Processing Request...");
+            if(!q) return;
+            toggleModal();
+            log('SYS', `Resolving Request: "${q}"...`);
             
             try {
                 await fetch('/api/player/play', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ chat_id: State.chatId, query: q })
+                    body: JSON.stringify({ chat_id: Store.chatId, query: q })
                 });
-            } catch(e) { showToast("Failed to send request"); }
+                log('SYS', 'Track queued successfully.');
+            } catch(e) { log('ERR', 'Resolver failed.'); }
         }
 
-        /* ── DATA POLLING & UI UPDATE ── */
-        function startPolling() {
-            setInterval(async () => {
-                // System Stats
-                try {
-                    const r = await fetch('/api/system/status');
-                    const d = await r.json();
-                    document.getElementById('sysCpu').innerText = d.cpu + '%';
-                    document.getElementById('sysRam').innerText = d.ram + '%';
-                    document.getElementById('sysPing').innerText = (d.active_threads * 10) + 'ms'; // Fake ping logic based on load
-                } catch(e) {}
-
-                if(State.chatId) fetchTrackData();
-            }, 3000);
-        }
-
-        async function fetchTrackData() {
-            if(!State.chatId) return;
+        /* ── SYSTEM UTILS ── */
+        async function refreshChats() {
+            document.getElementById('syncIcon').style.opacity = '1';
+            const list = document.getElementById('chatList');
+            
             try {
-                const res = await fetch(`/api/player/track_info/${State.chatId}`);
+                const res = await fetch('/api/player/active_calls');
                 const data = await res.json();
                 
-                // Update Meta
-                UI.metaTitle.innerText = data.title || "Titan Radio";
-                UI.metaArtist.innerText = data.artist || "Unknown Artist";
-                
-                // Update Play Button
-                State.isPlaying = data.is_playing;
-                UI.playBtn.innerHTML = State.isPlaying ? '<i class="fa-solid fa-pause"></i>' : '<i class="fa-solid fa-play"></i>';
-                
-                // Update Queue (Mock Logic if data missing)
-                renderQueue(data);
-                
-                // Update Operators (Mock Logic as API might not send it)
-                renderOperators();
+                list.innerHTML = '';
+                if(data.chats.length === 0) {
+                    list.innerHTML = '<div style="padding:10px; color:#555; font-size:12px;">No active signals detected.</div>';
+                }
 
+                data.chats.forEach(c => {
+                    const isActive = Store.chatId == c.chat_id ? 'active' : '';
+                    list.innerHTML += `
+                    <div class="nav-btn ${isActive}" onclick="connectChat('${c.chat_id}')" style="font-size:13px; justify-content:space-between;">
+                        <div style="display:flex; align-items:center; gap:10px; overflow:hidden;">
+                            <img src="${c.cover}" style="width:24px; height:24px; border-radius:50%;">
+                            <span style="white-space:nowrap;">${c.title.substring(0,15)}..</span>
+                        </div>
+                        ${isActive ? '<i class="fa-solid fa-wave-square" style="font-size:10px; color:var(--titan-green)"></i>' : ''}
+                    </div>`;
+                });
             } catch(e) {}
+            setTimeout(() => document.getElementById('syncIcon').style.opacity = '0', 500);
+        }
+
+        function connectChat(id) {
+            Store.chatId = id;
+            localStorage.setItem('titan_active_chat_id', id);
+            
+            // Reload Stream
+            UI.video.src = `/stream/live/${id}?t=${Date.now()}`;
+            UI.video.load();
+            UI.video.play().catch(e=>{});
+            
+            log('NET', `Handshake established: Channel ${id}`);
+            refreshChats();
+        }
+
+        function log(type, msg) {
+            const ts = new Date().toLocaleTimeString('en-US', {hour12:false});
+            let color = 'log-info';
+            if(type==='ERR') color='log-err';
+            if(type==='SYS') color='log-succ';
+            
+            const line = `
+            <div class="log-line">
+                <span class="log-ts">[${ts}]</span>
+                <span class="${color}">${type} >> ${msg}</span>
+            </div>`;
+            
+            UI.console.insertAdjacentHTML('afterbegin', line);
+            if(UI.console.children.length > 50) UI.console.lastChild.remove();
         }
 
         function renderQueue(data) {
-            // If API sends queue, loop it. Here we simulate the current track as Item 1
-            if(data.title) {
-                const html = `
-                <div class="queue-item" style="background:rgba(41,151,255,0.1); border-color:var(--primary);">
-                    <img src="${data.cover}" class="q-thumb">
-                    <div class="q-meta">
-                        <div class="q-title">${data.title}</div>
-                        <div class="q-dur">Now Playing • ${data.duration}</div>
-                    </div>
-                    <i class="fa-solid fa-chart-simple" style="color:var(--primary)"></i>
-                </div>`;
-                // Add dummy next tracks for visual fullness
-                const dummy = `
-                <div class="queue-item">
+            const c = document.getElementById('queueContainer');
+            c.innerHTML = `
+            <div class="q-item active">
+                <img src="${data.cover}" class="q-thumb">
+                <div style="flex:1;">
+                    <div style="font-weight:700; font-size:13px;">${data.title}</div>
+                    <div style="font-size:11px; color:var(--titan-blue);">Playing Now • ${data.duration}</div>
+                </div>
+                <i class="fa-solid fa-chart-simple" style="align-self:center; color:var(--titan-green);"></i>
+            </div>
+            `;
+            // Simulated queue items
+            if(data.queued > 0) {
+                c.innerHTML += `
+                <div class="q-item" style="opacity:0.5;">
                     <div class="q-thumb" style="background:#333; display:flex; align-items:center; justify-content:center;"><i class="fa-solid fa-music"></i></div>
-                    <div class="q-meta">
-                        <div class="q-title">Upcoming Track...</div>
-                        <div class="q-dur">Queued by User</div>
+                    <div style="flex:1;">
+                        <div style="font-weight:700; font-size:13px;">Upcoming Track</div>
+                        <div style="font-size:11px;">Queued by user</div>
                     </div>
                 </div>`;
-                UI.queueList.innerHTML = html + dummy + dummy;
-            }
-        }
-
-        function renderOperators() {
-            // Mock operators list for visual requirement
-            const ops = ['Admin', 'Bot'];
-            let html = '';
-            ops.forEach(op => {
-                html += `<div class="op-avatar" title="${op}" style="background-image:url('https://ui-avatars.com/api/?name=${op}&background=random')"></div>`;
-            });
-            UI.opsList.innerHTML = html;
-        }
-
-        /* ── UTILS ── */
-        function togglePlay() {
-            if(State.isPlaying) api('pause');
-            else api('resume');
-        }
-
-        function toggleMute() {
-            UI.player.muted = !UI.player.muted;
-            document.getElementById('volIcon').className = UI.player.muted ? 'fa-solid fa-volume-xmark' : 'fa-solid fa-volume-high';
-        }
-
-        function updateSeekUI() {
-            // This runs locally for the video element
-            const p = UI.player;
-            if(p.duration) {
-                const val = (p.currentTime / p.duration) * 100;
-                UI.seekBar.value = val;
-                document.getElementById('currTime').innerText = fmtTime(p.currentTime);
-                // Note: live streams might have infinity duration
             }
         }
 
         function fmtTime(s) {
+            s = Math.floor(s);
             const m = Math.floor(s / 60);
-            const sec = Math.floor(s % 60);
+            const sec = s % 60;
             return `${m}:${sec < 10 ? '0'+sec : sec}`;
         }
 
-        /* ── SYSTEM ACTIONS ── */
-        async function sysApi(act) {
-            if(confirm(`Execute ${act}?`)) {
-                await fetch('/api/system/action', {
-                    method:'POST', headers:{'Content-Type':'application/json'},
-                    body: JSON.stringify({action: act})
-                });
-                showToast(`System: ${act} initiated`);
-            }
+        function toggleModal() {
+            document.getElementById('playModal').classList.toggle('active');
         }
 
-        async function secApi(block) {
-            const uid = document.getElementById('banId').value;
-            if(!uid) return;
-            await fetch('/api/security/block', {
-                method:'POST', headers:{'Content-Type':'application/json'},
-                body: JSON.stringify({user_id: uid, block: block})
-            });
-            showToast(block ? "User Blocked" : "User Unblocked");
+        function togglePlay() {
+            if(Store.isPlaying) api('pause');
+            else api('resume');
         }
-
     </script>
 </body>
 </html>
