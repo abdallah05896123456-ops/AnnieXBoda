@@ -2,148 +2,239 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Titan OS | دخول آمن</title>
-    <!-- خط كايرو للعربي -->
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;800&display=swap" rel="stylesheet">
-    
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>iOS Space Login | Premium Access</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+
     <style>
-        /* --- 1. متغيرات الألوان والتأسيس --- */
+        /* ========================================
+           1. تعريف المتغيرات (CSS Variables)
+        ========================================
+        */
         :root {
-            --primary: #00d2ff;
-            --secondary: #3a7bd5;
-            --dark-bg: #0a0a0a;
-            --glass-bg: rgba(255, 255, 255, 0.05);
-            --glass-border: rgba(255, 255, 255, 0.1);
-            --text-main: #ffffff;
-            --text-muted: #aaaaaa;
-            --error-color: #ff4b4b;
-            --neon-glow: 0 0 20px rgba(0, 210, 255, 0.4);
+            /* ألوان نظام iOS */
+            --ios-blue: #007AFF;
+            --ios-blue-hover: #0062cc;
+            --ios-green: #34C759;
+            --ios-red: #FF3B30;
+            --ios-gray: #8E8E93;
+            --ios-bg-glass: rgba(25, 25, 35, 0.65);
+            --ios-border: rgba(255, 255, 255, 0.1);
+            
+            /* ألوان النصوص */
+            --text-primary: #FFFFFF;
+            --text-secondary: #EBEBF5;
+            --text-muted: #86868b;
+
+            /* تأثيرات الظل والضوء */
+            --shadow-soft: 0 8px 30px rgba(0, 0, 0, 0.12);
+            --shadow-hard: 0 30px 60px rgba(0, 0, 0, 0.6);
+            --neon-glow: 0 0 10px rgba(0, 122, 255, 0.5);
         }
 
+        /* ========================================
+           2. التأسيس (Reset & Base Styles)
+        ========================================
+        */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: 'Cairo', sans-serif;
+            outline: none;
+            -webkit-tap-highlight-color: transparent;
         }
 
         body {
-            background-color: var(--dark-bg);
-            color: var(--text-main);
+            font-family: 'Cairo', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #000;
             height: 100vh;
+            width: 100vw;
+            overflow: hidden; /* لمنع السكرول */
             display: flex;
             justify-content: center;
             align-items: center;
-            overflow: hidden;
+            color: var(--text-primary);
             position: relative;
         }
 
-        /* --- 2. خلفية الكانفاس المتحركة --- */
-        #particle-canvas {
+        /* ========================================
+           3. شاشة التحميل (Preloader)
+        ========================================
+        */
+        #preloader {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            z-index: 9999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            transition: opacity 0.8s ease-out, visibility 0.8s;
+        }
+
+        .loader-spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(255,255,255,0.1);
+            border-radius: 50%;
+            border-top-color: var(--ios-blue);
+            animation: spin 1s ease-in-out infinite;
+            margin-bottom: 20px;
+        }
+
+        .loader-text {
+            font-size: 0.9rem;
+            letter-spacing: 2px;
+            color: var(--text-muted);
+            animation: pulse 1.5s infinite;
+        }
+
+        /* ========================================
+           4. خلفية الفضاء (Canvas)
+        ========================================
+        */
+        #space-canvas {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
             z-index: 1;
-            background: radial-gradient(circle at center, #1a1a2e 0%, #000000 100%);
+            background: radial-gradient(ellipse at bottom, #1B2735 0%, #090A0F 100%);
         }
 
-        /* --- 3. حاوية التسجيل الزجاجية --- */
-        .login-wrapper {
-            position: relative;
+        /* ========================================
+           5. حاوية البطاقة (Container 3D)
+        ========================================
+        */
+        .container-3d {
+            perspective: 1000px;
             z-index: 10;
-            width: 100%;
-            max-width: 420px;
-            padding: 20px;
-            perspective: 1000px; /* للأنيميشن 3D */
+            width: 90%;
+            max-width: 400px;
         }
 
-        .glass-card {
-            background: var(--glass-bg);
-            backdrop-filter: blur(20px); /* تأثير الزجاج */
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid var(--glass-border);
-            border-radius: 24px;
-            padding: 40px 30px;
-            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.5), 
-                        inset 0 0 20px rgba(255, 255, 255, 0.05);
+        .glass-panel {
+            background: var(--ios-bg-glass);
+            backdrop-filter: blur(40px) saturate(180%);
+            -webkit-backdrop-filter: blur(40px) saturate(180%);
+            border-radius: 35px;
+            border: 1px solid var(--ios-border);
+            padding: 45px 35px;
+            box-shadow: var(--shadow-hard);
             transform-style: preserve-3d;
-            animation: cardFloat 6s ease-in-out infinite;
-            text-align: center;
-        }
-
-        @keyframes cardFloat {
-            0%, 100% { transform: translateY(0) rotateX(0deg); }
-            50% { transform: translateY(-10px) rotateX(2deg); }
-        }
-
-        /* --- 4. عناصر التصميم --- */
-        .logo-area {
-            margin-bottom: 30px;
+            transform: rotateX(0) rotateY(0);
+            transition: transform 0.1s ease-out; /* حركة ناعمة للماوس */
             position: relative;
-            display: inline-block;
+            overflow: hidden;
         }
 
-        .logo-ring {
-            width: 80px;
-            height: 80px;
-            border: 3px solid var(--primary);
-            border-top-color: transparent;
-            border-radius: 50%;
+        /* لمعة زجاجية متحركة */
+        .glass-panel::before {
+            content: '';
             position: absolute;
-            top: -10px;
-            left: 50%;
-            transform: translateX(-50%);
-            animation: spin 3s linear infinite;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(
+                to bottom right,
+                rgba(255,255,255,0) 0%,
+                rgba(255,255,255,0.05) 40%,
+                rgba(255,255,255,0) 50%
+            );
+            transform: rotate(30deg);
+            pointer-events: none;
         }
 
-        .logo-icon {
-            font-size: 2.5rem;
-            color: #fff;
-            text-shadow: 0 0 15px var(--primary);
+        /* ========================================
+           6. عناصر البطاقة الداخلية
+        ========================================
+        */
+        
+        /* الصورة الدائرية */
+        .avatar-box {
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 20px;
+            position: relative;
+            transform: translateZ(20px); /* تبرز للخارج */
         }
 
-        h1 {
+        .planet-ring {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            border-top-color: var(--ios-blue);
+            border-right-color: #bf5af2;
+            animation: spin 8s linear infinite;
+            box-shadow: 0 0 15px rgba(0, 122, 255, 0.3);
+        }
+
+        .planet-img {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            object-fit: cover;
+            padding: 5px;
+            background: rgba(0,0,0,0.5);
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
+        }
+
+        /* العناوين */
+        .header-text {
+            text-align: center;
+            margin-bottom: 30px;
+            transform: translateZ(10px);
+        }
+
+        .header-text h1 {
             font-size: 1.8rem;
-            font-weight: 800;
+            font-weight: 700;
             margin-bottom: 5px;
-            background: linear-gradient(135deg, #fff, var(--primary));
+            background: linear-gradient(to right, #fff, #a1c4fd);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
-        p.subtitle {
-            color: var(--text-muted);
+        .header-text p {
             font-size: 0.9rem;
-            margin-bottom: 30px;
-            letter-spacing: 1px;
+            color: var(--text-muted);
         }
 
-        /* --- 5. حقول الإدخال --- */
-        .input-group {
+        /* حقول الإدخال */
+        .form-group {
             position: relative;
-            margin-bottom: 25px;
-            text-align: right;
+            margin-bottom: 20px;
+            transform: translateZ(5px);
         }
 
-        .input-group input {
+        .input-field {
             width: 100%;
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid var(--glass-border);
-            padding: 15px 20px 15px 45px; /* مساحة للأيقونة */
-            border-radius: 12px;
+            padding: 18px 20px;
+            padding-left: 45px; /* مساحة للأيقونة */
+            border-radius: 18px;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(0, 0, 0, 0.25);
             color: #fff;
             font-size: 1rem;
-            outline: none;
             transition: all 0.3s ease;
         }
 
-        .input-group input:focus {
-            border-color: var(--primary);
-            box-shadow: 0 0 15px rgba(0, 210, 255, 0.2);
-            background: rgba(0, 0, 0, 0.5);
+        .input-field:focus {
+            background: rgba(0, 0, 0, 0.4);
+            border-color: var(--ios-blue);
+            box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.15);
         }
 
         .input-icon {
@@ -152,280 +243,529 @@
             top: 50%;
             transform: translateY(-50%);
             color: var(--text-muted);
-            transition: color 0.3s;
-        }
-
-        .input-group input:focus + .input-icon {
-            color: var(--primary);
-        }
-
-        /* --- 6. الزر --- */
-        .btn-submit {
-            width: 100%;
-            padding: 15px;
-            border: none;
-            border-radius: 12px;
-            background: linear-gradient(90deg, var(--secondary), var(--primary));
-            color: white;
             font-size: 1.1rem;
-            font-weight: 700;
+            transition: 0.3s;
+        }
+
+        .input-field:focus + .input-icon {
+            color: var(--ios-blue);
+        }
+
+        /* زر إظهار الباسورد */
+        .toggle-password {
+            position: absolute;
+            left: auto;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
             cursor: pointer;
-            transition: all 0.3s ease;
+            color: var(--text-muted);
+            padding: 5px;
+        }
+
+        /* شريط قوة الباسورد */
+        .password-strength {
+            height: 4px;
+            width: 0%;
+            background: var(--ios-red);
+            border-radius: 2px;
+            margin-top: -10px;
+            margin-bottom: 20px;
+            margin-right: 10px;
+            margin-left: 10px;
+            transition: all 0.4s ease;
+            opacity: 0;
+        }
+
+        /* زر الدخول الرئيسي */
+        .btn-main {
+            width: 100%;
+            padding: 16px;
+            border-radius: 18px;
+            border: none;
+            background: var(--ios-blue);
+            color: #fff;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
             overflow: hidden;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            box-shadow: 0 5px 15px rgba(0, 210, 255, 0.3);
+            box-shadow: 0 4px 15px rgba(0, 122, 255, 0.3);
+            margin-bottom: 25px;
         }
 
-        .btn-submit:hover {
-            transform: scale(1.02);
-            box-shadow: 0 8px 25px rgba(0, 210, 255, 0.5);
+        .btn-main:hover {
+            background: var(--ios-blue-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 122, 255, 0.4);
         }
 
-        .btn-submit::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-            transition: 0.5s;
+        .btn-main:active {
+            transform: scale(0.98);
         }
 
-        .btn-submit:hover::after {
-            left: 100%;
-        }
-
-        /* --- 7. رسائل الخطأ --- */
-        .error-msg {
-            background: rgba(255, 75, 75, 0.1);
-            border: 1px solid var(--error-color);
-            color: var(--error-color);
-            padding: 10px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            font-size: 0.85rem;
+        /* الفواصل والنصوص */
+        .divider {
             display: flex;
             align-items: center;
-            gap: 10px;
-            animation: shake 0.5s ease-in-out;
+            margin: 20px 0;
+            color: var(--text-muted);
+            font-size: 0.8rem;
         }
 
-        /* --- 8. أنيميشن إضافي --- */
+        .divider::before, .divider::after {
+            content: "";
+            flex: 1;
+            height: 1px;
+            background: rgba(255,255,255,0.1);
+        }
+
+        .divider span {
+            padding: 0 10px;
+        }
+
+        /* أزرار السوشيال */
+        .social-login {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+
+        .social-btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 15px;
+            background: rgba(255,255,255,0.08);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: 0.3s;
+            color: #fff;
+            font-size: 1.2rem;
+            border: 1px solid transparent;
+        }
+
+        .social-btn:hover {
+            background: rgba(255,255,255,0.15);
+            transform: scale(1.1);
+        }
+        
+        .social-btn.google:hover { border-color: #DB4437; color: #DB4437; }
+        .social-btn.apple:hover { border-color: #fff; color: #fff; }
+
+        /* الفوتر */
+        .card-footer {
+            text-align: center;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        .card-footer a {
+            color: var(--ios-blue);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        /* ========================================
+           7. الأنيميشن (Keyframes)
+        ========================================
+        */
         @keyframes spin {
-            0% { transform: translateX(-50%) rotate(0deg); }
-            100% { transform: translateX(-50%) rotate(360deg); }
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
         }
 
         @keyframes shake {
             0%, 100% { transform: translateX(0); }
-            25% { transform: translateX(-5px); }
-            75% { transform: translateX(5px); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+            20%, 40%, 60%, 80% { transform: translateX(5px); }
         }
 
-        /* الفوتر السفلي */
-        .footer-info {
-            margin-top: 30px;
-            font-size: 0.75rem;
-            color: rgba(255,255,255,0.3);
-            border-top: 1px solid rgba(255,255,255,0.05);
-            padding-top: 15px;
+        /* كلاس الخطأ عند الكتابة غلط */
+        .shake-element {
+            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+            border-color: var(--ios-red) !important;
         }
 
-        /* شريط التحميل الوهمي */
-        .loader-bar {
-            height: 3px;
-            width: 100%;
-            background: rgba(255,255,255,0.1);
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            overflow: hidden;
-            border-radius: 0 0 24px 24px;
-        }
-        .loader-progress {
-            height: 100%;
-            width: 50%;
-            background: var(--primary);
-            position: absolute;
-            animation: load 2s infinite ease-in-out;
-        }
-        @keyframes load {
-            0% { left: -50%; }
-            100% { left: 100%; }
+        /* ========================================
+           8. الميديا كويري (Responsive)
+        ========================================
+        */
+        @media (max-width: 480px) {
+            .glass-panel {
+                padding: 30px 20px;
+                border-radius: 30px;
+            }
+            
+            .header-text h1 { font-size: 1.5rem; }
+            
+            /* إلغاء حركة الـ 3D على الموبايل لتوفير البطارية */
+            .glass-panel { transform: none !important; }
         }
 
     </style>
 </head>
 <body>
 
-    <!-- الخلفية التفاعلية -->
-    <canvas id="particle-canvas"></canvas>
+    <div id="preloader">
+        <div class="loader-spinner"></div>
+        <div class="loader-text">جاري الاتصال بالقمر الصناعي...</div>
+    </div>
 
-    <div class="login-wrapper">
-        <div class="glass-card">
+    <canvas id="space-canvas"></canvas>
+
+    <div class="container-3d" id="tilt-container">
+        <div class="glass-panel">
             
-            <!-- اللوجو المتحرك -->
-            <div class="logo-area">
-                <div class="logo-ring"></div>
-                <div class="logo-icon">
-                    <!-- SVG Logo inline -->
-                    <svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
-                    </svg>
-                </div>
+            <div class="avatar-box">
+                <div class="planet-ring"></div>
+                <img src="https://images.unsplash.com/photo-1614730341194-75c60740a2d3?q=80&w=200&auto=format&fit=crop" alt="Planet" class="planet-img">
             </div>
 
-            <h1>Titan OS <span style="font-size:0.5em; vertical-align: super; color: var(--primary);">PRO</span></h1>
-            <p class="subtitle">نظام التحكم المركزي | AnnieXMedia</p>
-
-            <!-- رسالة الخطأ (تظهر فقط لو السيرفر بعت error) -->
-            {% if error %}
-            <div class="error-msg">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                <span>{{ error }}</span>
+            <div class="header-text">
+                <h1>Space X Login</h1>
+                <p>مرحباً بك في وحدة التحكم المركزية</p>
             </div>
-            {% endif %}
 
-            <!-- الفورم -->
-            <form action="/login" method="POST">
+            <form id="loginForm" action="#" method="POST" onsubmit="return validateForm(event)">
                 
-                <div class="input-group">
-                    <input type="text" name="username" placeholder="اسم المستخدم" required autocomplete="off">
-                    <span class="input-icon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                    </span>
+                <div class="form-group">
+                    <input type="text" id="username" class="input-field" placeholder="اسم المستخدم أو الإيميل" required autocomplete="off">
+                    <i class="fas fa-user input-icon"></i>
                 </div>
 
-                <div class="input-group">
-                    <input type="password" name="password" placeholder="كلمة المرور" required>
-                    <span class="input-icon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                    </span>
+                <div class="form-group">
+                    <input type="password" id="password" class="input-field" placeholder="كلمة المرور" required>
+                    <i class="fas fa-lock input-icon"></i>
+                    <i class="fas fa-eye toggle-password" onclick="togglePass()"></i>
                 </div>
+                
+                <div class="password-strength" id="strength-bar"></div>
 
-                <button type="submit" class="btn-submit">
+                <button type="submit" class="btn-main">
                     تسجيل الدخول
                 </button>
 
+                <div class="divider">
+                    <span>أو الدخول بواسطة</span>
+                </div>
+
+                <div class="social-login">
+                    <div class="social-btn apple" title="Apple ID">
+                        <i class="fab fa-apple"></i>
+                    </div>
+                    <div class="social-btn google" title="Google Account">
+                        <i class="fab fa-google"></i>
+                    </div>
+                </div>
+
+                <div class="card-footer">
+                    ليس لديك حساب؟ <a href="#">إنشاء حساب جديد</a>
+                </div>
+
             </form>
-
-            <div class="footer-info">
-                Protected by Titan Security © 2025<br>
-                v3.0.1 Stable Build
-            </div>
-
-            <div class="loader-bar"><div class="loader-progress"></div></div>
         </div>
     </div>
 
-    <!-- سكريبت الأنيميشن (Particles System) -->
     <script>
-        // إعداد الكانفاس
-        const canvas = document.getElementById('particle-canvas');
+        // --- أولاً: إخفاء شاشة التحميل ---
+        window.addEventListener('load', () => {
+            const preloader = document.getElementById('preloader');
+            setTimeout(() => {
+                preloader.style.opacity = '0';
+                setTimeout(() => {
+                    preloader.style.visibility = 'hidden';
+                }, 800);
+            }, 1500); // تأخير بسيط للجمالية
+        });
+
+        // --- ثانياً: نظام الجزيئات والنجوم المتطور (Particle System) ---
+        const canvas = document.getElementById('space-canvas');
         const ctx = canvas.getContext('2d');
         
         let width, height;
-        let particles = [];
-        
-        // ضبط الحجم
-        function resize() {
-            width = canvas.width = window.innerWidth;
-            height = canvas.height = window.innerHeight;
-        }
-        
-        window.addEventListener('resize', resize);
-        resize();
+        let stars = [];
+        let comets = [];
 
-        // كلاس الجزيئات
-        class Particle {
+        // ضبط أبعاد الشاشة
+        function resizeCanvas() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // كلاس النجم (Star Class)
+        class Star {
             constructor() {
+                this.reset();
+            }
+
+            reset() {
                 this.x = Math.random() * width;
                 this.y = Math.random() * height;
-                this.vx = (Math.random() - 0.5) * 1.5; // سرعة أفقية
-                this.vy = (Math.random() - 0.5) * 1.5; // سرعة رأسية
-                this.size = Math.random() * 2 + 1;
-                this.color = `rgba(${Math.random() * 50}, ${150 + Math.random() * 100}, 255, ${Math.random() * 0.5})`;
+                this.size = Math.random() * 2;
+                this.blinkSpeed = Math.random() * 0.05;
+                this.alpha = Math.random();
+                this.direction = Math.random() > 0.5 ? 1 : -1;
+                // سرعة حركة بسيطة جداً (Parallax)
+                this.vx = (Math.random() - 0.5) * 0.2;
+                this.vy = (Math.random() - 0.5) * 0.2;
             }
 
             update() {
+                // تأثير الوميض
+                this.alpha += this.blinkSpeed * this.direction;
+                if (this.alpha >= 1 || this.alpha <= 0.2) {
+                    this.direction *= -1;
+                }
+
+                // الحركة
                 this.x += this.vx;
                 this.y += this.vy;
 
-                // الارتداد من الحواف
-                if (this.x < 0 || this.x > width) this.vx *= -1;
-                if (this.y < 0 || this.y > height) this.vy *= -1;
+                // لو خرجت برا الشاشة ترجع تاني
+                if (this.x < 0 || this.x > width || this.y < 0 || this.y > height) {
+                    this.reset();
+                }
             }
 
             draw() {
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-                ctx.fillStyle = this.color;
+                ctx.fillStyle = `rgba(255, 255, 255, ${this.alpha})`;
+                ctx.shadowBlur = this.size * 2;
+                ctx.shadowColor = "white";
                 ctx.fill();
             }
         }
 
-        // إنشاء الجزيئات
-        function initParticles() {
-            particles = [];
-            const particleCount = Math.min(window.innerWidth / 10, 100); // عدد متجاوب
-            for (let i = 0; i < particleCount; i++) {
-                particles.push(new Particle());
+        // كلاس المذنب (Comet Class) - بيعدي كل فترة
+        class Comet {
+            constructor() {
+                this.active = false;
+                this.reset();
             }
-        }
 
-        // رسم الخطوط بين الجزيئات القريبة
-        function drawLines() {
-            for (let i = 0; i < particles.length; i++) {
-                for (let j = i + 1; j < particles.length; j++) {
-                    const dx = particles[i].x - particles[j].x;
-                    const dy = particles[i].y - particles[j].y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
+            reset() {
+                this.x = Math.random() * width;
+                this.y = 0;
+                this.len = Math.random() * 80 + 20;
+                this.speed = Math.random() * 5 + 5;
+                this.size = Math.random() * 2 + 1;
+                this.angle = Math.PI / 4; // زاوية 45 درجة
+                this.active = false;
+            }
 
-                    if (distance < 150) {
-                        ctx.beginPath();
-                        ctx.strokeStyle = `rgba(0, 210, 255, ${1 - distance / 150})`;
-                        ctx.lineWidth = 0.5;
-                        ctx.moveTo(particles[i].x, particles[i].y);
-                        ctx.lineTo(particles[j].x, particles[j].y);
-                        ctx.stroke();
-                    }
+            activate() {
+                this.active = true;
+                this.x = Math.random() * width;
+                this.y = -100;
+            }
+
+            update() {
+                if (!this.active) return;
+                
+                this.x -= this.speed; // يتحرك لليسار والأسفل
+                this.y += this.speed;
+
+                if (this.x < -100 || this.y > height + 100) {
+                    this.active = false; // انتهت الرحلة
                 }
             }
+
+            draw() {
+                if (!this.active) return;
+                
+                const gradient = ctx.createLinearGradient(this.x, this.y, this.x + this.len, this.y - this.len);
+                gradient.addColorStop(0, "rgba(255,255,255,1)");
+                gradient.addColorStop(1, "rgba(255,255,255,0)");
+
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y);
+                ctx.lineTo(this.x + this.len, this.y - this.len);
+                ctx.strokeStyle = gradient;
+                ctx.lineWidth = this.size;
+                ctx.stroke();
+            }
         }
 
-        // حلقة التحريك
-        function animate() {
-            ctx.clearRect(0, 0, width, height);
+        // تهيئة العناصر
+        function initSpace() {
+            stars = [];
+            for (let i = 0; i < 150; i++) stars.push(new Star());
             
-            particles.forEach(p => {
-                p.update();
-                p.draw();
+            // إنشاء مذنب واحد
+            comets.push(new Comet());
+        }
+
+        // حلقة الرسم (Animation Loop)
+        function animateSpace() {
+            ctx.clearRect(0, 0, width, height); // مسح الشاشة
+            
+            // رسم النجوم
+            stars.forEach(star => {
+                star.update();
+                star.draw();
             });
-            
-            drawLines();
-            requestAnimationFrame(animate);
+
+            // رسم المذنبات
+            comets.forEach(comet => {
+                comet.update();
+                comet.draw();
+                
+                // تفعيل المذنب عشوائياً
+                if (!comet.active && Math.random() < 0.005) {
+                    comet.activate();
+                }
+            });
+
+            requestAnimationFrame(animateSpace);
         }
 
-        // البدء
-        initParticles();
-        animate();
+        initSpace();
+        animateSpace();
 
-        // إضافة تفاعل بسيط للماوس
+
+        // --- ثالثاً: تأثير 3D Tilt للكارت ---
+        const container = document.getElementById('tilt-container');
+        const card = document.querySelector('.glass-panel');
+
+        // دالة الحركة
         document.addEventListener('mousemove', (e) => {
-            // إضافة اضطراب بسيط للجزيئات عند حركة الماوس
-            particles.forEach(p => {
-                const dx = e.clientX - p.x;
-                const dy = e.clientY - p.y;
-                const dist = Math.sqrt(dx*dx + dy*dy);
-                if(dist < 100) {
-                    p.vx += dx * 0.001;
-                    p.vy += dy * 0.001;
-                }
-            });
+            // لو الشاشة صغيرة منعملش حركة عشان الأداء
+            if (window.innerWidth < 768) return;
+
+            const xAxis = (window.innerWidth / 2 - e.pageX) / 25; // التحكم في قوة الدوران X
+            const yAxis = (window.innerHeight / 2 - e.pageY) / 25; // التحكم في قوة الدوران Y
+
+            card.style.transform = `rotateY(${xAxis}deg) rotateX(${yAxis}deg)`;
         });
+
+        // لما الماوس يدخل الكارت
+        container.addEventListener('mouseenter', (e) => {
+            card.style.transition = 'none'; // إلغاء الترانزيشن عشان الحركة تكون فورية
+            // تبريز العناصر الداخلية (Pop effect)
+            document.querySelector('.avatar-box').style.transform = "translateZ(50px)";
+            document.querySelector('.header-text').style.transform = "translateZ(40px)";
+            document.querySelector('.btn-main').style.transform = "translateZ(30px)";
+        });
+
+        // لما الماوس يخرج
+        container.addEventListener('mouseleave', (e) => {
+            card.style.transition = 'all 0.5s ease'; // ترجيع النعومة
+            card.style.transform = `rotateY(0deg) rotateX(0deg)`;
+            
+            // إرجاع العناصر الداخلية
+            document.querySelector('.avatar-box').style.transform = "translateZ(20px)";
+            document.querySelector('.header-text').style.transform = "translateZ(10px)";
+            document.querySelector('.btn-main').style.transform = "translateZ(0px)";
+        });
+
+
+        // --- رابعاً: وظائف الفورم والتحقق ---
+        
+        // 1. إظهار/إخفاء كلمة المرور
+        function togglePass() {
+            const passInput = document.getElementById('password');
+            const icon = document.querySelector('.toggle-password');
+            
+            if (passInput.type === 'password') {
+                passInput.type = 'text';
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+                icon.style.color = var('--ios-blue');
+            } else {
+                passInput.type = 'password';
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+                icon.style.color = ''; // رجوع للون الأصلي
+            }
+        }
+
+        // 2. فحص قوة كلمة المرور
+        const passInput = document.getElementById('password');
+        const strengthBar = document.getElementById('strength-bar');
+
+        passInput.addEventListener('keyup', function() {
+            const val = passInput.value;
+            let strength = 0;
+            
+            if (val.length > 0) strengthBar.style.opacity = '1';
+            else strengthBar.style.opacity = '0';
+
+            // معايير القوة
+            if (val.length >= 6) strength += 1;
+            if (val.match(/[a-z]/) && val.match(/[A-Z]/)) strength += 1;
+            if (val.match(/\d/)) strength += 1;
+            if (val.match(/[^a-zA-Z\d]/)) strength += 1;
+
+            // تلوين الشريط
+            if (strength === 0) {
+                strengthBar.style.width = '0%';
+            } else if (strength <= 2) {
+                strengthBar.style.width = '30%';
+                strengthBar.style.background = '#FF3B30'; // أحمر
+            } else if (strength === 3) {
+                strengthBar.style.width = '60%';
+                strengthBar.style.background = '#FFCC00'; // أصفر
+            } else {
+                strengthBar.style.width = '100%';
+                strengthBar.style.background = '#34C759'; // أخضر
+            }
+        });
+
+        // 3. التحقق عند الإرسال (Simulation)
+        function validateForm(e) {
+            e.preventDefault(); // منع الإرسال الحقيقي للتجربة
+            
+            const user = document.getElementById('username');
+            const pass = document.getElementById('password');
+            const btn = document.querySelector('.btn-main');
+
+            // محاكاة تحميل
+            const originalText = btn.innerText;
+            btn.innerText = 'جاري التحقق...';
+            btn.style.opacity = '0.7';
+
+            setTimeout(() => {
+                // محاكاة خطأ (للتجربة) إذا كان الباسورد قصير
+                if (pass.value.length < 4) {
+                    pass.classList.add('shake-element');
+                    pass.style.borderColor = '#FF3B30';
+                    
+                    // إزالة كلاس الهز بعد انتهاء الأنيميشن
+                    setTimeout(() => {
+                        pass.classList.remove('shake-element');
+                    }, 500);
+                    
+                    btn.innerText = originalText;
+                    btn.style.opacity = '1';
+                } else {
+                    // نجاح
+                    btn.style.background = '#34C759';
+                    btn.innerText = 'تم الدخول بنجاح ✔';
+                    
+                    // هنا المفروض تحويل المستخدم للصفحة التالية
+                    // window.location.href = '/dashboard';
+                    setTimeout(() => {
+                        alert("أهلاً بك في نظام Titan OS!");
+                    }, 500);
+                }
+            }, 1500);
+
+            return false;
+        }
 
     </script>
 </body>
