@@ -1,53 +1,73 @@
-# Authored By Certified Coders © 2025
-# Modified for Titan OS Integration (Fast-Start Edition)
+# -*- coding: utf-8 -*-
+# AnnieXMedia Main Runner | Titan OS Integration
+# ────────────────────────────────────────────────────────
+
+import asyncio
+import importlib
 import sys
 import os
 import threading
-import uvicorn
-import asyncio
-import importlib
-
-# إجبار استخدام المجلد المحلي
-sys.path.insert(0, os.getcwd())
-
+from sys import argv
 from pyrogram import idle
 from pytgcalls.exceptions import NoActiveGroupCall
 
-import config
-from AnnieXMedia import LOGGER, app, userbot
-from AnnieXMedia.core.call import StreamController
+# [1] استيراد موديولات البوت الأساسية
+# تأكد أن هذه المسارات صحيحة في سورس Annie الخاص بك
+from AnnieXMedia import (
+    LOGGER,
+    app,
+    userbot,
+    YouTube,
+    LOADED_MODULES,
+)
 from AnnieXMedia.misc import sudo
-from AnnieXMedia.plugins import ALL_MODULES
+from AnnieXMedia.modules import ALL_MODULES
 from AnnieXMedia.utils.database import get_banned_users, get_gbanned
-from AnnieXMedia.utils.cookie_handler import fetch_and_store_cookies
 from config import BANNED_USERS
+import config
 
-# ==============================================================================
-# [1] إعداد واجهة Titan OS
-# ==============================================================================
-try:
-    from AnnieXMedia.TitanOS.web_srv import app as titan_app
-    WEB_AVAILABLE = True
-except ImportError as e:
-    print(f"\n⚠️ Web Interface Error: {e}\n")
-    WEB_AVAILABLE = False
+# [2] إعداد وربط TitanOS Web Dashboard
+# ────────────────────────────────────────────────────────
+WEB_ENABLED = False
 
-def start_web_server():
-    # تشغيل السيرفر بصمت (بدون إزعاج في السجلات)
-    uvicorn.run(titan_app, host="0.0.0.0", port=8080, log_level="error")
-# ==============================================================================
+def setup_web_dashboard():
+    """تهيئة واستيراد لوحة التحكم من مجلد TitanOS"""
+    global WEB_ENABLED
+    try:
+        # إضافة المسار الحالي للتأكد من رؤية المجلدات الفرعية
+        current_path = os.getcwd()
+        if current_path not in sys.path:
+            sys.path.append(current_path)
 
+        # المحاولة الأولى: الاستيراد كحزمة (Package)
+        # هذا يتطلب وجود ملف __init__.py داخل مجلد TitanOS
+        from TitanOS.web_srv import start_server_thread
+        return start_server_thread
+
+    except ImportError:
+        try:
+            # المحاولة الثانية: إضافة مجلد TitanOS نفسه للمسارات
+            # هذا يعمل حتى لو لم يكن هناك __init__.py
+            titan_path = os.path.join(current_path, "TitanOS")
+            if os.path.exists(titan_path):
+                sys.path.append(titan_path)
+                from web_srv import start_server_thread
+                return start_server_thread
+        except Exception as e:
+            print(f"⚠️ Dashboard Warning: Could not load TitanOS/web_srv.py: {e}")
+    
+    return None
+
+# محاولة جلب دالة تشغيل السيرفر
+start_server_func = setup_web_dashboard()
+if start_server_func:
+    WEB_ENABLED = True
+
+
+# [3] دالة التشغيل الرئيسية (Main Loop)
+# ────────────────────────────────────────────────────────
 async def init():
-    # 🔥 تشغيل الموقع فوراً في البداية (قبل أي شيء آخر)
-    # هذا يمنع خطأ "Connection Refused" في المنصات السحابية
-    if WEB_AVAILABLE:
-        print("🚀 TitanOS: Starting Dashboard instantly on Port 8080...")
-        web_thread = threading.Thread(target=start_web_server, daemon=True)
-        web_thread.start()
-
-    # --------------------------------------------------------------------------
-    # بداية تحميل البوت الطبيعي
-    # --------------------------------------------------------------------------
+    # 1. التحقق من متغيرات المساعد (Assistant Vars)
     if (
         not config.STRING1
         and not config.STRING2
@@ -55,17 +75,10 @@ async def init():
         and not config.STRING4
         and not config.STRING5
     ):
-        LOGGER(__name__).error("Session not filled!")
-        exit()
+        LOGGER(__name__).error("Assistant client variables not defined, exiting...")
+        return
 
-    try:
-        await fetch_and_store_cookies()
-        LOGGER("AnnieXMedia").info("ʏᴏᴜᴛᴜʙᴇ ᴄᴏᴏᴋɪᴇs ʟᴏᴀᴅᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ ✅")
-    except Exception as e:
-        LOGGER("AnnieXMedia").warning(f"⚠️ᴄᴏᴏᴋɪᴇ ᴇʀʀᴏʀ: {e}")
-
-    await sudo()
-
+    # 2. تحميل قوائم الحظر (GBAN/Blocklist)
     try:
         users = await get_gbanned()
         for user_id in users:
@@ -75,31 +88,70 @@ async def init():
             BANNED_USERS.add(user_id)
     except:
         pass
+    
+    # 3. تفعيل صلاحيات المطورين (Sudo)
+    await sudo()
 
-    await app.start()
-    for all_module in ALL_MODULES:
-        importlib.import_module("AnnieXMedia.plugins" + all_module)
-
-    LOGGER("AnnieXMedia.plugins").info("ᴀɴɴɪᴇ's ᴍᴏᴅᴜʟᴇs ʟᴏᴀᴅᴇᴅ...")
-
-    await userbot.start()
-    await StreamController.start()
-
-    # تجربة الاتصال (Sintel Test)
+    # 4. تشغيل عملاء التيليجرام (Clients Start)
     try:
-        await StreamController.stream_call("http://docs.evostream.com/sample_content/assets/sintel1m720p.mp4")
-    except NoActiveGroupCall:
-        LOGGER("AnnieXMedia").error("Please turn on VC. Bot stopped.")
+        await app.start()
+        for user in userbot.clients:
+            await user.start()
+    except Exception as ex:
+        LOGGER(__name__).error(f"Bot failed to start: {ex}")
         exit()
+
+    # 5. تحميل الإضافات والموديولات (Plugins)
+    LOGGER("AnnieXMedia").info("Loading Modules...")
+    for all_module in ALL_MODULES:
+        importlib.import_module("AnnieXMedia.modules." + all_module)
+    LOGGER("AnnieXMedia.modules").info("Successfully Imported Modules...")
+
+    # 6. تشغيل لوحة التحكم (TitanOS Web Dashboard) 🚀
+    # ────────────────────────────────────────────────────
+    if WEB_ENABLED and start_server_func:
+        try:
+            LOGGER("TitanOS").info("🌐 Initializing Web Kernel...")
+            
+            # تشغيل السيرفر في Thread منفصل لعدم إيقاف البوت
+            server_thread = threading.Thread(target=start_server_func, daemon=True)
+            server_thread.start()
+            
+            port = getattr(config, "PORT", 8080)
+            LOGGER("TitanOS").info(f"✅ Dashboard is Live on Port: {port}")
+        except Exception as web_e:
+            LOGGER("TitanOS").error(f"❌ Failed to start Dashboard: {web_e}")
+    else:
+        LOGGER("TitanOS").warning("⚠️ Dashboard Disabled: TitanOS/web_srv.py not found.")
+
+    # 7. إشعار البدء لمجموعة السجل
+    try:
+        await app.send_message(
+            config.LOG_GROUP_ID,
+            f"<b>🔥 Titan OS Bot Started Successfully!</b>\n"
+            f"<b>🖥 Web Dashboard:</b> {'Enabled ✅' if WEB_ENABLED else 'Disabled ❌'}\n"
+            f"<b>🐍 Python:</b> {sys.version.split()[0]}\n"
+            f"<b>⚡ Pyrogram:</b> v2.x"
+        )
+    except:
+        pass 
+
+    LOGGER("AnnieXMedia").info("\x1b[32mBot Started Successfully. Hosting via TitanOS.\x1b[0m")
+    
+    # 8. إبقاء البوت يعمل (Idle Loop)
+    await idle()
+
+    # 9. إيقاف التشغيل بأمان عند الخروج (CTRL+C)
+    try:
+        await app.stop()
+        for user in userbot.clients:
+            await user.stop()
     except:
         pass
+    LOGGER("AnnieXMedia").info("Stopping Bot Cleaning up...")
 
-    await StreamController.decorators()
-    LOGGER("AnnieXMedia").info("Annie Music Robot Started Successfully... Titan OS is Ready 🛸")
-    
-    await idle()
-    await app.stop()
-    await userbot.stop()
 
 if __name__ == "__main__":
-    asyncio.get_event_loop().run_until_complete(init())
+    # تهيئة Loop وتشغيل الدالة الرئيسية
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(init())
