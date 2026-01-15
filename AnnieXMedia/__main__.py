@@ -14,6 +14,7 @@ import threading
 import socket
 import shutil
 import gc
+import inspect
 from functools import wraps
 from datetime import datetime
 from flask import Flask, request, redirect, url_for, jsonify, session, send_file, Response, abort
@@ -85,38 +86,105 @@ except Exception as e:
     logger.warning(f"⚠️ Partial startup: could not import AnnieXMedia modules: {e}")
     # keep SYSTEM_READY False; endpoints will degrade gracefully
 
-# ---------- UTIL: run coroutine on bot loop ----------
-# we'll store reference to the bot asyncio loop when we start the bot
-bot_loop = None
+# ---------- UTIL: event loop references ----------
+bot_loop = None                 # will point to the main asyncio loop when bot starts
+_background_loop = None         # fallback/background loop (runs in separate thread)
+_background_thread = None
 
-def run_coroutine_safe(coro):
-    """Schedule coroutine on bot_loop if available, else run in new loop thread-safe."""
-    global bot_loop
-    if bot_loop and isinstance(bot_loop, asyncio.AbstractEventLoop):
+def _ensure_background_loop():
+    """Start a dedicated background asyncio loop in a daemon thread (non-blocking)."""
+    global _background_loop, _background_thread
+    if _background_loop and _background_loop.is_running():
+        return _background_loop
+    # create loop and thread
+    _background_loop = asyncio.new_event_loop()
+    def _run_loop(loop):
         try:
-            fut = asyncio.run_coroutine_threadsafe(coro, bot_loop)
-            return fut
+            asyncio.set_event_loop(loop)
+            loop.run_forever()
         except Exception as e:
-            logger.exception("run_coroutine_safe submit error")
-            # fallback: schedule in new loop (not ideal)
-    # fallback: run in new event loop temporarily (blocking)
+            logger.exception("Background loop crashed")
+    _background_thread = threading.Thread(target=_run_loop, args=(_background_loop,), daemon=True)
+    _background_thread.start()
+    # small wait until loop becomes ready
+    return _background_loop
+
+def run_coroutine_safe(func_or_coro=None, *args, **kwargs):
+    """
+    Robust scheduler for coroutines and sync functions.
+    - Accepts: coroutine object, async function, or sync callable.
+    - If bot_loop exists and running => schedule there (non-blocking).
+    - Otherwise schedule on a background loop thread (non-blocking).
+    - If given a sync function (or returns non-coroutine), call it directly and return its result.
+    Returns:
+      - concurrent.futures.Future when scheduled on an event loop
+      - direct result for sync callables
+      - None on error
+    """
+    global bot_loop, _background_loop
+
     try:
+        # If a coroutine object is passed directly
+        if inspect.iscoroutine(func_or_coro):
+            coro = func_or_coro
+
+        # If an async function (callable) is passed
+        elif inspect.iscoroutinefunction(func_or_coro):
+            coro = func_or_coro(*args, **kwargs)
+
+        # If a callable (sync or returns coroutine)
+        elif callable(func_or_coro):
+            result = func_or_coro(*args, **kwargs)
+            if inspect.iscoroutine(result):
+                coro = result
+            else:
+                # sync result, return directly
+                return result
+        else:
+            # Nothing meaningful passed
+            return None
+
+        # At this point we have a coroutine object `coro`
+        # 1) Prefer bot_loop if available and running
+        if bot_loop and isinstance(bot_loop, asyncio.AbstractEventLoop) and bot_loop.is_running():
+            try:
+                fut = asyncio.run_coroutine_threadsafe(coro, bot_loop)
+                return fut
+            except Exception:
+                logger.exception("run_coroutine_threadsafe failed on bot_loop; falling back to background loop")
+
+        # 2) Use background loop thread (non-blocking)
+        try:
+            bg = _ensure_background_loop()
+            fut = asyncio.run_coroutine_threadsafe(coro, bg)
+            return fut
+        except Exception:
+            logger.exception("Scheduling on background loop failed; attempting blocking run")
+
+        # 3) Last-resort: blocking run (should be rare)
         loop = asyncio.new_event_loop()
-        res = loop.run_until_complete(coro)
-        loop.close()
-        return res
-    except Exception as e:
-        logger.exception("Fallback run_coroutine_safe failed")
+        try:
+            asyncio.set_event_loop(loop)
+            res = loop.run_until_complete(coro)
+            return res
+        finally:
+            try:
+                loop.close()
+            except:
+                pass
+
+    except Exception:
+        logger.exception("run_coroutine_safe general failure")
         return None
 
+# ---------- small async helpers ----------
 async def _maybe_await(obj):
-    """If obj is awaitable, await it; else return directly."""
     if asyncio.iscoroutine(obj) or asyncio.isfuture(obj):
         return await obj
     return obj
 
 async def safe_call_async(target, name, *args, **kwargs):
-    """Try to call attribute name on target gracefully supporting sync/async methods/properties."""
+    """Call target.name(...) handling sync/async gracefully."""
     if not target:
         return None
     try:
@@ -134,7 +202,6 @@ async def safe_call_async(target, name, *args, **kwargs):
         return None
 
 def require_auth(f):
-    """Decorator to protect endpoints by session user."""
     @wraps(f)
     def decorated(*args, **kwargs):
         if session.get("user") == ADMIN_USER:
@@ -180,7 +247,6 @@ def logout():
 # ---------- ROUTES: Streaming (Range support) ----------
 @app.route("/stream/<chat_id>")
 def stream_route(chat_id):
-    # protect stream
     if session.get("user") != ADMIN_USER:
         return "Access Denied", 403
 
@@ -193,7 +259,6 @@ def stream_route(chat_id):
     except Exception:
         pass
 
-    # fallback to latest mp4 in downloads
     if not file_path or not os.path.exists(file_path):
         try:
             files = [os.path.join(DOWNLOADS_DIR, f) for f in os.listdir(DOWNLOADS_DIR) if f.lower().endswith(('.mp4', '.webm', '.mkv'))]
@@ -205,7 +270,6 @@ def stream_route(chat_id):
     if not file_path or not os.path.exists(file_path):
         return "No Stream Found", 404
 
-    # Range handling
     range_header = request.headers.get("Range", None)
     file_size = os.path.getsize(file_path)
     if range_header:
@@ -227,7 +291,6 @@ def stream_route(chat_id):
         except Exception as e:
             logger.exception("Range handling error")
             return send_file(file_path)
-    # full file
     return send_file(file_path)
 
 # ---------- API: Active Calls ----------
@@ -235,7 +298,6 @@ def stream_route(chat_id):
 def api_active_calls():
     chats = []
     try:
-        # StreamController may be class with attribute active_calls or instance
         ac = getattr(StreamController, "active_calls", None)
         if ac:
             if callable(ac):
@@ -243,21 +305,17 @@ def api_active_calls():
                     res = ac()
                     chats = [{"chat_id": str(x), "name": f"Chat {x}", "cover": ""} for x in res] if res else []
                 except Exception:
-                    # try attribute access
                     chats = [{"chat_id": str(x), "name": f"Chat {x}", "cover": ""} for x in ac] if hasattr(ac, "__iter__") else []
             else:
-                # list-like
                 chats = [{"chat_id": str(x), "name": f"Chat {x}", "cover": ""} for x in ac] if hasattr(ac, "__iter__") else []
     except Exception:
         logger.debug("api_active_calls: StreamController.active_calls not available")
-    # fallback: check db
     if not chats and isinstance(db, dict):
         try:
             keys = [k for k in db.keys() if isinstance(k, int)]
             chats = [{"chat_id": str(k), "name": db[k][0].get("title", str(k)) if db[k] else str(k), "cover": db[k][0].get("thumb", "") if db[k] else ""} for k in keys]
         except Exception:
             chats = []
-
     return jsonify({"chats": chats})
 
 # ---------- API: Track Info ----------
@@ -289,14 +347,13 @@ def api_player_control():
     chat_id = request.form.get("chat_id") or request.values.get("chat_id")
     if not cmd or not chat_id:
         return jsonify({"error": "Missing cmd or chat_id"}), 400
-    # schedule the command on the bot loop
+
     async def _exec():
         try:
             cid = int(chat_id)
         except:
             cid = None
         try:
-            # Try a few possible method names on StreamController
             if cmd in ("pause", "pause_stream"):
                 await safe_call_async(StreamController, "pause_stream", cid)
             elif cmd in ("resume", "resume_stream"):
@@ -306,18 +363,18 @@ def api_player_control():
             elif cmd in ("force_stop", "force_stop_stream"):
                 await safe_call_async(StreamController, "force_stop_stream", cid)
             elif cmd == "focus":
-                # set a turbo_chat_id or similar attr
                 try:
                     setattr(StreamController, "turbo_chat_id", cid)
                 except:
                     pass
             else:
                 logger.debug(f"Unknown command received: {cmd}")
-        except Exception as e:
+        except Exception:
             logger.exception("Error executing player control")
-    # non-blocking submit
+
     try:
-        run_coroutine_safe(_exec())
+        # Accept both coroutine-object and function-ref usages from callers
+        run_coroutine_safe(_exec)  # pass function (preferred)
     except Exception:
         logger.exception("Failed to schedule player control")
     return jsonify({"status": "scheduled", "command": cmd})
@@ -330,13 +387,13 @@ def api_play_custom():
     query = request.form.get("query") or request.values.get("query")
     if not chat_id or not query:
         return jsonify({"error": "Missing chat_id or query"}), 400
+
     async def _exec():
         try:
             cid = int(chat_id)
         except:
             cid = None
         try:
-            # Use YouTubeHelper.search if exists
             link = None
             title = None
             if YouTubeHelper and hasattr(YouTubeHelper, "search"):
@@ -344,20 +401,18 @@ def api_play_custom():
                 if res and isinstance(res, list) and len(res) > 0:
                     link = res[0].get("link")
                     title = res[0].get("title")
-            # fallback: if query is a link
             if not link and (query.startswith("http://") or query.startswith("https://")):
                 link = query
                 title = os.path.basename(query)
             if not link:
                 return {"error": "No results"}
-            # call join_call on StreamController
             await safe_call_async(StreamController, "join_call", chat_id=cid, original_chat_id=cid, link=link, video=True)
             return {"status": "playing", "title": title}
-        except Exception as e:
+        except Exception:
             logger.exception("play_custom error")
-            return {"error": str(e)}
-    fut = run_coroutine_safe(_exec())
-    # if run_coroutine_safe returned a Future, return immediately scheduled
+            return {"error": "play_custom failed"}
+
+    run_coroutine_safe(_exec)
     return jsonify({"status": "scheduled", "chat_id": chat_id})
 
 # ---------- API: Security (gbans & blacklist) ----------
@@ -368,6 +423,7 @@ def api_block_user():
     action = request.form.get("action") or request.values.get("action")
     if not user_id or not action:
         return jsonify({"error": "Missing parameters"}), 400
+
     async def _exec():
         try:
             uid = int(user_id)
@@ -377,7 +433,6 @@ def api_block_user():
             if action == "enable":
                 if 'add_gban_user' in globals():
                     await safe_call_async(globals().get('add_gban_user'), "__call__", uid)
-                # update local BANNED_USERS if available
                 try:
                     BANNED_USERS.add(uid)
                 except:
@@ -391,10 +446,11 @@ def api_block_user():
                 except:
                     pass
                 return {"status": "unblocked", "id": uid}
-        except Exception as e:
+        except Exception:
             logger.exception("block_user error")
-            return {"error": str(e)}
-    run_coroutine_safe(_exec())
+            return {"error": "block_user failed"}
+
+    run_coroutine_safe(_exec)
     return jsonify({"status": "scheduled"})
 
 @app.route("/api/security/blacklist_chat", methods=["POST"])
@@ -404,6 +460,7 @@ def api_blacklist_chat():
     action = request.form.get("action") or request.values.get("action")
     if not chat_id or not action:
         return jsonify({"error": "Missing parameters"}), 400
+
     async def _exec():
         try:
             cid = int(chat_id)
@@ -412,7 +469,6 @@ def api_blacklist_chat():
         try:
             if action == "enable" and 'blacklist_chat' in globals():
                 await safe_call_async(globals().get('blacklist_chat'), "__call__", cid)
-                # attempt to leave chat
                 try:
                     await safe_call_async(bot_app, "leave_chat", cid)
                 except:
@@ -422,10 +478,11 @@ def api_blacklist_chat():
                 await safe_call_async(globals().get('whitelist_chat'), "__call__", cid)
                 return {"status": "whitelisted", "id": cid}
             return {"error": "No action performed"}
-        except Exception as e:
+        except Exception:
             logger.exception("blacklist_chat error")
-            return {"error": str(e)}
-    run_coroutine_safe(_exec())
+            return {"error": "blacklist_chat failed"}
+
+    run_coroutine_safe(_exec)
     return jsonify({"status": "scheduled"})
 
 # ---------- API: Settings & Status ----------
@@ -435,26 +492,29 @@ def api_settings_status():
         m_status = False
         a_status = False
         if SYSTEM_READY:
-            # try to call is_maintenance / is_autoend if available
             try:
-                m_status = asyncio.get_event_loop().run_until_complete(safe_call_async(globals().get('is_maintenance'), "__call__")) if globals().get('is_maintenance') else False
+                # call DB helpers if present (sync-run small coros)
+                if globals().get('is_maintenance'):
+                    m_status = asyncio.get_event_loop().run_until_complete(safe_call_async(globals().get('is_maintenance'), "__call__"))
             except:
                 m_status = False
             try:
-                a_status = asyncio.get_event_loop().run_until_complete(safe_call_async(globals().get('is_autoend'), "__call__")) if globals().get('is_autoend') else False
+                if globals().get('is_autoend'):
+                    a_status = asyncio.get_event_loop().run_until_complete(safe_call_async(globals().get('is_autoend'), "__call__"))
             except:
                 a_status = False
         ram = psutil.virtual_memory().percent if psutil else 0
         cpu = psutil.cpu_percent() if psutil else 0
         ping = 0
         try:
-            ping = asyncio.get_event_loop().run_until_complete(safe_call_async(StreamController, "ping")) if StreamController else 0
+            if StreamController:
+                ping = asyncio.get_event_loop().run_until_complete(safe_call_async(StreamController, "ping"))
         except:
             ping = 0
         return jsonify({"maintenance": m_status, "autoend": a_status, "ram": ram, "cpu": cpu, "ping": ping})
-    except Exception as e:
+    except Exception:
         logger.exception("status error")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "status failed"}), 500
 
 # ---------- API: Utils (turbo, cache list, logs, update, restart) ----------
 @app.route("/api/utils/turbo", methods=["POST"])
@@ -473,7 +533,6 @@ def api_turbo():
                         deleted += 1
                     except:
                         pass
-        # clear pycache
         for root, dirs, files in os.walk(CURRENT_DIR):
             for d in dirs:
                 if d == "__pycache__":
@@ -481,9 +540,9 @@ def api_turbo():
                     except: pass
         gc.collect()
         return jsonify({"status": "Turbo Executed", "files_removed": deleted, "space_freed_mb": f"{freed/(1024*1024):.2f}"})
-    except Exception as e:
+    except Exception:
         logger.exception("turbo error")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "turbo failed"}), 500
 
 @app.route("/api/utils/cache_list")
 @require_auth
@@ -514,7 +573,7 @@ def _restart_now():
     try:
         python = sys.executable
         os.execv(python, [python] + sys.argv)
-    except Exception as e:
+    except Exception:
         logger.exception("restart failed")
 
 @app.route("/api/utils/action", methods=["POST"])
@@ -527,14 +586,13 @@ def api_action():
         threading.Thread(target=_restart_now, daemon=True).start()
         return jsonify({"status": "restarting"})
     if action == "update":
-        # simple git pull (may be changed)
         try:
             os.system("git pull")
             threading.Thread(target=_restart_now, daemon=True).start()
             return jsonify({"status": "updating and restarting"})
-        except Exception as e:
+        except Exception:
             logger.exception("update failed")
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": "update failed"}), 500
     return jsonify({"error": "unknown action"}), 400
 
 # ---------- SIMPLE HELPER PAGES ----------
@@ -553,6 +611,7 @@ def logs_page():
 # ---------- STARTUP / LAUNCH LOGIC ----------
 def run_flask():
     try:
+        # threaded=False to avoid extra threads; Flask runs in its own thread started by init_and_start
         app.run(host="0.0.0.0", port=8080, debug=False, use_reloader=False)
     except Exception:
         logger.exception("Flask server stopped unexpectedly")
@@ -573,18 +632,17 @@ async def init_and_start():
     except:
         logger.info("Dashboard: http://0.0.0.0:8080")
 
-    # 3) Validate config strings (from AnnieXMedia.config) — same logic as original
+    # 3) Validate config strings (from AnnieXMedia.config)
     try:
         import config as cfg
         strings_ok = any(getattr(cfg, f"STRING{i}", None) for i in range(1,6))
         if not strings_ok:
             logger.error("No Pyrogram session STRING found in config — aborting bot start")
-            # still allow web-only operation
     except Exception:
         logger.warning("config import failed or no session strings")
 
     # 4) Try to fetch cookies (non-fatal)
-    if fetch_and_store_cookies:
+    if 'fetch_and_store_cookies' in globals() and fetch_and_store_cookies:
         try:
             await fetch_and_store_cookies()
             logger.info("Cookies loaded")
@@ -622,7 +680,6 @@ async def init_and_start():
     # 7) Start StreamController if present
     if StreamController:
         try:
-            # StreamController may be class; try start()
             if hasattr(StreamController, "start"):
                 maybe = StreamController.start()
                 if asyncio.iscoroutine(maybe):
@@ -634,18 +691,12 @@ async def init_and_start():
         # OPTIONAL: try to auto-start a sample stream (non-fatal)
         try:
             sample = "http://docs.evostream.com/sample_content/assets/sintel1m720p.mp4"
-            # call stream_call, stream or stream_call method names vary
-            for name in ("stream_call", "stream_call_now", "stream_call_url", "stream_caller", "stream_call_link"):
+            for name in ("stream_call", "stream_call_now", "stream_call_url", "stream_caller", "stream_call_link", "stream_call"):
                 if hasattr(StreamController, name):
                     maybe = getattr(StreamController, name)(sample)
                     if asyncio.iscoroutine(maybe):
                         await maybe
                     break
-            # try generic name
-            if hasattr(StreamController, "stream_call"):
-                maybe = StreamController.stream_call(sample)
-                if asyncio.iscoroutine(maybe):
-                    await maybe
         except Exception:
             logger.debug("No auto sample stream started (ok)")
 
@@ -657,23 +708,19 @@ def main():
     loop = asyncio.get_event_loop()
     try:
         loop.run_until_complete(init_and_start())
-        # keep running until signal/idle — similar to pyrogram idle
-        # if bot_app provides idle(), await it
         try:
             if bot_app and hasattr(bot_app, "idle"):
                 loop.run_until_complete(bot_app.idle())
         except Exception:
-            # fallback to long sleep to keep process alive
             loop.run_forever()
     except KeyboardInterrupt:
         logger.info("Interrupted — shutting down")
     finally:
-        # cleanup
         try:
             if bot_app and hasattr(bot_app, "stop"):
-                run_coroutine_safe(bot_app.stop())
+                run_coroutine_safe(bot_app.stop)
             if userbot and hasattr(userbot, "stop"):
-                run_coroutine_safe(userbot.stop())
+                run_coroutine_safe(userbot.stop)
         except Exception:
             pass
         logger.info("Exiting")
