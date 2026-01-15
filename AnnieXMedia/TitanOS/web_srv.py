@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-# ==============================================================================
-# TITAN OS | ULTIMATE KERNEL (The Complete Backend Engine) - Updated Integrator
-# تعديل لربط الويب بسورس AnnieXMedia بشكل أكثر صلابة
-# ==============================================================================
+# ── 𝚂ᴏᴜʀᴄᴇ ✘ 𝐁ᴏᴅᴀ © 2025 ──────────────────────────────────────────────────────
+# TITAN OS | ULTIMATE KERNEL (The Complete Backend Engine)
+# Integrated with AnnieXMedia Source - Full Features
+# ──────────────────────────────────────────────────────────────────────────────
 
 import os
 import sys
@@ -14,717 +14,712 @@ import logging
 import gc
 import inspect
 import traceback
+import json
+import time
 from datetime import datetime
 from threading import Thread
-from typing import Any
+from typing import Any, Dict, List, Union, Optional
 
-# [1] Library Imports
+# [1] Library Imports & Dependencies Check
+# ──────────────────────────────────────────────────────────────────────────────
 try:
     import uvicorn
+    import aiofiles
     from git import Repo, GitCommandError
-    from fastapi import FastAPI, Request, Response, Form, BackgroundTasks, HTTPException
+    from fastapi import FastAPI, Request, Response, Form, BackgroundTasks, HTTPException, status
     from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse, StreamingResponse
     from fastapi.templating import Jinja2Templates
     from fastapi.staticfiles import StaticFiles
     from starlette.middleware.sessions import SessionMiddleware
     from starlette.middleware.cors import CORSMiddleware
-except ImportError:
-    print("\n❌ ERROR: Missing Libraries! Run: pip3 install fastapi uvicorn gitpython aiofiles\n")
-    raise
+    from pyrogram import Client
+    from pytgcalls import PyTgCalls
+except ImportError as e:
+    print(f"\n❌ Critical Error: Missing dependencies! {e}")
+    print("👉 Run: pip3 install fastapi uvicorn gitpython aiofiles python-multipart jinja2\n")
+    sys.exit()
 
-# ------------------------------------------------------------------------------
-# [2] Paths & Config
-# ------------------------------------------------------------------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT_DIR = os.path.dirname(BASE_DIR)
+# [2] Paths & Configuration Logic
+# ──────────────────────────────────────────────────────────────────────────────
+# تحديد المسارات بناءً على موقع الملف الحالي
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # AnnieXMedia/TitanOS/
+ROOT_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "..")) # Root Directory
 DOWNLOADS_DIR = os.path.join(ROOT_DIR, "downloads")
 CACHE_DIR = os.path.join(ROOT_DIR, "cache")
 RAW_FILES_DIR = os.path.join(ROOT_DIR, "raw_files")
 LOG_FILE = os.path.join(ROOT_DIR, "log.txt")
 
+# إضافة المجلد الجذري للمسار لاستيراد ملفات البوت
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-# ------------------------------------------------------------------------------
-# [3] Bot Integration (attempt imports - may run standalone)
-# ------------------------------------------------------------------------------
+# التأكد من وجود المجلدات الضرورية
+for folder in [DOWNLOADS_DIR, CACHE_DIR, RAW_FILES_DIR]:
+    os.makedirs(folder, exist_ok=True)
+
+# [3] AnnieXMedia Core Integration (Importing Bot Modules)
+# ──────────────────────────────────────────────────────────────────────────────
 SYSTEM_READY = False
-CallClient = None
-BotClient = None
-QueueDB = {}
-YouTubeHelper = None
-Config = None
+BotClient = None      # app
+CallClient = None     # StreamController
+QueueDB = {}          # db
+YouTubeHelper = None  # YouTube
+Config = None         # config module
 BANNED_USERS = set()
 
+print("🔌 TitanOS: Initializing Core Integration...")
+
 try:
+    # 1. استيراد الإعدادات
     import config
     Config = config
-    from config import BANNED_USERS as _BANS
-    BANNED_USERS = _BANS
-
-    # AnnieXMedia app client (the Pyrogram bot)
+    
+    # تحميل المتغيرات المهمة من الكونفج
+    WEB_PASSWORD = getattr(config, "WEB_PASSWORD", "asdfghjkl05896")
+    WEB_SECRET = getattr(config, "WEB_SECRET", "AnnieX_Secret_Key_99123")
+    HOST = getattr(config, "HOST", "0.0.0.0")
+    PORT = int(getattr(config, "PORT", "8080"))
+    
+    # 2. استيراد كائنات البوت الأساسية
     from AnnieXMedia import app as BotClient
-
-    # Stream controller (may be class or instance)
+    from AnnieXMedia import LOGGER
+    
+    # 3. استيراد متحكم المكالمات (Call Controller)
     from AnnieXMedia.core.call import StreamController as CallClient
-
-    # helper & queue
-    from AnnieXMedia import YouTube as YouTubeHelper
+    
+    # 4. استيراد قواعد البيانات والمساعدات
     from AnnieXMedia.misc import db as QueueDB
-
-    # database utilities
+    from AnnieXMedia import YouTube as YouTubeHelper
+    
+    # 5. استيراد دوال قاعدة البيانات (Database Utils)
     from AnnieXMedia.utils.database import (
         add_gban_user, remove_gban_user, get_banned_users,
         blacklist_chat, whitelist_chat, blacklisted_chats,
         autoend_on, autoend_off, is_autoend,
         maintenance_on, maintenance_off, is_maintenance,
         get_active_chats, get_active_video_chats,
-        remove_active_chat, remove_active_video_chat
+        remove_active_chat, remove_active_video_chat,
+        get_served_chats, get_served_users,
+        get_loop, set_loop,
+        is_music_playing
     )
+    
+    # 6. استيراد قائمة المحظورين
+    from config import BANNED_USERS as _BANS
+    BANNED_USERS = _BANS
+
+    # 7. استيراد وظائف الطابور (Queue Utils) - مهم للإضافة اليدوية
+    try:
+        from AnnieXMedia.utils.stream.queue import put_queue
+    except ImportError:
+        pass # سيتم التعامل معها لاحقاً إذا فشل الاستيراد
 
     SYSTEM_READY = True
-    print("✅ TitanOS Web: Engine Connected (DB, Call, Config, Admin Systems).")
+    print(f"✅ TitanOS Web: Engine Connected Successfully via {config.BOT_NAME}.")
 
 except Exception as e:
-    print("⚠️ TitanOS Web: Running in degraded/standalone mode. Import error:", e)
-    # keep SYSTEM_READY = False
+    print(f"⚠️ TitanOS Web: Running in DEGRADED MODE. Integration Failed: {e}")
+    traceback.print_exc()
+    # قيم افتراضية لمنع انهيار السيرفر
+    class MockConfig:
+        WEB_PASSWORD = "admin"
+        WEB_SECRET = "secret"
+        BOT_NAME = "Unknown"
+        OWNER_USERNAME = "Unknown"
+        UPSTREAM_BRANCH = "master"
+    
+    if Config is None: Config = MockConfig()
+    WEB_PASSWORD = "admin"
+    WEB_SECRET = "secret"
 
-# ------------------------------------------------------------------------------
-# [4] Server Initialization
-# ------------------------------------------------------------------------------
-app = FastAPI(title="TitanOS Ultimate", docs_url=None, redoc_url=None)
-app.add_middleware(SessionMiddleware, secret_key=os.environ.get("TITAN_SECRET", "TITAN_GOD_KEY_2026"))
-app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_credentials=True,
-    allow_methods=["*"], allow_headers=["*"],
+# [4] FastAPI App Initialization
+# ──────────────────────────────────────────────────────────────────────────────
+app = FastAPI(
+    title="TitanOS Ultimate",
+    description="AnnieXMedia Web Controller",
+    version="3.5.0",
+    docs_url=None, 
+    redoc_url=None
 )
 
-templates = Jinja2Templates(directory=BASE_DIR)
+# Middleware Setup
+app.add_middleware(SessionMiddleware, secret_key=WEB_SECRET)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# Ensure folders
-for folder in [DOWNLOADS_DIR, CACHE_DIR, RAW_FILES_DIR]:
-    os.makedirs(folder, exist_ok=True)
+# Template & Static Files Setup
+TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+STATIC_DIR = os.path.join(BASE_DIR, "static")
 
-# Mount static & downloads
+# التأكد من وجود المجلدات (إنشاءها إذا لم تكن موجودة لمنع الأخطاء)
+os.makedirs(TEMPLATES_DIR, exist_ok=True)
+os.makedirs(STATIC_DIR, exist_ok=True)
+
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
+
+# Mount Static Directories
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 if os.path.exists(DOWNLOADS_DIR):
     app.mount("/downloads", StaticFiles(directory=DOWNLOADS_DIR), name="downloads")
-# optionally serve a static folder if exists
-STATIC_DIR = os.path.join(BASE_DIR, "static")
-if os.path.exists(STATIC_DIR):
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-# ------------------------------------------------------------------------------
-# [5] Utilities: safe call/get helpers (handles sync/async/method/property)
-# ------------------------------------------------------------------------------
+# [5] Advanced Utility Helpers (Async/Sync Handling)
+# ──────────────────────────────────────────────────────────────────────────────
 def _is_awaitable(obj: Any) -> bool:
+    """Check if an object is awaitable (coroutine or future)."""
     return asyncio.iscoroutine(obj) or inspect.isawaitable(obj)
 
 async def safe_call(target: Any, attr: str, *args, **kwargs):
-    """Try to call attribute `attr` on target. Supports sync/async functions and properties."""
+    """
+    Safely call a method or access an attribute on a target object.
+    Handles both synchronous and asynchronous methods automatically.
+    """
     if not target:
         return None
     try:
-        fn = getattr(target, attr, None)
-        if fn is None:
-            # maybe target is a class with classmethod/attribute
+        if not hasattr(target, attr):
             return None
-        # if it's a callable
-        if callable(fn):
-            result = fn(*args, **kwargs)
+        
+        val = getattr(target, attr)
+        
+        if callable(val):
+            result = val(*args, **kwargs)
             if _is_awaitable(result):
                 return await result
             return result
-        # if not callable, just return the value
-        return fn
+        else:
+            return val
     except Exception as e:
-        # don't raise to keep endpoints resilient
-        logging.debug(f"safe_call error on {attr}: {e}\n{traceback.format_exc()}")
+        logging.error(f"TitanOS: Safe Call Error on {attr}: {e}")
         return None
 
-async def safe_get_active_calls():
-    """
-    Obtain list of active call chat ids in a resilient way:
-    - Try CallClient.active_calls property
-    - Try CallClient.get_active_calls() method
-    - Fallback to QueueDB keys or get_active_video_chats DB helper
-    """
-    try:
-        # 1) direct attribute
-        if CallClient:
-            ac = getattr(CallClient, "active_calls", None)
-            if ac:
-                # If callable, call it
-                if callable(ac):
-                    res = ac()
-                    if _is_awaitable(res):
-                        res = await res
-                    return list(res)
-                # list-like
-                return list(ac)
-            # 2) try method names commonly used
-            for method in ("get_active_calls", "active", "list_active_calls"):
-                if hasattr(CallClient, method):
-                    res = getattr(CallClient, method)()
-                    if _is_awaitable(res):
-                        res = await res
-                    return list(res or [])
-        # 3) database helper
-        if SYSTEM_READY:
-            try:
-                res = await get_active_video_chats()
-                return list(res or [])
-            except:
-                pass
-        # 4) fallback from QueueDB
-        if isinstance(QueueDB, dict):
-            return [int(k) for k in QueueDB.keys() if str(k).isdigit()]
-    except Exception as e:
-        logging.debug("safe_get_active_calls error: %s", e)
-    return []
-
 def json_response(data, status_code=200):
+    """Helper for standardized JSON responses."""
     return JSONResponse(content=data, status_code=status_code)
 
-# ------------------------------------------------------------------------------
-# [6] Streaming Engine (Range support)
-# ------------------------------------------------------------------------------
-def get_current_media_path(chat_id):
-    """Retrieves the file path playing in a specific chat"""
+async def safe_get_active_calls() -> List[int]:
+    """
+    Retrieves a list of active chat IDs using multiple fallback methods
+    to ensure accuracy regardless of internal state changes.
+    """
+    active_chats = set()
+    
+    # Method 1: Check StreamController.active_calls
+    try:
+        if CallClient and hasattr(CallClient, "active_calls"):
+            ac = CallClient.active_calls
+            if isinstance(ac, (set, list)):
+                active_chats.update(ac)
+            elif callable(ac):
+                res = ac()
+                if _is_awaitable(res): res = await res
+                if res: active_chats.update(res)
+    except: pass
+
+    # Method 2: Check Database Utils
     if SYSTEM_READY:
         try:
+            db_chats = await get_active_video_chats() # Annie mixes audio/video tracking often
+            if db_chats: active_chats.update(db_chats)
+            
+            db_chats_a = await get_active_chats()
+            if db_chats_a: active_chats.update(db_chats_a)
+        except: pass
+    
+    # Method 3: Check QueueDB Keys
+    try:
+        if isinstance(QueueDB, dict):
+            for k in QueueDB.keys():
+                if isinstance(k, int) or (isinstance(k, str) and k.isdigit()):
+                    active_chats.add(int(k))
+    except: pass
+
+    return list(active_chats)
+
+# [6] Streaming Engine Core (Range & Chunking)
+# ──────────────────────────────────────────────────────────────────────────────
+def get_current_media_path(chat_id: int) -> Optional[str]:
+    """
+    Determines the exact file path currently playing in a specific chat.
+    Prioritizes the QueueDB, then falls back to recent downloads.
+    """
+    if SYSTEM_READY and QueueDB:
+        try:
             cid = int(chat_id)
-            # QueueDB may be dict-like with chat_id keys
-            if isinstance(QueueDB, dict) and cid in QueueDB and QueueDB[cid]:
-                first = QueueDB[cid][0]
-                if isinstance(first, dict) and first.get("file"):
-                    return first.get("file")
+            if cid in QueueDB and QueueDB[cid]:
+                # Annie Queue Structure: List of dicts
+                current_track = QueueDB[cid][0]
+                if "file" in current_track and current_track["file"]:
+                    fpath = current_track["file"]
+                    # Check if it's a local file or URL
+                    if os.path.exists(fpath):
+                        return fpath
         except Exception:
             pass
 
-    # fallback to last downloaded mp4
+    # Fallback: Find most recent media file in downloads
     try:
-        files = [os.path.join(DOWNLOADS_DIR, f) for f in os.listdir(DOWNLOADS_DIR) if f.lower().endswith(('.mp4', '.webm', '.mkv'))]
-        if files:
-            return max(files, key=os.path.getctime)
-    except Exception:
-        pass
+        if os.path.exists(DOWNLOADS_DIR):
+            files = [os.path.join(DOWNLOADS_DIR, f) for f in os.listdir(DOWNLOADS_DIR) 
+                     if f.lower().endswith(('.mp4', '.webm', '.mkv', '.mp3', '.m4a'))]
+            if files:
+                return max(files, key=os.path.getctime)
+    except: pass
+    
     return None
 
-def chunk_generator(file_path, start, end):
-    """Reads file in chunks for smooth streaming"""
+def file_iterator(file_path: str, start: int, end: int, chunk_size: int = 1024 * 1024):
+    """Generator to read file chunks for streaming."""
     with open(file_path, "rb") as f:
         f.seek(start)
         remaining = end - start + 1
-        chunk_size = 1024 * 1024  # 1 MB
         while remaining > 0:
-            read_size = min(chunk_size, remaining)
-            data = f.read(read_size)
+            bytes_to_read = min(chunk_size, remaining)
+            data = f.read(bytes_to_read)
             if not data:
                 break
             remaining -= len(data)
             yield data
 
 @app.get("/stream/live/{chat_id}")
-async def stream_media(chat_id: str, request: Request):
-    """Live Video Stream Endpoint with Range support"""
-    file_path = get_current_media_path(chat_id)
+async def stream_media_endpoint(chat_id: str, request: Request):
+    """
+    Endpoint providing live media streaming with Range Support.
+    Allows seeking (fast-forward/rewind) in the web player.
+    """
+    try:
+        cid = int(chat_id)
+    except ValueError:
+        return Response("Invalid Chat ID", status_code=400)
+
+    file_path = get_current_media_path(cid)
+    
     if not file_path or not os.path.exists(file_path):
-        return Response("No Active Stream / File Not Found", status_code=404)
+        return Response("Media Not Found or Live Stream (URL) Active", status_code=404)
+
     file_size = os.path.getsize(file_path)
     range_header = request.headers.get("range")
+
+    # Determine Content-Type
+    ext = os.path.splitext(file_path)[1].lower()
+    content_type = "video/mp4" # Default
+    if ext in ['.mp3', '.m4a', '.flac']: content_type = "audio/mpeg"
+    elif ext == '.webm': content_type = "video/webm"
+
     if range_header:
-        # parse "bytes=start-end"
         try:
-            bytes_range = range_header.strip().split("=")[-1]
-            start_str, end_str = bytes_range.split("-")
-            start = int(start_str) if start_str else 0
+            # Range: bytes=0-
+            byte_str = range_header.replace("bytes=", "")
+            start_str, end_str = byte_str.split("-")
+            start = int(start_str)
             end = int(end_str) if end_str else file_size - 1
-            end = min(end, file_size - 1)
-            length = end - start + 1
+            
+            # Corrections
+            if start >= file_size: start = file_size - 1
+            if end >= file_size: end = file_size - 1
+            
+            chunk_length = end - start + 1
             headers = {
                 "Content-Range": f"bytes {start}-{end}/{file_size}",
                 "Accept-Ranges": "bytes",
-                "Content-Length": str(length),
-                "Content-Type": "video/mp4",
+                "Content-Length": str(chunk_length),
+                "Content-Type": content_type,
             }
-            return StreamingResponse(chunk_generator(file_path, start, end), status_code=206, headers=headers)
+            
+            return StreamingResponse(
+                file_iterator(file_path, start, end),
+                status_code=206,
+                headers=headers
+            )
         except Exception:
-            # fallback to full file
-            return FileResponse(file_path)
-    # no range requested -> full file
-    return FileResponse(file_path)
+            pass # Fallback to full response if range parsing fails
 
-# ==============================================================================
-# [7] API: Player Control & Info
-# ==============================================================================
+    # Full File Response
+    return FileResponse(file_path, media_type=content_type)
+
+# [7] API Endpoints: Player Data & Control
+# ──────────────────────────────────────────────────────────────────────────────
 @app.get("/api/player/active_calls")
-async def get_active_calls_api():
-    """Returns list of active chats with metadata"""
-    chats = []
-    try:
-        active_ids = await safe_get_active_calls()
-        for cid in active_ids:
-            try:
-                name = str(cid)
-                cover = "https://telegra.ph/file/5eb6df308e92f4477813d.jpg"
-                # prefer QueueDB info if available
-                if isinstance(QueueDB, dict) and cid in QueueDB and QueueDB[cid]:
-                    data = QueueDB[cid][0]
-                    name = data.get("title", name)[:80]
-                    cover = data.get("thumb", cover)
-                else:
-                    # try BotClient.get_chat
-                    chat = await safe_call(BotClient, "get_chat", cid)
-                    if chat and getattr(chat, "title", None):
-                        name = chat.title
-                chats.append({"chat_id": str(cid), "name": name, "cover": cover})
-            except Exception:
-                continue
-    except Exception:
-        pass
+async def api_get_active_calls():
+    """Returns a JSON list of all active chats with basic metadata."""
+    if not SYSTEM_READY:
+        return json_response([])
 
-    if not chats:
-        chats = [{"chat_id": "0", "name": "System Idle", "cover": ""}]
-    return json_response({"chats": chats})
+    chats_data = []
+    active_ids = await safe_get_active_calls()
+
+    for cid in active_ids:
+        try:
+            # Defaults
+            chat_name = str(cid)
+            cover = config.UNIFIED_IMG
+            title = "Unknown Track"
+            
+            # Fetch from QueueDB
+            if cid in QueueDB and QueueDB[cid]:
+                track = QueueDB[cid][0]
+                title = track.get("title", title)[:50]
+                cover = track.get("thumb") or config.UNIFIED_IMG
+            
+            # Fetch Chat Name (Try Cache first)
+            try:
+                chat_obj = await BotClient.get_chat(cid)
+                chat_name = chat_obj.title
+            except: pass
+
+            chats_data.append({
+                "chat_id": str(cid),
+                "name": chat_name,
+                "title": title,
+                "cover": cover,
+                "stream_url": f"/stream/live/{cid}"
+            })
+        except Exception:
+            continue
+
+    return json_response({"chats": chats_data})
 
 @app.get("/api/player/track_info/{chat_id}")
-async def get_track_info_api(chat_id: str):
-    """Returns detailed info for UI Card"""
-    info = {"title": "Titan OS", "artist": "Idle", "cover": "", "duration": "00:00", "is_playing": False, "stream_url": ""}
+async def api_track_info(chat_id: str):
+    """Detailed info for a specific chat player (Polling)."""
+    default_info = {
+        "title": "Not Playing",
+        "artist": "-",
+        "cover": config.UNIFIED_IMG,
+        "duration": "00:00",
+        "is_playing": False,
+        "loop_mode": 0
+    }
+    
+    if not SYSTEM_READY: return json_response(default_info)
+
     try:
         cid = int(chat_id)
-        # try QueueDB
-        if isinstance(QueueDB, dict) and cid in QueueDB and QueueDB[cid]:
-            t = QueueDB[cid][0]
+        
+        # Check if playing
+        is_active = False
+        active_list = await safe_get_active_calls()
+        if cid in active_list: is_active = True
+        
+        if cid in QueueDB and QueueDB[cid]:
+            track = QueueDB[cid][0]
+            loop_val = await get_loop(cid)
+            
             info = {
-                "title": t.get("title", "Unknown")[:200],
-                "artist": t.get("by", "Unknown")[:80],
-                "cover": t.get("thumb", ""),
-                "duration": t.get("dur", "Live"),
-                "is_playing": True,
+                "title": track.get("title", "Unknown"),
+                "artist": track.get("by", "Unknown"),
+                "cover": track.get("thumb") or config.UNIFIED_IMG,
+                "duration": track.get("dur", "Live"),
+                "is_playing": is_active,
                 "stream_url": f"/stream/live/{cid}",
-                "ping": await safe_call(CallClient, "ping") if CallClient else None,
-                "players": t.get("players") if isinstance(t, dict) else None,
+                "loop_mode": loop_val,
+                "queued_count": len(QueueDB[cid]) - 1
             }
-        else:
-            # not playing, but maybe active call exists
-            active = await safe_get_active_calls()
-            if cid in active:
-                info["is_playing"] = True
-                info["stream_url"] = f"/stream/live/{cid}"
+            return json_response(info)
+            
     except Exception:
         pass
-    return json_response(info)
 
-async def _get_cmd_and_cid(request: Request, form_data=None):
-    """
-    Helper to extract cmd & chat_id from form or JSON.
-    Returns (cmd, cid) or (None, None).
-    """
-    cmd = None
-    chat_id = None
-    if form_data:
-        cmd = form_data.get("cmd") or form_data.get("command") or form_data.get("action")
-        chat_id = form_data.get("chat_id") or form_data.get("cid")
-    else:
-        # try json
-        try:
-            body = await request.json()
-            cmd = body.get("cmd") or body.get("command") or body.get("action")
-            chat_id = body.get("chat_id") or body.get("cid")
-        except Exception:
-            # fallback to form parsing
-            try:
-                data = await request.form()
-                cmd = data.get("cmd") or data.get("command") or data.get("action")
-                chat_id = data.get("chat_id") or data.get("cid")
-            except Exception:
-                pass
-    return cmd, chat_id
+    return json_response(default_info)
 
 @app.post("/api/player/control")
-async def player_control_api(request: Request):
-    """Controls: Pause, Resume, Skip, Stop, Focus"""
-    # auth check
-    if not request.session.get("user"):
-        return json_response({"error": "Auth Required"}, 401)
-    if not SYSTEM_READY:
-        return json_response({"error": "Offline"}, 503)
-
-    form = None
+async def api_player_control(request: Request):
+    """Unified Control Endpoint (Pause, Resume, Skip, Stop, Loop)."""
+    user = request.session.get("user")
+    if not user: return json_response({"error": "Unauthorized"}, 401)
+    
     try:
+        data = await request.json()
+    except:
         form = await request.form()
-    except Exception:
-        pass
-    cmd, chat_id = await _get_cmd_and_cid(request, form)
+        data = {k: v for k, v in form.items()}
+        
+    cmd = data.get("cmd") or data.get("action")
+    chat_id = data.get("chat_id")
 
     if not cmd or not chat_id:
-        return json_response({"error": "Missing cmd or chat_id"}, 400)
-
+        return json_response({"error": "Missing params"}, 400)
+    
     try:
         cid = int(chat_id)
     except:
-        return json_response({"error": "Invalid chat_id"}, 400)
+        return json_response({"error": "Invalid Chat ID"}, 400)
+
+    if not SYSTEM_READY or not CallClient:
+        return json_response({"error": "Bot Core Offline"}, 503)
 
     try:
-        # map commands to callclient methods (try safe_call)
-        if cmd in ("pause", "pause_stream"):
-            res = await safe_call(CallClient, "pause_stream", cid)
-        elif cmd in ("resume", "resume_stream"):
-            res = await safe_call(CallClient, "resume_stream", cid)
-        elif cmd in ("skip", "stop_stream"):
-            # stop current stream and maybe play next in queue
-            res = await safe_call(CallClient, "stop_stream", cid)
-        elif cmd == "force_stop" or cmd == "force_stop_stream" or cmd == "stop":
-            res = await safe_call(CallClient, "force_stop_stream", cid)
-        elif cmd == "focus":
-            # set focus chat id if supported
-            try:
-                setattr(CallClient, "turbo_chat_id", cid)
-                res = {"focused": cid}
-            except:
-                res = await safe_call(CallClient, "focus_chat", cid)
-        else:
-            return json_response({"error": "Unknown command"}, 400)
-
-        return json_response({"status": "Success", "command": cmd, "result": bool(res)})
+        result_msg = "OK"
+        
+        if cmd == "pause":
+            await safe_call(CallClient, "pause_stream", cid)
+        elif cmd == "resume":
+            await safe_call(CallClient, "resume_stream", cid)
+        elif cmd == "skip":
+            await safe_call(CallClient, "skip_stream", cid) # Or stop_stream to trigger auto-next
+            await safe_call(CallClient, "stop_stream", cid) 
+        elif cmd == "stop":
+            await safe_call(CallClient, "force_stop_stream", cid)
+        elif cmd == "loop":
+            # Toggle Loop
+            curr = await get_loop(cid)
+            new_val = 3 if curr == 0 else 0
+            await set_loop(cid, new_val)
+            result_msg = f"Loop {'Enabled' if new_val > 0 else 'Disabled'}"
+            
+        return json_response({"status": "Success", "message": result_msg})
     except Exception as e:
-        logging.exception("player_control_api error")
         return json_response({"error": str(e)}, 500)
 
-@app.post("/api/player/play_custom")
-async def play_custom_api(request: Request):
-    """Play a song by ID/Link directly (search & join)"""
-    if not request.session.get("user"):
-        return json_response({"error": "Auth Required"}, 401)
-    if not SYSTEM_READY:
-        return json_response({"error": "System Offline"}, 503)
-
-    # accept form or json
+@app.post("/api/player/play")
+async def api_play_custom(request: Request):
+    """Play media directly from URL or Search Query via Web."""
+    if not request.session.get("user"): return json_response({"error": "Unauthorized"}, 401)
+    
     try:
-        form = await request.form()
-        chat_id = form.get("chat_id") or form.get("cid")
-        query = form.get("query") or form.get("q")
-    except Exception:
-        try:
-            body = await request.json()
-            chat_id = body.get("chat_id") or body.get("cid")
-            query = body.get("query") or body.get("q")
-        except Exception:
-            chat_id = None
-            query = None
-
-    if not chat_id or not query:
-        return json_response({"error": "Missing chat_id or query"}, 400)
-
-    try:
-        cid = int(chat_id)
-    except:
-        return json_response({"error": "Invalid chat_id"}, 400)
-
-    try:
-        # Search via youtube helper
-        results = await safe_call(YouTubeHelper, "search", query, limit=1) if YouTubeHelper else None
-        if not results:
-            return json_response({"error": "No results found"}, 404)
-        link = results[0].get("link")
-        title = results[0].get("title")
-        # join call and play (video=True if youtube)
-        await safe_call(CallClient, "join_call", chat_id=cid, original_chat_id=cid, link=link, video=True)
-        return json_response({"status": "success", "msg": f"Playing: {title}", "chat_id": cid})
-    except Exception as e:
-        logging.exception("play_custom_api error")
-        return json_response({"error": str(e)}, 500)
-
-# ==============================================================================
-# [8] API: Security & Moderation
-# ==============================================================================
-@app.post("/api/security/block_user")
-async def block_user_api(request: Request):
-    if not SYSTEM_READY:
-        return json_response({"error": "Offline"}, 503)
-    if not request.session.get("user"):
-        return json_response({"error": "Auth Required"}, 401)
-    try:
-        form = await request.form()
-        user_id = form.get("user_id") or form.get("id")
-        action = form.get("action")
-    except Exception:
         data = await request.json()
-        user_id = data.get("user_id")
-        action = data.get("action")
-    try:
-        uid = int(user_id)
+        chat_id = int(data.get("chat_id"))
+        query = data.get("query")
     except:
-        return json_response({"error": "Invalid user id"}, 400)
+        return json_response({"error": "Invalid Data"}, 400)
+
+    if not SYSTEM_READY: return json_response({"error": "Offline"}, 503)
+
     try:
-        if action == "enable":
-            await add_gban_user(uid)
-            BANNED_USERS.add(uid)
-            return json_response({"status": "User Blocked", "id": uid})
-        elif action == "disable":
-            await remove_gban_user(uid)
-            if uid in BANNED_USERS: BANNED_USERS.remove(uid)
-            return json_response({"status": "User Unblocked", "id": uid})
-        return json_response({"error": "Unknown action"}, 400)
+        # 1. Search / Resolve URL
+        # Using YouTubeHelper.track logic
+        details, track_id = await YouTubeHelper.track(query)
+        
+        # 2. Download File (Fastest method)
+        # Using YouTubeHelper.download logic
+        file_path, direct = await YouTubeHelper.download(
+            track_id, 
+            mystic=None, 
+            video=True, 
+            videoid=track_id
+        )
+        
+        if not file_path:
+            return json_response({"error": "Download Failed"}, 500)
+
+        # 3. Join Call
+        await safe_call(
+            CallClient, "join_call",
+            chat_id=chat_id,
+            original_chat_id=chat_id,
+            link=file_path,
+            video=True,
+            image=details.get("thumb")
+        )
+
+        # 4. Add to Queue Database
+        # Manual construction of queue item to ensure DB consistency
+        from AnnieXMedia.utils.stream.queue import put_queue
+        await put_queue(
+            chat_id,
+            chat_id,
+            file_path,
+            details["title"],
+            details["duration_min"],
+            "TitanOS Web", # Requested By
+            track_id,
+            config.OWNER_ID,
+            "video"
+        )
+        
+        return json_response({
+            "status": "Success", 
+            "title": details["title"],
+            "duration": details["duration_min"]
+        })
+
     except Exception as e:
-        logging.exception("block_user_api")
+        traceback.print_exc()
         return json_response({"error": str(e)}, 500)
 
-@app.get("/api/security/blocked_users")
-async def list_blocked_users():
-    if not SYSTEM_READY:
-        return json_response({"users": []})
-    try:
-        users = await get_banned_users()
-        return json_response({"users": list(users)})
-    except Exception:
-        return json_response({"users": list(BANNED_USERS)})
-
-@app.post("/api/security/blacklist_chat")
-async def blacklist_chat_api(request: Request):
-    if not SYSTEM_READY:
-        return json_response({"error": "Offline"}, 503)
-    if not request.session.get("user"):
-        return json_response({"error": "Auth Required"}, 401)
-    try:
-        form = await request.form()
-        chat_id = form.get("chat_id")
-        action = form.get("action")
-    except Exception:
-        data = await request.json()
-        chat_id = data.get("chat_id")
-        action = data.get("action")
-    try:
-        cid = int(chat_id)
-    except:
-        return json_response({"error": "Invalid chat id"}, 400)
-    try:
-        if action == "enable":
-            await blacklist_chat(cid)
-            try:
-                await safe_call(BotClient, "leave_chat", cid)
-            except:
-                pass
-            return json_response({"status": "Chat Blacklisted", "id": cid})
-        elif action == "disable":
-            await whitelist_chat(cid)
-            return json_response({"status": "Chat Whitelisted", "id": cid})
-    except Exception as e:
-        logging.exception("blacklist_chat_api")
-        return json_response({"error": str(e)}, 500)
-
-@app.get("/api/security/blacklisted_chats")
-async def list_blacklisted_chats():
-    if not SYSTEM_READY:
-        return json_response({"chats": []})
-    try:
-        chats = await blacklisted_chats()
-        return json_response({"chats": list(chats)})
-    except Exception:
-        return json_response({"chats": []})
-
-# ==============================================================================
-# [9] API: Settings & Status
-# ==============================================================================
-@app.post("/api/settings/maintenance")
-async def toggle_maintenance(request: Request):
-    if not SYSTEM_READY:
-        return json_response({"error": "Offline"}, 503)
-    if not request.session.get("user"):
-        return json_response({"error": "Auth Required"}, 401)
-    form = await request.form()
-    action = form.get("action")
-    try:
-        if action == "enable":
-            await maintenance_on()
-            return json_response({"status": "Maintenance Mode ON 🔴"})
-        else:
-            await maintenance_off()
-            return json_response({"status": "Maintenance Mode OFF 🟢"})
-    except Exception as e:
-        logging.exception("toggle_maintenance")
-        return json_response({"error": str(e)}, 500)
-
-@app.post("/api/settings/autoend")
-async def toggle_autoend(request: Request):
-    if not SYSTEM_READY:
-        return json_response({"error": "Offline"}, 503)
-    if not request.session.get("user"):
-        return json_response({"error": "Auth Required"}, 401)
-    form = await request.form()
-    action = form.get("action")
-    try:
-        if action == "enable":
-            await autoend_on()
-            return json_response({"status": "AutoEnd ON 🟢"})
-        else:
-            await autoend_off()
-            return json_response({"status": "AutoEnd OFF 🔴"})
-    except Exception as e:
-        logging.exception("toggle_autoend")
-        return json_response({"error": str(e)}, 500)
-
-@app.get("/api/settings/status")
-async def get_system_status():
-    if not SYSTEM_READY:
-        return json_response({"maintenance": False, "autoend": False, "ping": 0, "ram": psutil.virtual_memory().percent, "cpu": psutil.cpu_percent()})
-    try:
-        m_status = await is_maintenance()
-        a_status = await is_autoend()
-    except Exception:
-        m_status = False
-        a_status = False
-    pytgping = None
-    try:
-        pytgping = await safe_call(CallClient, "ping")
-    except:
-        pytgping = None
+# [8] API Endpoints: System & Security
+# ──────────────────────────────────────────────────────────────────────────────
+@app.get("/api/system/status")
+async def api_system_status(request: Request):
+    """Get real-time system stats."""
+    if not request.session.get("user"): return json_response({}, 401)
+    
+    ram = psutil.virtual_memory().percent
+    cpu = psutil.cpu_percent()
+    
+    ping = 0
+    if CallClient:
+        ping = await safe_call(CallClient, "ping")
+    
+    m_mode = False
+    if SYSTEM_READY: m_mode = await is_maintenance()
+    
     return json_response({
-        "maintenance": m_status,
-        "autoend": a_status,
-        "ping": pytgping or 0,
-        "ram": psutil.virtual_memory().percent,
-        "cpu": psutil.cpu_percent()
+        "ram": ram,
+        "cpu": cpu,
+        "ping": ping,
+        "maintenance": m_mode,
+        "active_calls": len(await safe_get_active_calls())
     })
 
-# ==============================================================================
-# [10] API: Utilities & Actions
-# ==============================================================================
-@app.post("/api/utils/turbo")
-async def turbo_clean(request: Request):
-    if not request.session.get("user"): return json_response({"error": "Auth Required"}, 401)
-    deleted_files = 0
-    cleaned_size = 0
-    folders = [DOWNLOADS_DIR, CACHE_DIR, RAW_FILES_DIR]
-    for folder in folders:
-        if os.path.exists(folder):
-            for f in os.listdir(folder):
-                fp = os.path.join(folder, f)
-                try:
-                    cleaned_size += os.path.getsize(fp)
-                    os.remove(fp)
-                    deleted_files += 1
-                except:
-                    pass
-    # clean pycache
-    for root, dirs, files in os.walk(ROOT_DIR):
-        for d in dirs:
-            if d == "__pycache__":
-                try:
-                    shutil.rmtree(os.path.join(root, d))
-                except:
-                    pass
-    gc.collect()
-    return json_response({
-        "status": "Turbo Executed 🚀",
-        "files_removed": deleted_files,
-        "space_freed_mb": f"{cleaned_size / (1024*1024):.2f} MB"
-    })
-
-@app.get("/api/utils/logs")
-async def download_logs(request: Request):
-    if not request.session.get("user"): return json_response({"error": "Auth Required"}, 401)
-    if os.path.exists(LOG_FILE):
-        return FileResponse(LOG_FILE, filename="log.txt")
-    return json_response({"error": "No Log File Found"}, 404)
-
-async def restart_process():
-    await asyncio.sleep(2)
-    os.execv(sys.executable, [sys.executable, "-m", "AnnieXMedia"])
-
-async def update_process():
-    try:
-        if Config and getattr(Config, "UPSTREAM_BRANCH", None):
-            os.system(f"git fetch origin {Config.UPSTREAM_BRANCH} &> /dev/null")
-        os.system("git pull")
-        await restart_process()
-    except Exception as e:
-        print(f"Update Failed: {e}")
-
-@app.post("/api/utils/action")
-async def system_action(request: Request, background_tasks: BackgroundTasks):
-    if not request.session.get("user"): return json_response({"error": "Auth Required"}, 401)
-    form = await request.form()
-    action = form.get("action")
+@app.post("/api/system/action")
+async def api_system_action(request: Request, background_tasks: BackgroundTasks):
+    """System Actions: Restart, Update, Maintenance, Clean."""
+    if not request.session.get("user"): return json_response({"error": "Unauthorized"}, 401)
+    
+    data = await request.json()
+    action = data.get("action")
+    
     if action == "restart":
-        background_tasks.add_task(restart_process)
-        return json_response({"status": "Restarting System... Please wait 15s"})
+        async def _restart():
+            await asyncio.sleep(2)
+            os.execv(sys.executable, [sys.executable, "-m", "AnnieXMedia"])
+        background_tasks.add_task(_restart)
+        return json_response({"status": "Restarting..."})
+        
     elif action == "update":
-        background_tasks.add_task(update_process)
-        return json_response({"status": "Updating from Git & Restarting..."})
+        async def _update():
+            if Config.UPSTREAM_BRANCH:
+                os.system(f"git fetch origin {Config.UPSTREAM_BRANCH} &> /dev/null")
+            os.system("git pull")
+            await asyncio.sleep(2)
+            os.execv(sys.executable, [sys.executable, "-m", "AnnieXMedia"])
+        background_tasks.add_task(_update)
+        return json_response({"status": "Updating..."})
+        
+    elif action == "maintenance":
+        enable = data.get("value", False)
+        if enable: await maintenance_on()
+        else: await maintenance_off()
+        return json_response({"status": "Updated Maintenance Mode"})
+        
+    elif action == "clean":
+        # Turbo Clean Logic
+        freed = 0
+        for f in [DOWNLOADS_DIR, CACHE_DIR, RAW_FILES_DIR]:
+            if os.path.exists(f):
+                for sub in os.listdir(f):
+                    p = os.path.join(f, sub)
+                    try:
+                        if os.path.isfile(p):
+                            freed += os.path.getsize(p)
+                            os.remove(p)
+                    except: pass
+        gc.collect()
+        return json_response({"status": "Cleaned", "freed_mb": round(freed/(1024*1024), 2)})
+        
     return json_response({"error": "Unknown Action"}, 400)
 
-@app.get("/api/utils/cache_list")
-async def list_cache_files(request: Request):
-    if not request.session.get("user"): return json_response({"error": "Auth Required"}, 401)
-    files_list = []
-    total_size = 0.0
-    if os.path.exists(DOWNLOADS_DIR):
-        for f in os.listdir(DOWNLOADS_DIR):
-            fp = os.path.join(DOWNLOADS_DIR, f)
-            try:
-                size = os.path.getsize(fp) / (1024 * 1024)
-                total_size += size
-                files_list.append({"name": f, "size": f"{size:.2f} MB"})
-            except:
-                pass
-    return json_response({
-        "files": files_list,
-        "total_count": len(files_list),
-        "total_size_mb": f"{total_size:.2f} MB"
-    })
+@app.get("/api/security/users")
+async def api_get_users(request: Request):
+    """Get blocked users list."""
+    if not request.session.get("user"): return json_response({}, 401)
+    
+    blocked = []
+    if SYSTEM_READY:
+        blocked = await get_banned_users()
+    return json_response({"blocked_users": list(blocked)})
 
-# ==============================================================================
-# [11] Frontend Routes (Templates)
-# ==============================================================================
+@app.post("/api/security/block")
+async def api_block_user(request: Request):
+    """Block/Unblock User."""
+    if not request.session.get("user"): return json_response({}, 401)
+    data = await request.json()
+    uid = int(data.get("user_id"))
+    do_block = data.get("block", True)
+    
+    if SYSTEM_READY:
+        if do_block:
+            await add_gban_user(uid)
+            BANNED_USERS.add(uid)
+        else:
+            await remove_gban_user(uid)
+            if uid in BANNED_USERS: BANNED_USERS.remove(uid)
+            
+    return json_response({"status": "Success"})
+
+@app.get("/api/logs")
+async def api_logs_download(request: Request):
+    """Download system logs."""
+    if not request.session.get("user"): return json_response({}, 401)
+    if os.path.exists(LOG_FILE):
+        return FileResponse(LOG_FILE, filename="annie_logs.txt")
+    return json_response({"error": "Log file empty"}, 404)
+
+# [9] Frontend Routes (HTML/Templates)
+# ──────────────────────────────────────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
-async def dashboard_page(request: Request):
+async def page_dashboard(request: Request):
+    """Main Dashboard Page."""
     if not request.session.get("user"):
         return RedirectResponse("/login")
-    tpl = os.path.join(BASE_DIR, "dashboard.html")
-    if os.path.exists(tpl):
-        return templates.TemplateResponse("dashboard.html", {"request": request})
-    # fallback message
-    return HTMLResponse("<h1>TitanOS Kernel Active. Dashboard template not found.</h1>", 200)
+    
+    # Check if template exists, otherwise render basic HTML
+    tpl_path = os.path.join(TEMPLATES_DIR, "dashboard.html")
+    if os.path.exists(tpl_path):
+        return templates.TemplateResponse("dashboard.html", {
+            "request": request,
+            "bot_name": config.BOT_NAME,
+            "owner": config.OWNER_USERNAME
+        })
+    
+    # Fallback HTML Generator
+    return HTMLResponse("""
+    <html><head><title>TitanOS</title></head>
+    <body style="background:#1a1a1a;color:white;font-family:sans-serif;text-align:center;padding:50px;">
+        <h1>TitanOS Kernel is Active 🟢</h1>
+        <p>Templates not found in /templates/. Please add dashboard.html</p>
+        <a href="/logout" style="color:#ff5555;">Logout</a>
+    </body></html>
+    """)
 
 @app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    tpl = os.path.join(BASE_DIR, "login.html")
-    if os.path.exists(tpl):
+async def page_login(request: Request):
+    """Login Page."""
+    tpl_path = os.path.join(TEMPLATES_DIR, "login.html")
+    if os.path.exists(tpl_path):
         return templates.TemplateResponse("login.html", {"request": request})
-    return HTMLResponse("<h1>Login Required</h1>", 200)
+    
+    return HTMLResponse("""
+    <html><body style="background:#111;color:#fff;display:flex;justify-content:center;align-items:center;height:100vh;">
+    <form action="/login" method="post" style="display:flex;flex-direction:column;gap:10px;">
+        <h2>TitanOS Access</h2>
+        <input type="text" name="username" placeholder="Username" style="padding:10px;">
+        <input type="password" name="password" placeholder="Password" style="padding:10px;">
+        <button type="submit" style="padding:10px;background:blue;color:white;border:none;">Login</button>
+    </form></body></html>
+    """)
 
 @app.post("/login")
-async def perform_login(request: Request, username: str = Form(...), password: str = Form(...)):
-    # NOTE: keep your credentials safe; replace with proper auth in production
-    if username == "Abdallah" and password == "asdfghjkl05896":
-        request.session["user"] = {"name": "Root", "username": username}
+async def action_login(request: Request, username: str = Form(...), password: str = Form(...)):
+    """Handle Login Logic."""
+    if password == WEB_PASSWORD:
+        request.session["user"] = {"username": username, "role": "admin"}
         return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid Credentials"})
+    
+    return RedirectResponse("/login?error=1", status_code=303)
 
 @app.get("/logout")
-async def perform_logout(request: Request):
+async def action_logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login")
 
-# ==============================================================================
-# [12] Startup helper & server runner
-# ==============================================================================
+# [10] Server Startup Hook & Runner
+# ──────────────────────────────────────────────────────────────────────────────
 @app.on_event("startup")
-async def on_startup():
-    print("🔌 TitanOS Web: Startup event - checking components...")
-    print(" - SYSTEM_READY:", SYSTEM_READY)
-    print(" - BotClient:", bool(BotClient))
-    print(" - CallClient:", bool(CallClient))
-    # Optionally you can attempt to start BotClient here if desired, but avoid auto-start to prevent double-run.
+async def on_startup_event():
+    print("🚀 TitanOS: Server Startup Sequence Initiated.")
+    # Here we could initialize extra background tasks if needed
 
-def start_server():
-    """Starts the Uvicorn Server in a Thread"""
-    t = Thread(target=uvicorn.run, args=(app,), kwargs={"host":"0.0.0.0", "port":8080, "log_level":"info"})
-    t.daemon = True
-    t.start()
-    print("🚀 TitanOS Ultimate Kernel: Web Server Started on Port 8080")
+def start_server_thread():
+    """Function to start server in a separate thread (for main.py)."""
+    uvicorn.run(app, host=HOST, port=PORT, log_level="error")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    # Standalone execution
+    print(f"🌍 Starting TitanOS Standalone on {HOST}:{PORT}")
+    uvicorn.run("web_srv:app", host=HOST, port=PORT, reload=True)
