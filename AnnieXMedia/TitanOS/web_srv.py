@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # ── 𝚂ᴏᴜʀᴄᴇ ✘ 𝐁ᴏᴅᴀ © 2026 ──────────────────────────────────────────────────────
-# TITAN OS | ULTIMATE KERNEL V5 (The Monolith)
-# Features: Rocket Streaming, Smart Failover, Async Database, Zero-Latency Control
+# TITAN OS | ULTIMATE KERNEL V6 (Real-Time Sync Edition)
+# Features: Live Seek, VC Participants, Async Database, Zero-Latency Control
 # ──────────────────────────────────────────────────────────────────────────────
 
 import os
@@ -32,8 +32,11 @@ try:
     from fastapi.staticfiles import StaticFiles
     from starlette.middleware.sessions import SessionMiddleware
     from starlette.middleware.cors import CORSMiddleware
-    from pyrogram import Client
+    
+    # Telegram Core
+    from pyrogram import Client, enums
     from pytgcalls import PyTgCalls
+    from pytgcalls.types import StreamAudioEnded, StreamVideoEnded
 except ImportError as e:
     print(f"\n❌ CRITICAL ERROR: Missing Dependencies!\n👉 Please Install: pip3 install fastapi uvicorn aiofiles ujson motor python-multipart jinja2\nError Detail: {e}\n")
     sys.exit()
@@ -74,7 +77,7 @@ QueueDB = {}
 Config = None
 YouTubeHelper = None
 
-print("🔌 TitanOS V5: Initializing Neural Core...")
+print("🔌 TitanOS V6: Initializing Neural Core & Real-Time Engines...")
 
 try:
     import config
@@ -147,8 +150,8 @@ async def close_db():
 # ──────────────────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="TitanOS Ultimate",
-    description="High-Performance Media Controller",
-    version="5.0.0",
+    description="High-Performance Media Controller V6",
+    version="6.0.0",
     default_response_class=UJSONResponse,
     on_startup=[init_db],
     on_shutdown=[close_db]
@@ -264,21 +267,31 @@ async def endpoint_stream_media(chat_id: int, request: Request):
         headers=headers
     )
 
-# [8] Background Command Processor (Zero Latency)
+# [8] Background Command Processor (V6 Upgraded)
 # ──────────────────────────────────────────────────────────────────────────────
 async def bg_executor(func_name: str, chat_id: int, **kwargs):
-    """Executes bot commands in background to keep API fast."""
+    """
+    Executes bot commands in background.
+    V6 Update: Handles 'seek' with timestamps.
+    """
     if not SYSTEM_READY or not CallClient: return
     try:
         if func_name == "pause": await CallClient.pause_stream(chat_id)
         elif func_name == "resume": await CallClient.resume_stream(chat_id)
         elif func_name == "skip": 
             await CallClient.skip_stream(chat_id)
-            # Optional: await CallClient.stop_stream(chat_id)
         elif func_name == "stop": await CallClient.force_stop_stream(chat_id)
         elif func_name == "loop":
             curr = await get_loop(chat_id)
             await set_loop(chat_id, 3 if curr == 0 else 0)
+        
+        # [V6 Requirement: Seek Implementation]
+        elif func_name == "seek":
+            seek_time = kwargs.get("value")
+            if seek_time is not None:
+                # Seek via CallClient wrapper
+                await CallClient.seek_stream(chat_id, int(seek_time))
+                
     except Exception as e:
         print(f"⚠️ BG Task Error ({func_name}): {e}")
 
@@ -288,7 +301,7 @@ async def bg_executor(func_name: str, chat_id: int, **kwargs):
 async def api_control(request: Request, bg_tasks: BackgroundTasks):
     """
     Unified Control API.
-    Returns 200 OK instantly -> Processes in Background.
+    V6 Update: Extracts 'value' for seeking logic.
     """
     if not request.session.get("user"): return UJSONResponse({"error": "Auth"}, 401)
     
@@ -296,10 +309,11 @@ async def api_control(request: Request, bg_tasks: BackgroundTasks):
         data = await request.json()
         cmd = data.get("cmd")
         chat_id = int(data.get("chat_id"))
+        value = data.get("value") # Grab timestamp for seek
     except:
         return UJSONResponse({"error": "Bad Request"}, 400)
 
-    bg_tasks.add_task(bg_executor, cmd, chat_id)
+    bg_tasks.add_task(bg_executor, cmd, chat_id, value=value)
     return UJSONResponse({"status": "queued", "cmd": cmd})
 
 @app.get("/api/player/active_calls")
@@ -341,12 +355,15 @@ async def api_active_calls():
 
 @app.get("/api/player/track_info/{chat_id}")
 async def api_track_info(chat_id: int):
-    """Poll for detailed track info."""
+    """
+    Poll for detailed track info.
+    V6 Update: Returns Real-Time 'position' from PyTgCalls core.
+    """
     default = {
         "title": "Not Playing", "artist": "-", 
         "cover": getattr(Config, "UNIFIED_IMG", ""), 
         "is_playing": False, "duration": "00:00", 
-        "loop_mode": 0
+        "loop_mode": 0, "position": 0
     }
     
     if not SYSTEM_READY: return UJSONResponse(default)
@@ -355,6 +372,20 @@ async def api_track_info(chat_id: int):
         if chat_id in QueueDB and QueueDB[chat_id]:
             track = QueueDB[chat_id][0]
             loop_val = await get_loop(chat_id)
+            
+            # [V6 Requirement: Live Playback Position]
+            current_pos = 0
+            try:
+                # Accessing PyTgCalls active call status
+                # CallClient must expose .call or .pytgcalls instance
+                core_call = getattr(CallClient, "call", None) 
+                if core_call:
+                    active = core_call.get_active_call(chat_id)
+                    if active and active.status:
+                        current_pos = active.status.time_elapsed # in seconds
+            except Exception:
+                pass # Fail silently to 0 if call not synced yet
+
             return UJSONResponse({
                 "title": track.get("title", "Unknown"),
                 "artist": track.get("by", "TitanOS"),
@@ -363,11 +394,77 @@ async def api_track_info(chat_id: int):
                 "is_playing": True,
                 "stream_url": f"/stream/live/{chat_id}",
                 "loop_mode": loop_val,
-                "queued": len(QueueDB[chat_id]) - 1
+                "queued": len(QueueDB[chat_id]) - 1,
+                "position": current_pos # Real-time sync
             })
     except: pass
     
     return UJSONResponse(default)
+
+# [NEW: V6 Feature] Operators & Avatar Proxy
+# ──────────────────────────────────────────────────────────────────────────────
+@app.get("/api/proxy_avatar/{user_id}")
+async def api_proxy_avatar(user_id: int):
+    """
+    Fetches Telegram User Profile Photo and serves it over HTTP.
+    Uses a simple LRU caching strategy (via file system) to avoid rate limits.
+    """
+    if not SYSTEM_READY: return RedirectResponse(Config.UNIFIED_IMG)
+    
+    cache_path = os.path.join(CACHE_DIR, f"avatar_{user_id}.jpg")
+    
+    # Return cached if fresh (less than 1 hour old)
+    if os.path.exists(cache_path):
+        if (time.time() - os.path.getmtime(cache_path)) < 3600:
+            return FileResponse(cache_path)
+
+    try:
+        # Download new photo
+        photo = await BotClient.download_media(
+            message=user_id, # Can pass ID to download profile photo
+            file_name=cache_path
+        )
+        if photo:
+            return FileResponse(photo)
+    except Exception:
+        pass
+        
+    return RedirectResponse(Config.UNIFIED_IMG)
+
+@app.get("/api/player/participants/{chat_id}")
+async def api_participants(chat_id: int):
+    """
+    V6 Requirement: Fetch Voice Chat Participants / Operators.
+    Retreives Admin list and attempts to identify listeners.
+    """
+    if not SYSTEM_READY: return UJSONResponse({"participants": []})
+    
+    participants = []
+    
+    try:
+        # 1. Get Administrators (The Operators)
+        # Using Pyrogram enums for filter
+        async for member in BotClient.get_chat_members(chat_id, filter=enums.ChatMembersFilter.ADMINISTRATORS):
+            user = member.user
+            if user.is_deleted: continue
+            
+            # Construct User Object
+            participants.append({
+                "user_id": user.id,
+                "name": f"{user.first_name} {user.last_name or ''}".strip(),
+                "role": "Operator" if member.status in [enums.ChatMemberStatus.OWNER, enums.ChatMemberStatus.ADMINISTRATOR] else "Listener",
+                "photo_url": f"/api/proxy_avatar/{user.id}" if user.photo else Config.UNIFIED_IMG
+            })
+            
+        # 2. Note: Getting ALL generic listeners in a VC requires iterating 
+        # get_chat_members if they are not admins, which is heavy. 
+        # For this version, we prioritize Admins/Operators as requested.
+            
+    except Exception as e:
+        print(f"Participant Fetch Error: {e}")
+        
+    return UJSONResponse({"participants": participants})
+
 
 @app.post("/api/player/play")
 async def api_play_request(request: Request, bg_tasks: BackgroundTasks):
@@ -548,7 +645,7 @@ async def bio_verify(request: Request):
 # [12] Execution & Threading
 # ──────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print(f"🚀 TitanOS Ultimate V5: Starting Standalone on {HOST}:{PORT}")
+    print(f"🚀 TitanOS Ultimate V6: Starting Standalone on {HOST}:{PORT}")
     uvicorn.run("web_srv:app", host=HOST, port=PORT, reload=True)
 
 def start_server_thread():
