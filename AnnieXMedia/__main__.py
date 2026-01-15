@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # ==============================================================================
-# TITAN OS KERNEL — ULTIMATE STABILITY EDITION (4K CORE)
+# TITAN OS KERNEL — NUCLEAR EDITION (ROOT PATH FIX)
 # Architecture: Multi-Threaded Flask + Async Pyrogram Bridge
-# Status: Production Ready | Fail-Safe Enabled
+# Status: Production Ready | Auto-Path Correction Enabled
 # ==============================================================================
 
 import os
@@ -20,22 +20,26 @@ from pyrogram import idle
 from logging.handlers import RotatingFileHandler
 
 # ------------------------------------------------------------------------------
-# [1] SYSTEM CONFIGURATION & ROBUST PATH FINDING
+# [1] INTELLIGENT PATH FINDER (ROOT FIX)
 # ------------------------------------------------------------------------------
-# تحديد المسار بناءً على مكان الملف الحالي لضمان عدم حدوث أخطاء
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-TITAN_DIR = os.path.join(BASE_DIR, "TitanOS")
-DOWNLOADS_DIR = os.path.join(BASE_DIR, "downloads")
-LOG_FILE = os.path.join(BASE_DIR, "titan.log")
+# 1. تحديد مكان ملف التشغيل الحالي (داخل AnnieXMedia)
+CURRENT_FILE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# التأكد من وجود المجلدات الضرورية
+# 2. العودة خطوة للخلف للوصول للجذر (حيث يوجد TitanOS كما في الصورة)
+ROOT_DIR = os.path.dirname(CURRENT_FILE_DIR)
+
+# 3. تحديد المسارات الصحيحة
+TITAN_DIR = os.path.join(ROOT_DIR, "TitanOS")
+DOWNLOADS_DIR = os.path.join(ROOT_DIR, "downloads")
+LOG_FILE = os.path.join(ROOT_DIR, "titan.log")
+
+# 4. التأكد من وجود المجلدات وإنشاؤها إذا لزم الأمر
 os.makedirs(TITAN_DIR, exist_ok=True)
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
 # ------------------------------------------------------------------------------
-# [2] ADVANCED LOGGING SYSTEM (The Black Box)
+# [2] ADVANCED LOGGING SYSTEM
 # ------------------------------------------------------------------------------
-# هذا النظام يسجل كل خطأ يحدث في ملف لتقرأه لاحقاً
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] [%(levelname)s] %(message)s",
@@ -46,16 +50,18 @@ logging.basicConfig(
     ]
 )
 LOGGER = logging.getLogger("TitanKernel")
-# إسكات رسائل Flask المزعجة للتركيز على الأخطاء الحقيقية
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
-# طباعة تقرير التشخيص عند البدء
+# طباعة تقرير المسارات للتأكد
 print(f"\n{'='*50}")
-print(f"🚀 TITAN OS: INITIALIZING SYSTEMS...")
-print(f"📂 System Root: {BASE_DIR}")
-print(f"📂 GUI Folder:  {TITAN_DIR}")
+print(f"🚀 TITAN OS: PATH CORRECTION APPLIED")
+print(f"📍 Script Location: {CURRENT_FILE_DIR}")
+print(f"📂 Project Root:    {ROOT_DIR}")
+print(f"🎯 GUI Path:        {TITAN_DIR}")
+
 if not os.path.exists(os.path.join(TITAN_DIR, "login.html")):
-    LOGGER.critical("⚠️ WARNING: 'login.html' is MISSING in TitanOS folder!")
+    LOGGER.critical("⚠️ CRITICAL: 'login.html' NOT FOUND in the expected path!")
+    LOGGER.critical(f"👉 Please ensure 'TitanOS' folder is at: {TITAN_DIR}")
 else:
     print(f"✅ GUI Integrity Check Passed.")
 print(f"{'='*50}\n")
@@ -63,14 +69,15 @@ print(f"{'='*50}\n")
 # ------------------------------------------------------------------------------
 # [3] GLOBAL STATE & CREDENTIALS
 # ------------------------------------------------------------------------------
-BOT_LOOP = None         # حلقة التكرار الخاصة بالبوت
+BOT_LOOP = None
 START_TIME = time.time()
 ADMIN_USER = os.environ.get("TITAN_USER", "Abdallah")
 ADMIN_PASS = os.environ.get("TITAN_PASS", "asdfghjkl05896")
 
 # ------------------------------------------------------------------------------
-# [4] FLASK ENGINE (The Web Interface)
+# [4] FLASK ENGINE (Web Interface)
 # ------------------------------------------------------------------------------
+# تحديد مجلد القوالب (Templates) بشكل صريح للمسار المصحح
 app = Flask(__name__, template_folder=TITAN_DIR, static_folder=TITAN_DIR)
 app.secret_key = os.urandom(24)
 
@@ -91,8 +98,6 @@ def get_readable_time(seconds: int) -> str:
     time_list.reverse()
     return ":".join(time_list) if time_list else "0s"
 
-# --- ASYNC BRIDGE (The Magic Function) ---
-# هذه الدالة هي السر: تسمح لـ Flask (Sync) بالتحدث مع البوت (Async) دون تعليق
 def run_async_task(coro):
     if BOT_LOOP and BOT_LOOP.is_running():
         return asyncio.run_coroutine_threadsafe(coro, BOT_LOOP)
@@ -113,7 +118,6 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        # دعم استقبال البيانات كـ JSON أو Form
         try:
             u = request.form.get('username')
             p = request.form.get('password')
@@ -128,19 +132,20 @@ def login():
         except Exception as e:
             return jsonify({"status": "error", "message": str(e)}), 500
 
-    # GET Request
     if session.get('logged_in'): return redirect('/')
+    
     login_file = os.path.join(TITAN_DIR, "login.html")
     if os.path.exists(login_file):
         return send_file(login_file)
-    return "<h1>Titan OS: Login File Missing</h1>"
+    
+    return f"<h1>CRITICAL ERROR: Login File Missing at {TITAN_DIR}/login.html</h1>"
 
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect('/login')
 
-# --- API ENDPOINTS (The Control Center) ---
+# --- API ENDPOINTS ---
 
 @app.route('/api/settings/status')
 def api_status():
@@ -148,7 +153,6 @@ def api_status():
     cpu = psutil.cpu_percent()
     ram = psutil.virtual_memory().percent
     
-    # محاولة جلب البينج بأمان
     ping = 0
     try:
         if CallClient: ping = getattr(CallClient, "ping", 0)
@@ -167,11 +171,9 @@ def api_status():
 def api_active_calls():
     chats = []
     try:
-        # جلب المكالمات الحية من البوت
         if CallClient and hasattr(CallClient, 'active_calls'):
             for cid in CallClient.active_calls:
                 chat_info = {"chat_id": str(cid), "name": f"Chat {cid}", "cover": ""}
-                # محاولة جلب التفاصيل من قاعدة البيانات
                 if 'db' in globals() and cid in db:
                     try:
                         data = db[cid][0]
@@ -181,7 +183,6 @@ def api_active_calls():
                 chats.append(chat_info)
     except Exception as e:
         LOGGER.error(f"API Error (active_calls): {e}")
-        
     return jsonify({"chats": chats})
 
 @app.route('/api/player/control', methods=['POST'])
@@ -202,7 +203,6 @@ def api_control():
             run_async_task(StreamController.resume_stream(cid))
         elif cmd == 'skip':
             run_async_task(StreamController.stop_stream(cid))
-        # إضافة المزيد من الأوامر هنا
         
         LOGGER.info(f"🕹️ Command Executed: {cmd} on {cid}")
         return jsonify({"status": "OK", "command": cmd})
@@ -212,27 +212,29 @@ def api_control():
 
 @app.route('/api/utils/logs')
 def api_logs():
-    """قراءة اللوجز مباشرة من المتصفح"""
     if not session.get('logged_in'): return "Auth Required", 401
     try:
         with open(LOG_FILE, 'r', encoding='utf-8') as f:
-            lines = f.readlines()[-100:] # آخر 100 سطر فقط
+            lines = f.readlines()[-100:]
             return "<pre>" + "".join(lines) + "</pre>"
     except: return "No Logs Available"
 
 # ------------------------------------------------------------------------------
 # [5] BOT BOOTSTRAP (The Bridge Construction)
 # ------------------------------------------------------------------------------
-# تهيئة المتغيرات لتجنب الانهيار في حالة عدم وجود المكتبات
 bot_app = None
 userbot = None
 CallClient = None
 db = {}
+StreamController = None
 
 def load_bot_modules():
     global bot_app, userbot, CallClient, db, StreamController
     try:
         LOGGER.info("🔌 Loading AnnieXMedia Core...")
+        # تأكد من أننا داخل المجلد الصحيح للاستيراد
+        sys.path.append(ROOT_DIR) 
+        
         import config
         from AnnieXMedia import app as _bot, userbot as _ub
         from AnnieXMedia.core.call import StreamController as _SC
@@ -240,24 +242,22 @@ def load_bot_modules():
         from AnnieXMedia.plugins import ALL_MODULES
         from AnnieXMedia.utils.cookie_handler import fetch_and_store_cookies
         
-        # تعيين المتغيرات العامة
         bot_app = _bot
         userbot = _ub
         StreamController = _SC
-        CallClient = _SC # Alias
+        CallClient = _SC
         db = _db
         
         return True, ALL_MODULES, _sudo, fetch_and_store_cookies
     except ImportError as e:
         LOGGER.critical(f"❌ CRITICAL IMPORT ERROR: {e}")
-        LOGGER.critical("👉 Ensure you are in the correct directory and requirements are installed.")
+        traceback.print_exc()
         return False, [], None, None
 
 def run_flask_server():
-    """تشغيل السيرفر في خيط منفصل لضمان عدم توقفه أبداً"""
+    """تشغيل السيرفر في خيط منفصل"""
     try:
         LOGGER.info("📡 Starting Web Interface on Port 8080...")
-        # use_reloader=False مهم جداً عند استخدام Threads
         app.run(host="0.0.0.0", port=8080, debug=False, use_reloader=False)
     except Exception as e:
         LOGGER.critical(f"🔥 Web Server Crash: {e}")
@@ -299,17 +299,15 @@ async def start_bot_services():
         await userbot.stop()
     else:
         LOGGER.warning("⚠️ Running in WEB-ONLY Mode (Bot Failed to Load)")
-        # إبقاء السكريبت يعمل حتى لو فشل البوت، لكي يعمل الموقع
         while True:
             await asyncio.sleep(3600)
 
 if __name__ == "__main__":
-    # 1. تشغيل السيرفر (Web) في Thread منفصل
-    # هذا يضمن أن الموقع يفتح فوراً حتى لو البوت يأخذ وقتاً للتشغيل
+    # تشغيل الويب
     flask_thread = threading.Thread(target=run_flask_server, daemon=True)
     flask_thread.start()
     
-    # 2. تشغيل البوت (Async) في الـ Main Thread
+    # تشغيل البوت
     loop = asyncio.get_event_loop()
     try:
         loop.run_until_complete(start_bot_services())
