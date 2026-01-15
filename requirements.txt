@@ -14,6 +14,8 @@ gitpython
 google-api-python-client
 gpytranslate
 gtts
+pyotp
+qrcode
 flask
 hachoir
 heroku3
