@@ -20,6 +20,7 @@ flask
 hachoir
 heroku3
 httpx[http2]>=0.28.1
+jinja2
 lexica-api
 lyricsgenius
 motor
@@ -38,13 +39,13 @@ python-dotenv
 python-multipart
 python-whois
 pyyaml
-qrcode
 rapidfuzz
 requests
 SpeechRecognition
 speedtest-cli
 spotipy
 telegraph
+ujson
 unidecode
 uvicorn
 uvloop==0.21.0
