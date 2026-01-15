@@ -1,45 +1,70 @@
-# ===============================
-# Dockerfile AnnieXMedia (TitanOS Edition)
-# ===============================
+# ==============================================================================
+# Dockerfile AnnieXMedia (TitanOS Ultimate Edition)
+# Optimized for Web Dashboard + Music Bot Bridge
+# ==============================================================================
 
 FROM python:3.12-slim
 
+# إعدادات البيئة لتحسين الأداء وتقليل المساحة
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-# 1. تحديث النظام وتثبيت ffmpeg و git
+# ------------------------------------------------------------------------------
+# [1] تحديث النظام وتثبيت الحزم الأساسية (ffmpeg, git, build tools)
+# ------------------------------------------------------------------------------
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends git ffmpeg curl unzip build-essential && \
+    apt-get install -y --no-install-recommends \
+    git \
+    ffmpeg \
+    curl \
+    unzip \
+    build-essential && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# 2. تثبيت Deno (لو السورس معتمد عليه)
+# ------------------------------------------------------------------------------
+# [2] تثبيت Deno (ضروري لبعض ملفات السورس)
+# ------------------------------------------------------------------------------
 RUN curl -fsSL https://deno.land/install.sh | sh && \
     ln -s /root/.deno/bin/deno /usr/local/bin/deno
 
-# 3. نسخ pytgcalls المعدل يدوياً (مهم جداً)
+# ------------------------------------------------------------------------------
+# [3] نسخ مجلد pytgcalls المحلي (لتجنب مشاكل الإصدارات)
+# ------------------------------------------------------------------------------
 COPY pytgcalls /app/pytgcalls
 
-# 4. تثبيت المكتبات (مع استبعاد pytgcalls عشان نستخدم النسخة المحلية)
+# ------------------------------------------------------------------------------
+# [4] تثبيت مكتبات بايثون (البوت + الموقع)
+# ------------------------------------------------------------------------------
 COPY requirements.txt /app/requirements.txt
+
+# استبعاد pytgcalls من الملف لأنه موجود محلياً
 RUN if [ -f /app/requirements.txt ]; then \
       grep -v -i '^py-tgcalls' /app/requirements.txt > /app/filtered-requirements.txt || true; \
     fi
 
+# تحديث pip وتثبيت المتطلبات + (jinja2) الضرورية للموقع
 RUN pip install --upgrade pip setuptools wheel && \
     if [ -f /app/filtered-requirements.txt ]; then \
-        pip install --no-cache-dir -r /app/filtered-requirements.txt && \
-        rm -rf /root/.cache/pip; \
-    fi
+        pip install --no-cache-dir -r /app/filtered-requirements.txt; \
+    fi && \
+    # 🔥 تثبيت jinja2 يدوياً لضمان عمل قوالب الويب (كانت ناقصة في قائمتك)
+    pip install --no-cache-dir jinja2
 
-# 5. نسخ ملفات البوت بالكامل (بما فيها TitanOS و web_dashboard.py)
+# ------------------------------------------------------------------------------
+# [5] نسخ ملفات المشروع بالكامل
+# ------------------------------------------------------------------------------
 COPY . /app
 
-# 🔥 6. فتح البورت للداشبورد (ده التعديل المهم) 🔥
+# ------------------------------------------------------------------------------
+# [6] فتح المنفذ 8080 (الجسر الخارجي للموقع)
+# ------------------------------------------------------------------------------
 EXPOSE 8080
 
-# 7. أمر التشغيل
+# ------------------------------------------------------------------------------
+# [7] نقطة التشغيل (المعدلة في __main__.py لتشغيل الاثنين معاً)
+# ------------------------------------------------------------------------------
 CMD ["python3", "-m", "AnnieXMedia"]
