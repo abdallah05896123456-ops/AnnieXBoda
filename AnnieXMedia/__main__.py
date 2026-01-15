@@ -28,11 +28,11 @@ from AnnieXMedia.utils.cookie_handler import fetch_and_store_cookies
 from config import BANNED_USERS
 import config
 
-# [2] استيراد الإضافات (من مجلد plugins حسب الملف القديم)
+# [2] استيراد قائمة الإضافات (من ملف plugins/__init__.py)
 try:
     from AnnieXMedia.plugins import ALL_MODULES
 except ImportError:
-    LOGGER("AnnieXMedia").error("Could not find 'plugins' folder! Please check source structure.")
+    LOGGER("AnnieXMedia").error("Could not find 'plugins' folder or ALL_MODULES list!")
     exit()
 
 # [3] إعداد وربط TitanOS Web Dashboard
@@ -78,7 +78,7 @@ async def init():
         LOGGER(__name__).error("Assistant session variables not defined, exiting...")
         exit()
 
-    # 2. تحميل الكوكيز (مهم لليوتيوب)
+    # 2. تحميل الكوكيز
     try:
         await fetch_and_store_cookies()
         LOGGER("AnnieXMedia").info("YouTube Cookies Loaded Successfully ✅")
@@ -99,27 +99,31 @@ async def init():
 
     # 4. تشغيل البوت واليوزربوت
     await app.start()
-    await userbot.start() # تم التعديل ليتوافق مع Userbot Class
+    await userbot.start()
 
-    # 5. تحميل الإضافات
+    # 5. تحميل الإضافات (التعديل بناءً على ملف __init__.py الخاص بك)
+    # ───────────────────────────────────────────────────────────────
     LOGGER("AnnieXMedia").info("Loading Plugins...")
     for all_module in ALL_MODULES:
-        importlib.import_module("AnnieXMedia.plugins." + all_module)
+        try:
+            # المتغير all_module يبدأ بنقطة بالفعل (مثال: .admins.play)
+            # لذلك نقوم بدمجه مباشرة بدون إضافة نقطة أخرى
+            importlib.import_module("AnnieXMedia.plugins" + all_module)
+        except Exception as e:
+            LOGGER("AnnieXMedia").error(f"Failed to load plugin {all_module}: {e}")
+
     LOGGER("AnnieXMedia.plugins").info("Successfully Imported Plugins...")
 
-    # 6. تشغيل نظام المكالمات (هام جداً للأغاني)
+    # 6. تشغيل نظام المكالمات
     # ──────────────────────────────────────────
     await StreamController.start()
     try:
-        # محاولة عمل بث تجريبي لضمان دخول المساعد للمجموعة
         await StreamController.stream_call("http://docs.evostream.com/sample_content/assets/sintel1m720p.mp4")
     except NoActiveGroupCall:
-        LOGGER("AnnieXMedia").error(
-            "Please turn on the Voice Chat of your Log Group/Channel.\nAnnie Bot Stopped..."
-        )
+        LOGGER("AnnieXMedia").error("Please turn on the Voice Chat of your Log Group.\nAnnie Bot Stopped...")
         exit()
     except Exception:
-        pass # تجاهل الأخطاء الأخرى في البث التجريبي
+        pass
 
     await StreamController.decorators()
 
@@ -138,7 +142,6 @@ async def init():
     # 8. رسالة البدء
     LOGGER("AnnieXMedia").info("\x1b[32mAnnie Music Bot & TitanOS Started Successfully.\x1b[0m")
     
-    # وضع الخمول
     await idle()
 
     # 9. الإيقاف
