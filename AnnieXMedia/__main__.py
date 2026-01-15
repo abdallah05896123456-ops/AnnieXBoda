@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # ==============================================================================
-# TITAN OS KERNEL — ULTIMATE EDITION (DEBUG VERSION)
-# Developed for: AnnieXMedia Bot
-# Features: Async Bridge, Video Streaming, System Monitor, Security Shield
+# TITAN OS KERNEL — ULTIMATE STABILITY EDITION (4K CORE)
+# Architecture: Multi-Threaded Flask + Async Pyrogram Bridge
+# Status: Production Ready | Fail-Safe Enabled
 # ==============================================================================
 
 import os
@@ -13,81 +13,68 @@ import logging
 import threading
 import time
 import psutil
-from flask import Flask, request, jsonify, session, send_file, Response, redirect, url_for
+import traceback
+import json
+from flask import Flask, request, jsonify, session, send_file, redirect, url_for
 from pyrogram import idle
-from pytgcalls.exceptions import NoActiveGroupCall
+from logging.handlers import RotatingFileHandler
 
 # ------------------------------------------------------------------------------
-# [1] SYSTEM DIAGNOSTICS & PATH CONFIGURATION (THE FIX)
+# [1] SYSTEM CONFIGURATION & ROBUST PATH FINDING
 # ------------------------------------------------------------------------------
-# الحصول على المسار الجذري الحقيقي للملف
-BASE_DIR = os.path.abspath(os.getcwd())
+# تحديد المسار بناءً على مكان الملف الحالي لضمان عدم حدوث أخطاء
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TITAN_DIR = os.path.join(BASE_DIR, "TitanOS")
 DOWNLOADS_DIR = os.path.join(BASE_DIR, "downloads")
+LOG_FILE = os.path.join(BASE_DIR, "titan.log")
 
-# --- DIAGNOSTIC BLOCK START ---
-print("\n" + "="*60)
-print("🔍 TITAN OS: SYSTEM DIAGNOSTICS STARTING...")
-print(f"📂 Root Directory: {BASE_DIR}")
-print(f"📂 Target HTML Directory: {TITAN_DIR}")
-
-# 1. Check Directory
-if not os.path.exists(TITAN_DIR):
-    print(f"❌ [CRITICAL ERROR] Folder 'TitanOS' NOT FOUND in {BASE_DIR}")
-    print("👉 ACTION REQUIRED: Create a folder named 'TitanOS' next to this file.")
-    try:
-        os.makedirs(TITAN_DIR, exist_ok=True)
-        print("⚠️ [AUTO-FIX] Created empty 'TitanOS' folder for you.")
-    except: pass
-else:
-    print(f"✅ [OK] Folder 'TitanOS' exists.")
-
-# 2. Check Login File
-LOGIN_FILE = os.path.join(TITAN_DIR, "login.html")
-if not os.path.exists(LOGIN_FILE):
-    print(f"❌ [MISSING FILE] 'login.html' not found inside TitanOS folder!")
-    print(f"   Expected Path: {LOGIN_FILE}")
-else:
-    print(f"✅ [OK] 'login.html' found.")
-
-# 3. Check Dashboard File
-DASH_FILE = os.path.join(TITAN_DIR, "dashboard.html")
-if not os.path.exists(DASH_FILE):
-    print(f"❌ [MISSING FILE] 'dashboard.html' not found inside TitanOS folder!")
-    print(f"   Expected Path: {DASH_FILE}")
-else:
-    print(f"✅ [OK] 'dashboard.html' found.")
-
-print("="*60 + "\n")
-# --- DIAGNOSTIC BLOCK END ---
-
+# التأكد من وجود المجلدات الضرورية
+os.makedirs(TITAN_DIR, exist_ok=True)
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
-# Logger Setup
+# ------------------------------------------------------------------------------
+# [2] ADVANCED LOGGING SYSTEM (The Black Box)
+# ------------------------------------------------------------------------------
+# هذا النظام يسجل كل خطأ يحدث في ملف لتقرأه لاحقاً
 logging.basicConfig(
     level=logging.INFO,
-    format="[%(asctime)s] [TITAN-OS] %(message)s",
+    format="[%(asctime)s] [%(levelname)s] %(message)s",
     datefmt="%H:%M:%S",
-    handlers=[logging.FileHandler("titan.log"), logging.StreamHandler()]
+    handlers=[
+        RotatingFileHandler(LOG_FILE, maxBytes=5*1024*1024, backupCount=2),
+        logging.StreamHandler()
+    ]
 )
 LOGGER = logging.getLogger("TitanKernel")
-logging.getLogger("werkzeug").setLevel(logging.ERROR) 
+# إسكات رسائل Flask المزعجة للتركيز على الأخطاء الحقيقية
+logging.getLogger("werkzeug").setLevel(logging.ERROR)
+
+# طباعة تقرير التشخيص عند البدء
+print(f"\n{'='*50}")
+print(f"🚀 TITAN OS: INITIALIZING SYSTEMS...")
+print(f"📂 System Root: {BASE_DIR}")
+print(f"📂 GUI Folder:  {TITAN_DIR}")
+if not os.path.exists(os.path.join(TITAN_DIR, "login.html")):
+    LOGGER.critical("⚠️ WARNING: 'login.html' is MISSING in TitanOS folder!")
+else:
+    print(f"✅ GUI Integrity Check Passed.")
+print(f"{'='*50}\n")
 
 # ------------------------------------------------------------------------------
-# [2] GLOBAL SHARED STATE
+# [3] GLOBAL STATE & CREDENTIALS
 # ------------------------------------------------------------------------------
-BOT_LOOP = None
+BOT_LOOP = None         # حلقة التكرار الخاصة بالبوت
 START_TIME = time.time()
 ADMIN_USER = os.environ.get("TITAN_USER", "Abdallah")
 ADMIN_PASS = os.environ.get("TITAN_PASS", "asdfghjkl05896")
 
 # ------------------------------------------------------------------------------
-# [3] FLASK APP ENGINE
+# [4] FLASK ENGINE (The Web Interface)
 # ------------------------------------------------------------------------------
 app = Flask(__name__, template_folder=TITAN_DIR, static_folder=TITAN_DIR)
 app.secret_key = os.urandom(24)
 
-# --- HELPER FUNCTIONS ---
+# --- UTILS ---
 def get_readable_time(seconds: int) -> str:
     count = 0
     time_list = []
@@ -104,247 +91,230 @@ def get_readable_time(seconds: int) -> str:
     time_list.reverse()
     return ":".join(time_list) if time_list else "0s"
 
-def get_readable_size(size):
-    power = 2**10
-    n = 0
-    power_labels = {0 : '', 1: 'K', 2: 'M', 3: 'G', 4: 'T'}
-    while size > power:
-        size /= power
-        n += 1
-    return f"{size:.2f} {power_labels[n]}B"
-
-def exec_on_bot(coro):
+# --- ASYNC BRIDGE (The Magic Function) ---
+# هذه الدالة هي السر: تسمح لـ Flask (Sync) بالتحدث مع البوت (Async) دون تعليق
+def run_async_task(coro):
     if BOT_LOOP and BOT_LOOP.is_running():
         return asyncio.run_coroutine_threadsafe(coro, BOT_LOOP)
     return None
 
-# ------------------------------------------------------------------------------
-# [4] WEB ROUTES (WITH DEBUG RESPONSES)
-# ------------------------------------------------------------------------------
+# --- WEB ROUTES ---
 
 @app.route('/')
 def index():
     if not session.get('logged_in'):
-        return redirect(url_for('login'))
+        return redirect('/login')
     
-    # Strict Check
-    if os.path.exists(DASH_FILE):
-        return send_file(DASH_FILE)
-    
-    # Debug Error Message in Browser
-    return f"""
-    <div style="background:#000;color:red;padding:20px;font-family:monospace;">
-        <h1>CRITICAL ERROR: DASHBOARD MISSING</h1>
-        <p>The system cannot find: <b>{DASH_FILE}</b></p>
-        <p>Please upload 'dashboard.html' into the 'TitanOS' folder.</p>
-    </div>
-    """, 404
+    dash_file = os.path.join(TITAN_DIR, "dashboard.html")
+    if os.path.exists(dash_file):
+        return send_file(dash_file)
+    return "<h1>Titan OS Active (Dashboard File Missing)</h1>"
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        user = request.form.get('username')
-        pw = request.form.get('password')
-        if user == ADMIN_USER and pw == ADMIN_PASS:
-            session['logged_in'] = True
-            return redirect(url_for('index'))
-        else:
-            return redirect(url_for('login')) # In real app, flash error
+        # دعم استقبال البيانات كـ JSON أو Form
+        try:
+            u = request.form.get('username')
+            p = request.form.get('password')
+            
+            if u == ADMIN_USER and p == ADMIN_PASS:
+                session['logged_in'] = True
+                LOGGER.info(f"✅ Successful Login by: {u}")
+                return jsonify({"status": "success", "message": "Access Granted"})
+            else:
+                LOGGER.warning(f"❌ Failed Login Attempt: {u}")
+                return jsonify({"status": "error", "message": "Invalid Credentials"}), 401
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
 
-    # Strict Check
-    if os.path.exists(LOGIN_FILE):
-        return send_file(LOGIN_FILE)
-
-    # Debug Error Message in Browser
-    return f"""
-    <div style="background:#000;color:red;padding:20px;font-family:monospace;">
-        <h1>CRITICAL ERROR: LOGIN PAGE MISSING</h1>
-        <p>The system cannot find: <b>{LOGIN_FILE}</b></p>
-        <p>Please upload 'login.html' into the 'TitanOS' folder.</p>
-    </div>
-    """, 404
+    # GET Request
+    if session.get('logged_in'): return redirect('/')
+    login_file = os.path.join(TITAN_DIR, "login.html")
+    if os.path.exists(login_file):
+        return send_file(login_file)
+    return "<h1>Titan OS: Login File Missing</h1>"
 
 @app.route('/logout')
 def logout():
     session.clear()
-    return redirect(url_for('login'))
+    return redirect('/login')
 
-# --- API ROUTES ---
+# --- API ENDPOINTS (The Control Center) ---
+
 @app.route('/api/settings/status')
 def api_status():
     uptime = get_readable_time(int(time.time() - START_TIME))
     cpu = psutil.cpu_percent()
     ram = psutil.virtual_memory().percent
-    ping = getattr(CallClient, "ping", 0) if CallClient else 0
-    return jsonify({"uptime": uptime, "cpu": cpu, "ram": ram, "ping": ping, "status": "Online"})
+    
+    # محاولة جلب البينج بأمان
+    ping = 0
+    try:
+        if CallClient: ping = getattr(CallClient, "ping", 0)
+    except: pass
+
+    return jsonify({
+        "status": "Online",
+        "uptime": uptime,
+        "cpu": cpu,
+        "ram": ram,
+        "ping": ping,
+        "bot_connected": bool(bot_app and bot_app.is_connected)
+    })
 
 @app.route('/api/player/active_calls')
 def api_active_calls():
     chats = []
     try:
+        # جلب المكالمات الحية من البوت
         if CallClient and hasattr(CallClient, 'active_calls'):
             for cid in CallClient.active_calls:
-                chat_name = f"Chat {cid}"
-                cover = "https://telegra.ph/file/5eb6df308e92f4477813d.jpg"
-                if cid in db:
-                    data = db[cid][0]
-                    chat_name = data.get("title", chat_name)
-                    cover = data.get("thumb", cover)
-                chats.append({"chat_id": str(cid), "name": str(chat_name), "cover": cover})
+                chat_info = {"chat_id": str(cid), "name": f"Chat {cid}", "cover": ""}
+                # محاولة جلب التفاصيل من قاعدة البيانات
+                if 'db' in globals() and cid in db:
+                    try:
+                        data = db[cid][0]
+                        chat_info['name'] = data.get("title", chat_info['name'])
+                        chat_info['cover'] = data.get("thumb", "")
+                    except: pass
+                chats.append(chat_info)
     except Exception as e:
-        LOGGER.error(f"Error fetching calls: {e}")
+        LOGGER.error(f"API Error (active_calls): {e}")
+        
     return jsonify({"chats": chats})
-
-@app.route('/api/player/track_info/<chat_id>')
-def api_track_info(chat_id):
-    info = {"title": "System Idle", "artist": "Titan OS", "cover": "", "is_playing": False}
-    try:
-        cid = int(chat_id)
-        if cid in db and db[cid]:
-            track = db[cid][0]
-            info = {
-                "title": track.get("title", "Unknown"),
-                "artist": track.get("by", "Unknown"),
-                "cover": track.get("thumb", ""),
-                "is_playing": True,
-                "stream_url": f"/stream/live/{cid}"
-            }
-    except: pass
-    return jsonify(info)
 
 @app.route('/api/player/control', methods=['POST'])
 def api_control():
-    if not session.get('logged_in'): return jsonify({"error": "Auth"}), 401
+    if not session.get('logged_in'): return jsonify({"error": "Unauthorized"}), 401
+    
     cmd = request.form.get('cmd')
     chat_id = request.form.get('chat_id')
-    if not cmd or not chat_id: return jsonify({"error": "Bad Request"}), 400
-    cid = int(chat_id)
-    try:
-        if cmd == 'pause': exec_on_bot(StreamController.pause_stream(cid))
-        elif cmd == 'resume': exec_on_bot(StreamController.resume_stream(cid))
-        elif cmd == 'skip' or cmd == 'stop': exec_on_bot(StreamController.stop_stream(cid))
-        return jsonify({"status": "OK"})
-    except Exception as e: return jsonify({"error": str(e)}), 500
+    
+    if not CallClient:
+        return jsonify({"error": "Bot Core Not Ready"}), 503
 
-@app.route('/api/player/play_custom', methods=['POST'])
-def api_play_custom():
-    if not session.get('logged_in'): return jsonify({"error": "Auth"}), 401
-    return jsonify({"status": "success", "msg": "Command Sent (Logic Pending)"})
-
-@app.route('/stream/live/<chat_id>')
-def stream_video(chat_id):
-    file_path = None
     try:
         cid = int(chat_id)
-        if cid in db and db[cid]: file_path = db[cid][0].get("file")
-    except: pass
-    
-    if not file_path or not os.path.exists(file_path):
-         try:
-            files = [os.path.join(DOWNLOADS_DIR, f) for f in os.listdir(DOWNLOADS_DIR) if f.endswith(('.mp4', '.mkv', '.webm'))]
-            if files: file_path = max(files, key=os.path.getctime)
-         except: pass
+        if cmd == 'pause':
+            run_async_task(StreamController.pause_stream(cid))
+        elif cmd == 'resume':
+            run_async_task(StreamController.resume_stream(cid))
+        elif cmd == 'skip':
+            run_async_task(StreamController.stop_stream(cid))
+        # إضافة المزيد من الأوامر هنا
+        
+        LOGGER.info(f"🕹️ Command Executed: {cmd} on {cid}")
+        return jsonify({"status": "OK", "command": cmd})
+    except Exception as e:
+        LOGGER.error(f"Command Execution Failed: {e}")
+        return jsonify({"error": str(e)}), 500
 
-    if not file_path: return Response("Stream Not Found", status=404)
-
-    file_size = os.path.getsize(file_path)
-    range_header = request.headers.get('Range', None)
-    if range_header:
-        byte1, byte2 = 0, None
-        m = range_header.replace('bytes=', '').split('-')
-        byte1 = int(m[0])
-        if m[1]: byte2 = int(m[1])
-        byte2 = byte2 if byte2 else file_size - 1
-        length = byte2 - byte1 + 1
-        with open(file_path, 'rb') as f:
-            f.seek(byte1)
-            data = f.read(length)
-        rv = Response(data, 206, mimetype="video/mp4", direct_passthrough=True)
-        rv.headers.add('Content-Range', f'bytes {byte1}-{byte2}/{file_size}')
-        rv.headers.add('Accept-Ranges', 'bytes')
-        return rv
-    else:
-        return send_file(file_path, mimetype="video/mp4")
-
-@app.route('/api/utils/cache_list')
-def cache_list():
-    files = []
-    total_size = 0
+@app.route('/api/utils/logs')
+def api_logs():
+    """قراءة اللوجز مباشرة من المتصفح"""
+    if not session.get('logged_in'): return "Auth Required", 401
     try:
-        for f in os.listdir(DOWNLOADS_DIR):
-            fp = os.path.join(DOWNLOADS_DIR, f)
-            sz = os.path.getsize(fp)
-            total_size += sz
-            files.append({"name": f, "size": get_readable_size(sz)})
-    except: pass
-    return jsonify({"files": files, "total_count": len(files), "total_size_mb": get_readable_size(total_size)})
-
-@app.route('/api/utils/turbo', methods=['POST'])
-def turbo_clean():
-    if not session.get('logged_in'): return jsonify({"error": "Auth"}), 401
-    count = 0
-    try:
-        for f in os.listdir(DOWNLOADS_DIR):
-            os.remove(os.path.join(DOWNLOADS_DIR, f))
-            count += 1
-    except: pass
-    return jsonify({"status": f"Cleaned {count} files"})
-
-@app.route('/api/security/block_user', methods=['POST'])
-def block_user():
-    return jsonify({"status": "Executed"})
+        with open(LOG_FILE, 'r', encoding='utf-8') as f:
+            lines = f.readlines()[-100:] # آخر 100 سطر فقط
+            return "<pre>" + "".join(lines) + "</pre>"
+    except: return "No Logs Available"
 
 # ------------------------------------------------------------------------------
-# [5] BOT BOOTSTRAP
+# [5] BOT BOOTSTRAP (The Bridge Construction)
 # ------------------------------------------------------------------------------
-try:
-    import config
-    from AnnieXMedia import app as bot_app, userbot
-    from AnnieXMedia.core.call import StreamController
-    from AnnieXMedia.misc import sudo, db
-    from AnnieXMedia.plugins import ALL_MODULES
-    from AnnieXMedia.utils.cookie_handler import fetch_and_store_cookies
-    
-    CallClient = StreamController 
-except ImportError as e:
-    LOGGER.error(f"CRITICAL: Failed to import Bot Modules: {e}")
-    # We don't exit here so the web server can still run and show errors
-    CallClient = None
-    bot_app = None
+# تهيئة المتغيرات لتجنب الانهيار في حالة عدم وجود المكتبات
+bot_app = None
+userbot = None
+CallClient = None
+db = {}
 
-def run_flask():
-    app.run(host="0.0.0.0", port=8080, debug=False, use_reloader=False)
+def load_bot_modules():
+    global bot_app, userbot, CallClient, db, StreamController
+    try:
+        LOGGER.info("🔌 Loading AnnieXMedia Core...")
+        import config
+        from AnnieXMedia import app as _bot, userbot as _ub
+        from AnnieXMedia.core.call import StreamController as _SC
+        from AnnieXMedia.misc import sudo as _sudo, db as _db
+        from AnnieXMedia.plugins import ALL_MODULES
+        from AnnieXMedia.utils.cookie_handler import fetch_and_store_cookies
+        
+        # تعيين المتغيرات العامة
+        bot_app = _bot
+        userbot = _ub
+        StreamController = _SC
+        CallClient = _SC # Alias
+        db = _db
+        
+        return True, ALL_MODULES, _sudo, fetch_and_store_cookies
+    except ImportError as e:
+        LOGGER.critical(f"❌ CRITICAL IMPORT ERROR: {e}")
+        LOGGER.critical("👉 Ensure you are in the correct directory and requirements are installed.")
+        return False, [], None, None
 
-async def start_services():
-    LOGGER.info("------------------------------------------")
-    LOGGER.info("🚀 TITAN OS KERNEL STARTING...")
+def run_flask_server():
+    """تشغيل السيرفر في خيط منفصل لضمان عدم توقفه أبداً"""
+    try:
+        LOGGER.info("📡 Starting Web Interface on Port 8080...")
+        # use_reloader=False مهم جداً عند استخدام Threads
+        app.run(host="0.0.0.0", port=8080, debug=False, use_reloader=False)
+    except Exception as e:
+        LOGGER.critical(f"🔥 Web Server Crash: {e}")
+
+async def start_bot_services():
+    """تشغيل البوت والخدمات"""
+    global BOT_LOOP
+    BOT_LOOP = asyncio.get_running_loop()
     
-    if bot_app:
-        try: await fetch_and_store_cookies()
+    success, modules, sudo_func, cookie_func = load_bot_modules()
+    
+    if success:
+        LOGGER.info("🍪 Fetching Cookies...")
+        try: await cookie_func()
         except: pass
-        await sudo()
+        
+        LOGGER.info("🛡️ Initializing Sudo & DB...")
+        await sudo_func()
+        
+        LOGGER.info("🤖 Starting Telegram Clients...")
         await bot_app.start()
         await userbot.start()
-        for mod in ALL_MODULES: importlib.import_module("AnnieXMedia.plugins" + mod)
+        
+        LOGGER.info("🧩 Loading Plugins...")
+        for mod in modules:
+            try:
+                importlib.import_module("AnnieXMedia.plugins" + mod)
+            except Exception as e:
+                LOGGER.error(f"Failed to load plugin {mod}: {e}")
+        
+        LOGGER.info("🎧 Starting Voice Client...")
         await StreamController.start()
-        LOGGER.info("✅ SYSTEM FULLY OPERATIONAL")
-    else:
-        LOGGER.warning("⚠️ BOT MODULES NOT LOADED (RUNNING IN WEB-ONLY MODE)")
-    
-    LOGGER.info("📡 Web Interface: http://0.0.0.0:8080")
-    
-    # Check Flask Files Status Again
-    if not os.path.exists(os.path.join(TITAN_DIR, "login.html")):
-        LOGGER.error("❌ WEB WARNING: 'login.html' is MISSING. Web interface won't work.")
-
-    await idle()
-    if bot_app:
+        
+        LOGGER.info("✅ TITAN OS KERNEL: ALL SYSTEMS ONLINE")
+        await idle()
+        
+        LOGGER.info("🛑 Stopping Services...")
         await bot_app.stop()
         await userbot.stop()
+    else:
+        LOGGER.warning("⚠️ Running in WEB-ONLY Mode (Bot Failed to Load)")
+        # إبقاء السكريبت يعمل حتى لو فشل البوت، لكي يعمل الموقع
+        while True:
+            await asyncio.sleep(3600)
 
 if __name__ == "__main__":
+    # 1. تشغيل السيرفر (Web) في Thread منفصل
+    # هذا يضمن أن الموقع يفتح فوراً حتى لو البوت يأخذ وقتاً للتشغيل
+    flask_thread = threading.Thread(target=run_flask_server, daemon=True)
+    flask_thread.start()
+    
+    # 2. تشغيل البوت (Async) في الـ Main Thread
     loop = asyncio.get_event_loop()
-    BOT_LOOP = loop
-    t = threading.Thread(target=run_flask, daemon=True)
-    t.start()
-    loop.run_until_complete(start_services())
+    try:
+        loop.run_until_complete(start_bot_services())
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        LOGGER.critical(f"☠️ FATAL CRASH: {e}")
+        traceback.print_exc()
