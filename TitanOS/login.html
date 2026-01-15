@@ -3,393 +3,386 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Titan OS • Biometric Security</title>
-    
-    <!-- Security Metas -->
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Titan OS • Secure Biometric Entry</title>
     <meta name="theme-color" content="#000000">
 
-    <!-- iOS Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&family=SF+Pro+Display:wght@300;500;700&display=swap" rel="stylesheet">
+    <!-- Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;800&family=SF+Pro+Display:wght@300;500;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
     <style>
-        /* =========================================
-           1. CORE SYSTEM (iOS 17 DARK MODE)
-           ========================================= */
+        /* ==========================================================================
+           1. CORE DESIGN SYSTEM (Titan Dark Glass)
+           ========================================================================== */
         :root {
             --bg-deep: #000000;
-            --glass-material: rgba(22, 22, 24, 0.75);
-            --glass-border: rgba(255, 255, 255, 0.12);
-            --ios-blue: #0A84FF;
-            --ios-green: #30D158;
-            --ios-red: #FF453A;
+            --glass-surface: rgba(22, 22, 24, 0.75);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --accent-blue: #0A84FF;
+            --accent-glow: rgba(10, 132, 255, 0.5);
+            --error-red: #FF453A;
             --text-primary: #FFFFFF;
             --text-secondary: rgba(235, 235, 245, 0.6);
-            --blur: 50px;
-            --radius: 38px;
-            --input-bg: rgba(255, 255, 255, 0.1);
+            --blur: 40px;
+            --radius: 32px;
+            --anim-curve: cubic-bezier(0.19, 1, 0.22, 1);
         }
 
-        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; outline: none; user-select: none; }
+        * { box-sizing: border-box; outline: none; -webkit-tap-highlight-color: transparent; user-select: none; }
         
         body {
-            margin: 0; padding: 0; height: 100vh;
-            background: var(--bg-deep);
-            color: var(--text-primary);
-            font-family: -apple-system, "SF Pro Display", "Cairo", sans-serif;
+            margin: 0; padding: 0; width: 100vw; height: 100vh;
+            background-color: var(--bg-deep);
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Cairo", sans-serif;
+            overflow: hidden;
             display: flex; align-items: center; justify-content: center;
-            overflow: hidden; perspective: 1000px;
+            color: var(--text-primary);
         }
 
         /* Starfield Background */
-        #star-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; }
+        #star-canvas { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
 
-        /* =========================================
-           2. THE BLACK GLASS CARD
-           ========================================= */
-        .login-container {
-            width: 100%; max-width: 380px; padding: 40px 30px;
-            background: var(--glass-material);
-            backdrop-filter: blur(var(--blur)); -webkit-backdrop-filter: blur(var(--blur));
+        /* ==========================================================================
+           2. LOGIN FRAME (iPhone Style)
+           ========================================================================== */
+        .login-stage {
+            position: relative; z-index: 10;
+            width: 100%; max-width: 380px;
+            perspective: 1000px;
+        }
+
+        .titan-card {
+            background: var(--glass-surface);
+            backdrop-filter: blur(var(--blur));
+            -webkit-backdrop-filter: blur(var(--blur));
             border-radius: var(--radius);
             border: 1px solid var(--glass-border);
-            box-shadow: 0 40px 100px rgba(0,0,0,0.9), inset 0 0 0 1px rgba(255,255,255,0.05);
-            text-align: center;
+            padding: 45px 30px;
+            box-shadow: 0 40px 100px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255,255,255,0.1);
+            display: flex; flex-direction: column; align-items: center;
             transform-style: preserve-3d;
-            transition: transform 0.1s ease-out;
-            position: relative;
-            z-index: 10;
+            transition: transform 0.1s ease;
         }
 
-        /* Branding */
-        .lock-icon {
-            font-size: 3rem; margin-bottom: 15px;
-            background: linear-gradient(135deg, #fff 20%, #666 100%);
+        /* Dynamic Header */
+        .icon-header {
+            font-size: 3.5rem; margin-bottom: 20px;
+            background: linear-gradient(180deg, #fff, #666);
             -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-            filter: drop-shadow(0 0 15px rgba(255,255,255,0.2));
-            animation: pulseLock 3s infinite;
+            filter: drop-shadow(0 0 25px rgba(255,255,255,0.15));
         }
-        @keyframes pulseLock { 0%,100%{opacity:0.8} 50%{opacity:1; text-shadow:0 0 20px rgba(255,255,255,0.4)} }
 
-        .title { font-size: 1.6rem; font-weight: 700; margin-bottom: 5px; letter-spacing: -0.5px; }
-        .subtitle { font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 30px; font-weight: 400; }
+        .welcome-text { font-size: 1.6rem; font-weight: 700; margin-bottom: 5px; letter-spacing: -0.5px; }
+        .sub-text { font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 35px; text-align: center; line-height: 1.5; }
 
-        /* =========================================
-           3. INPUTS & FORMS
-           ========================================= */
-        .input-wrapper { position: relative; margin-bottom: 16px; width: 100%; }
+        /* Inputs */
+        .field-wrap { width: 100%; position: relative; margin-bottom: 16px; transition: 0.3s; }
         
         .ios-input {
-            width: 100%; padding: 18px 20px; padding-right: 50px;
-            background: var(--input-bg); border: 1px solid transparent;
-            border-radius: 18px; color: #fff; font-size: 1.05rem;
-            transition: 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            width: 100%; background: rgba(0,0,0,0.4);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px; padding: 18px 20px; padding-left: 50px;
+            color: #fff; font-size: 1rem; transition: all 0.3s var(--anim-curve);
         }
         .ios-input:focus {
-            background: rgba(255,255,255,0.15); border-color: var(--ios-blue);
-            transform: scale(1.02); box-shadow: 0 10px 30px rgba(10, 132, 255, 0.15);
+            background: rgba(0,0,0,0.6); border-color: var(--accent-blue);
+            box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.15); transform: scale(1.02);
         }
         .input-icon {
-            position: absolute; right: 20px; top: 50%; transform: translateY(-50%);
-            color: rgba(255,255,255,0.4); pointer-events: none;
+            position: absolute; left: 18px; top: 50%; transform: translateY(-50%);
+            color: rgba(255,255,255,0.3); pointer-events: none; transition: 0.3s;
         }
+        .ios-input:focus + .input-icon { color: var(--accent-blue); }
 
         /* Buttons */
-        .btn {
-            width: 100%; padding: 18px; border-radius: 18px; border: none;
-            font-size: 1.1rem; font-weight: 700; cursor: pointer;
-            transition: 0.2s; margin-top: 10px;
+        .action-btn {
+            width: 100%; padding: 18px; border-radius: 16px; border: none;
+            background: var(--text-primary); color: #000; font-weight: 700; font-size: 1.1rem;
+            cursor: pointer; margin-top: 10px; transition: all 0.3s var(--anim-curve);
             display: flex; align-items: center; justify-content: center; gap: 10px;
         }
-        .btn-primary {
-            background: #fff; color: #000;
-            box-shadow: 0 5px 20px rgba(255,255,255,0.15);
-        }
-        .btn-primary:active { transform: scale(0.96); }
+        .action-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(255,255,255,0.15); }
+        .action-btn:active { transform: scale(0.96); }
 
-        /* Biometric Button */
-        .btn-bio {
-            background: rgba(10, 132, 255, 0.15); color: var(--ios-blue);
+        .biometric-btn {
+            background: rgba(10, 132, 255, 0.15); color: var(--accent-blue);
             border: 1px solid rgba(10, 132, 255, 0.3);
-            margin-top: 15px; display: none; /* Hidden by default */
         }
-        .btn-bio:hover { background: rgba(10, 132, 255, 0.25); }
-        .finger-anim {
-            width: 24px; height: 24px; border: 2px solid var(--ios-blue);
-            border-radius: 50%; animation: ripple 1.5s infinite;
-        }
-        @keyframes ripple { 0%{transform:scale(0.8);opacity:1} 100%{transform:scale(1.5);opacity:0} }
+        .biometric-btn:hover { background: rgba(10, 132, 255, 0.25); box-shadow: 0 0 30px rgba(10, 132, 255, 0.3); }
 
-        /* Helpers */
-        .hidden { display: none !important; }
-        .shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
-        @keyframes shake { 10%,90%{transform:translate3d(-1px,0,0)} 20%,80%{transform:translate3d(2px,0,0)} 30%,50%,70%{transform:translate3d(-4px,0,0)} 40%,60%{transform:translate3d(4px,0,0)} }
+        /* Views handling */
+        .view-container { width: 100%; display: none; animation: fadeIn 0.5s var(--anim-curve); }
+        .view-container.active { display: block; }
 
-        /* Notification */
-        .toast {
-            position: fixed; top: 30px; left: 50%; transform: translateX(-50%);
-            background: rgba(30,30,30,0.9); backdrop-filter: blur(10px);
-            padding: 12px 24px; border-radius: 30px; border: 1px solid rgba(255,255,255,0.1);
-            display: flex; align-items: center; gap: 10px; z-index: 100;
-            opacity: 0; pointer-events: none; transition: 0.3s;
-        }
-        .toast.show { opacity: 1; top: 40px; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes shake { 0%, 100% {transform: translateX(0);} 25% {transform: translateX(-5px);} 75% {transform: translateX(5px);} }
+        .shake-anim { animation: shake 0.4s ease-in-out; border-color: var(--error-red) !important; color: var(--error-red) !important; }
 
-        /* Recovery Modal */
-        .modal-overlay {
-            position: fixed; inset: 0; background: rgba(0,0,0,0.9);
-            display: none; align-items: center; justify-content: center; z-index: 200;
-            backdrop-filter: blur(20px);
+        /* Fingerprint Animation */
+        .scan-container {
+            position: relative; width: 80px; height: 80px; margin: 0 auto 20px;
+            display: flex; align-items: center; justify-content: center;
         }
-        .modal-box {
-            width: 85%; max-width: 320px; background: #1C1C1E;
-            padding: 30px; border-radius: 26px; text-align: center;
+        .scan-ring {
+            position: absolute; width: 100%; height: 100%; border-radius: 50%;
+            border: 2px solid var(--accent-blue); opacity: 0;
+            animation: ripple 2s infinite;
         }
-        .bio-icon-large { font-size: 4rem; color: var(--ios-blue); margin-bottom: 20px; }
+        .scan-ring:nth-child(2) { animation-delay: 0.5s; }
+        @keyframes ripple { 0% { transform: scale(0.8); opacity: 1; } 100% { transform: scale(1.5); opacity: 0; } }
+
+        .msg-toast {
+            position: fixed; bottom: 30px; background: rgba(20,20,20,0.9);
+            border: 1px solid rgba(255,255,255,0.1); color: #fff; padding: 12px 24px;
+            border-radius: 30px; backdrop-filter: blur(10px); display: none; z-index: 100;
+        }
 
     </style>
 </head>
 <body>
 
-    <!-- Stars Background -->
     <canvas id="star-canvas"></canvas>
 
-    <!-- Toast Notification -->
-    <div class="toast" id="toast">
-        <i class="fa-solid fa-circle-check" style="color:var(--ios-green)"></i>
-        <span id="toast-msg">تمت العملية بنجاح</span>
-    </div>
-
-    <!-- Login Card -->
-    <div class="login-container" id="card">
-        
-        <div class="lock-icon"><i class="fa-brands fa-apple"></i></div>
-        <h1 class="title">Titan Security</h1>
-        <p class="subtitle" id="sub-text">المصادقة الأمنية مطلوبة</p>
-
-        <!-- PASSWORD FORM (Default) -->
-        <div id="password-form">
-            <div class="input-wrapper">
-                <input type="text" id="username" class="ios-input" placeholder="اسم المستخدم" autocomplete="off">
-                <i class="fa-solid fa-user-astronaut input-icon"></i>
+    <div class="login-stage" id="mainStage">
+        <div class="titan-card">
+            
+            <i class="fa-brands fa-apple icon-header"></i>
+            
+            <!-- VIEW 1: PASSWORD LOGIN (Initial) -->
+            <div id="view-password" class="view-container active">
+                <h1 class="welcome-text" style="text-align:center">تسجيل الدخول</h1>
+                <p class="sub-text">أدخل كلمة المرور للمتابعة</p>
+                
+                <form onsubmit="event.preventDefault(); handlePasswordLogin();">
+                    <div class="field-wrap">
+                        <input type="text" id="username" class="ios-input" placeholder="اسم المستخدم" autocomplete="username">
+                        <i class="fa-solid fa-user input-icon"></i>
+                    </div>
+                    <div class="field-wrap">
+                        <input type="password" id="password" class="ios-input" placeholder="كلمة المرور" autocomplete="current-password">
+                        <i class="fa-solid fa-key input-icon"></i>
+                    </div>
+                    <button type="submit" class="action-btn">
+                        متابعة <i class="fa-solid fa-arrow-left"></i>
+                    </button>
+                </form>
+                
+                <div style="margin-top:20px; text-align:center;">
+                    <a href="#" style="color:var(--text-secondary); font-size:0.85rem; text-decoration:none">هل نسيت كلمة السر؟</a>
+                </div>
             </div>
-            <div class="input-wrapper">
-                <input type="password" id="password" class="ios-input" placeholder="كلمة المرور">
-                <i class="fa-solid fa-key input-icon"></i>
+
+            <!-- VIEW 2: BIOMETRIC PROMPT (Returning User) -->
+            <div id="view-biometric" class="view-container">
+                <h1 class="welcome-text" style="text-align:center">أهلاً بك مجدداً</h1>
+                <p class="sub-text">مطلوب المصادقة الحيوية للدخول</p>
+
+                <div class="scan-container">
+                    <div class="scan-ring"></div>
+                    <div class="scan-ring"></div>
+                    <i class="fa-solid fa-fingerprint" style="font-size:3.5rem; color:var(--accent-blue); z-index:2"></i>
+                </div>
+
+                <button class="action-btn biometric-btn" onclick="triggerWebAuthn()">
+                    <i class="fa-solid fa-face-viewfinder"></i> التحقق بالبصمة
+                </button>
+                
+                <button onclick="switchView('password')" style="background:transparent; border:none; color:var(--text-secondary); margin-top:20px; cursor:pointer; width:100%">
+                    استخدام كلمة المرور
+                </button>
             </div>
-            <button class="btn btn-primary" onclick="attemptLogin()">
-                دخول آمن
-            </button>
-        </div>
 
-        <!-- BIOMETRIC BUTTON (Shown if registered) -->
-        <button class="btn btn-bio" id="bio-login-btn" onclick="verifyBiometric()">
-            <i class="fa-solid fa-fingerprint"></i> دخول بالبصمة
-        </button>
+            <!-- VIEW 3: ENROLLMENT (Setup) -->
+            <div id="view-enroll" class="view-container">
+                <h1 class="welcome-text" style="text-align:center">تأمين الحساب</h1>
+                <p class="sub-text">هل تريد تفعيل البصمة للدخول السريع مستقبلاً؟</p>
+                <div style="text-align:center; font-size:3rem; margin-bottom:20px; color:var(--accent-blue)">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+                <button class="action-btn biometric-btn" onclick="enrollBiometric()">
+                    نعم، تفعيل البصمة
+                </button>
+                <button class="action-btn" style="background:transparent; color:#fff; border:1px solid rgba(255,255,255,0.1); margin-top:10px" onclick="finishLogin()">
+                    لا، تخطي الآن
+                </button>
+            </div>
 
-        <div style="margin-top:20px; font-size:0.85rem; color:var(--text-secondary); cursor:pointer" onclick="alert('اتصل بالمشرف للحصول على كود الاستعادة')">
-            هل نسيت كلمة المرور؟
-        </div>
-
-    </div>
-
-    <!-- Biometric Setup Modal -->
-    <div class="modal-overlay" id="bio-modal">
-        <div class="modal-box">
-            <i class="fa-solid fa-fingerprint bio-icon-large"></i>
-            <h2 style="font-size:1.4rem; margin-bottom:10px">تفعيل البصمة؟</h2>
-            <p style="color:#aaa; font-size:0.9rem; margin-bottom:25px">
-                يمكنك استخدام FaceID أو TouchID للدخول في المرة القادمة دون كتابة كلمة المرور.
-            </p>
-            <button class="btn btn-primary" style="background:var(--ios-blue); color:#fff; margin-bottom:10px" onclick="registerBiometric()">
-                تفعيل الآن
-            </button>
-            <button class="btn" style="background:transparent; color:#888" onclick="skipBiometric()">
-                ليس الآن
-            </button>
         </div>
     </div>
+
+    <div class="msg-toast" id="toast"></div>
 
     <script>
         /* 
-           ==============================================================
-           TITAN SECURITY CORE V5.0
-           FEATURES: WEBAUTHN SIMULATION, 3D PARALLAX, LOCAL STORAGE MOCK
-           ==============================================================
+           TITAN OS BIOMETRIC KERNEL
+           Uses WebAuthn API for REAL browser authentication.
         */
 
-        // 1. STAR ENGINE
+        // --- 1. SETUP & UTILS ---
+        const MOCK_USER = "TitanAdmin";
+        const MOCK_PASS = "admin123"; // Password for first time login
+        let enrolled = localStorage.getItem('titan_bio_enrolled') === 'true';
+
+        // Background Stars
         const canvas = document.getElementById('star-canvas');
         const ctx = canvas.getContext('2d');
-        let width = window.innerWidth, height = window.innerHeight;
-        canvas.width = width; canvas.height = height;
+        let width, height, stars = [];
         
-        const stars = Array(150).fill().map(() => ({
-            x: Math.random() * width, y: Math.random() * height,
-            r: Math.random() * 1.5, s: Math.random() * 0.5
-        }));
-
-        function drawStars() {
-            ctx.clearRect(0,0,width,height);
-            ctx.fillStyle = "#FFF";
-            stars.forEach(st => {
-                ctx.beginPath(); ctx.arc(st.x, st.y, st.r, 0, Math.PI*2); ctx.fill();
-                st.y -= st.s; if(st.y < 0) st.y = height;
-            });
-            requestAnimationFrame(drawStars);
+        function initStars() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            stars = [];
+            for(let i=0; i<100; i++) stars.push({x: Math.random()*width, y: Math.random()*height, r: Math.random()*2, a: Math.random()});
         }
-        drawStars();
+        function draw() {
+            ctx.clearRect(0,0,width,height);
+            ctx.fillStyle="#fff";
+            stars.forEach(s=>{
+                ctx.globalAlpha = s.a; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI*2); ctx.fill();
+                s.a += (Math.random()-0.5)*0.05; if(s.a<0) s.a=0; if(s.a>1) s.a=1;
+            });
+            requestAnimationFrame(draw);
+        }
+        window.onresize=initStars; initStars(); draw();
 
-        // 2. 3D TILT EFFECT
-        document.addEventListener('mousemove', (e) => {
-            const card = document.getElementById('card');
-            const x = (window.innerWidth / 2 - e.pageX) / 25;
-            const y = (window.innerHeight / 2 - e.pageY) / 25;
-            card.style.transform = `rotateY(${x}deg) rotateX(${y}deg)`;
-        });
-
-        // 3. SECURITY LOGIC & BIOMETRICS
+        // --- 2. LOGIC FLOW ---
         
-        // Check if user already registered fingerprint
-        const hasBio = localStorage.getItem('titan_bio_registered') === 'true';
-
+        // On Load: Check if user is enrolled. If yes, ask for bio immediately.
         window.onload = () => {
-            if(hasBio) {
-                // If registered, show Biometric Button immediately
-                // document.getElementById('password-form').classList.add('hidden'); // Optional: hide pass form
-                document.getElementById('bio-login-btn').style.display = 'flex';
-                document.getElementById('sub-text').innerText = "تم التعرف على الجهاز";
-                // Auto prompt
-                // verifyBiometric(); // Uncomment to auto-trigger on load
+            if(enrolled) {
+                switchView('biometric');
+                // Auto trigger scan after slight delay for UX
+                setTimeout(triggerWebAuthn, 500);
             }
         };
 
-        function showToast(msg, type='success') {
+        function switchView(id) {
+            document.querySelectorAll('.view-container').forEach(v => v.classList.remove('active'));
+            document.getElementById('view-'+id).classList.add('active');
+        }
+
+        function showToast(msg, isError=false) {
             const t = document.getElementById('toast');
-            const icon = t.querySelector('i');
-            icon.className = type==='error' ? "fa-solid fa-triangle-exclamation" : "fa-solid fa-circle-check";
-            icon.style.color = type==='error' ? "var(--ios-red)" : "var(--ios-green)";
-            document.getElementById('toast-msg').innerText = msg;
-            t.classList.add('show');
-            setTimeout(() => t.classList.remove('show'), 3000);
+            t.textContent = msg;
+            t.style.display = 'block';
+            t.style.borderColor = isError ? 'var(--error-red)' : 'var(--accent-blue)';
+            setTimeout(()=>t.style.display='none', 3000);
         }
 
-        function shakeCard() {
-            const c = document.getElementById('card');
-            c.classList.remove('shake');
-            void c.offsetWidth; // trigger reflow
-            c.classList.add('shake');
-            // Vibrate phone
-            if(navigator.vibrate) navigator.vibrate([100, 50, 100]);
-        }
+        // --- 3. PASSWORD HANDLER ---
+        function handlePasswordLogin() {
+            const u = document.getElementById('username').value;
+            const p = document.getElementById('password').value;
 
-        // --- LOGIN FLOW ---
-
-        function attemptLogin() {
-            const user = document.getElementById('username').value;
-            const pass = document.getElementById('password').value;
-
-            // MOCK VALIDATION (Replace with Server Request)
-            if(user.toLowerCase() === 'admin' && pass === 'admin123') { // Example Creds
-                if(!hasBio) {
-                    // First time? Ask for Biometric
-                    document.getElementById('bio-modal').style.display = 'flex';
+            // Simple validation (In production, verify with server)
+            if(u && p === MOCK_PASS) {
+                if(!enrolled) {
+                    switchView('enroll'); // Ask to enroll
                 } else {
-                    // Already has bio but used password? Login success
-                    loginSuccess();
+                    finishLogin();
                 }
             } else {
-                shakeCard();
-                showToast("بيانات الدخول خاطئة", "error");
+                // Shake Animation
+                const ins = document.querySelectorAll('.ios-input');
+                ins.forEach(i => i.classList.add('shake-anim'));
+                setTimeout(()=>ins.forEach(i=>i.classList.remove('shake-anim')), 500);
+                showToast("بيانات الدخول غير صحيحة", true);
             }
         }
 
-        function loginSuccess() {
-            showToast("تم الدخول بنجاح");
-            setTimeout(() => {
-                // Redirect to Dashboard
-                window.location.href = '/dashboard'; 
-            }, 1000);
-        }
+        // --- 4. WEBAUTHN (REAL BIOMETRICS) ---
+        
+        // Helper to convert strings/buffers
+        const strToBuf = (str) => Uint8Array.from(str, c => c.charCodeAt(0));
+        const bufToB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
 
-        // --- WEBAUTHN IMPLEMENTATION (Real Browser API) ---
-
-        // 1. REGISTER NEW FINGERPRINT
-        async function registerBiometric() {
+        // A. REGISTRATION (Enroll)
+        async function enrollBiometric() {
             if (!window.PublicKeyCredential) {
-                alert("جهازك لا يدعم البصمة أو المتصفح قديم.");
-                skipBiometric();
+                showToast("جهازك لا يدعم البصمة", true);
+                finishLogin();
                 return;
             }
 
+            // Options for creating a credential
+            const publicKey = {
+                challenge: crypto.getRandomValues(new Uint8Array(32)), // Random challenge
+                rp: { name: "Titan OS Secure", id: window.location.hostname },
+                user: {
+                    id: strToBuf(MOCK_USER),
+                    name: MOCK_USER,
+                    displayName: "Titan Administrator"
+                },
+                pubKeyCredParams: [{alg: -7, type: "public-key"}, {alg: -257, type: "public-key"}],
+                authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+                timeout: 60000,
+                attestation: "direct"
+            };
+
             try {
-                // Challenge generation (Normally from server)
-                const challenge = new Uint8Array(32);
-                window.crypto.getRandomValues(challenge);
-
-                const publicKey = {
-                    challenge: challenge,
-                    rp: { name: "Titan OS Security" },
-                    user: {
-                        id: Uint8Array.from("USER_ID_12345", c => c.charCodeAt(0)),
-                        name: "admin@titan.os",
-                        displayName: "Titan Admin"
-                    },
-                    pubKeyCredParams: [{ alg: -7, type: "public-key" }],
-                    authenticatorSelection: { authenticatorAttachment: "platform" },
-                    timeout: 60000,
-                    attestation: "direct"
-                };
-
-                showToast("ضع إصبعك على المستشعر...", "info");
-                
-                // THE REAL CALL
+                showToast("ضع اصبعك على المستشعر...");
                 const credential = await navigator.credentials.create({ publicKey });
                 
-                // If success:
-                localStorage.setItem('titan_bio_registered', 'true');
-                document.getElementById('bio-modal').style.display = 'none';
+                // Success! Save flag locally (In production, send credential to server)
+                localStorage.setItem('titan_bio_enrolled', 'true');
+                enrolled = true;
+                
                 showToast("تم تفعيل البصمة بنجاح!");
-                setTimeout(loginSuccess, 1000);
+                setTimeout(finishLogin, 1000);
 
-            } catch (e) {
-                console.error(e);
-                showToast("فشل تسجيل البصمة", "error");
+            } catch (err) {
+                console.error(err);
+                showToast("فشل تفعيل البصمة أو تم الإلغاء", true);
+                // Fallback to finishing login anyway since password was correct
+                setTimeout(finishLogin, 1500);
             }
         }
 
-        // 2. VERIFY FINGERPRINT (LOGIN)
-        async function verifyBiometric() {
+        // B. AUTHENTICATION (Login with Bio)
+        async function triggerWebAuthn() {
+            if (!window.PublicKeyCredential) return;
+
+            const publicKey = {
+                challenge: crypto.getRandomValues(new Uint8Array(32)),
+                allowCredentials: [], // Allow any registered for this RP (or fetch IDs from localStorage if needed)
+                timeout: 60000,
+                userVerification: "required"
+            };
+
             try {
-                const challenge = new Uint8Array(32);
-                window.crypto.getRandomValues(challenge);
-
-                const publicKey = {
-                    challenge: challenge,
-                    timeout: 60000,
-                    userVerification: "required"
-                };
-
-                showToast("جاري التحقق من البصمة...", "info");
-
-                // THE REAL CALL
                 const assertion = await navigator.credentials.get({ publicKey });
-
-                // If success (Browser returns object)
-                loginSuccess();
-
-            } catch (e) {
-                console.error(e);
-                shakeCard();
-                showToast("لم تتطابق البصمة", "error");
+                // Success!
+                finishLogin();
+            } catch (err) {
+                console.error(err);
+                showToast("لم يتم التعرف على البصمة", true);
             }
         }
 
-        function skipBiometric() {
-            document.getElementById('bio-modal').style.display = 'none';
-            loginSuccess();
+        // --- 5. FINISH ---
+        function finishLogin() {
+            showToast("تم الدخول بنجاح. مرحباً أيها القائد");
+            document.querySelector('.titan-card').style.transform = "scale(0.9) translateY(-100vh)";
+            document.querySelector('.titan-card').style.opacity = "0";
+            
+            // Redirect or Post to backend
+            setTimeout(() => {
+                // Here you would normally do: window.location.href = '/dashboard';
+                // For this demo, we just reload to show the "Biometric Prompt" again
+                if(!enrolled) location.reload(); 
+                else {
+                    // Simulate dashboard entry
+                    document.body.innerHTML = '<h1 style="color:white;font-family:sans-serif">Titan OS Access Granted</h1>';
+                }
+            }, 800);
         }
+
+        // Parallax Effect
+        document.addEventListener('mousemove', (e) => {
+            const x = (window.innerWidth/2 - e.pageX) / 30;
+            const y = (window.innerHeight/2 - e.pageY) / 30;
+            document.querySelector('.titan-card').style.transform = `rotateY(${x}deg) rotateX(${y}deg)`;
+        });
 
     </script>
 </body>
