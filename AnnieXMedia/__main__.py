@@ -10,7 +10,6 @@ import threading
 from sys import argv
 from pyrogram import idle
 from pytgcalls.exceptions import NoActiveGroupCall
-from aiohttp import web  # إضافة مكتبة الويب
 
 # إجبار البوت على استخدام المكتبات المحلية
 sys.path.insert(0, os.getcwd())
@@ -36,24 +35,18 @@ except ImportError:
     LOGGER("AnnieXMedia").error("Could not find 'plugins' folder or ALL_MODULES list!")
     exit()
 
-
-# [3] دالة سيرفر الويب المدمج (لضمان عمل Fly.io)
+# [3] تجهيز ربط موقعك الخاص (TitanOS)
 # ────────────────────────────────────────────────────────
-async def web_server():
-    async def handle_home(request):
-        return web.Response(text="<h1 style='color:blue'>Titan OS is Running Successfully! 🦾</h1>", content_type='text/html')
-
-    try:
-        web_app = web.Application()
-        web_app.router.add_get('/', handle_home)
-        runner = web.AppRunner(web_app)
-        await runner.setup()
-        # أهم نقطة: لازم يكون 0.0.0.0 عشان يشتغل على السيرفر
-        site = web.TCPSite(runner, '0.0.0.0', 8080)
-        await site.start()
-        LOGGER("TitanOS").info("✅ Internal Web Server started on 0.0.0.0:8080")
-    except Exception as e:
-        LOGGER("TitanOS").error(f"❌ Failed to start Web Server: {e}")
+# هذا الجزء يبحث عن ملف web_srv.py داخل مجلد TitanOS لتشغيل تصميمك
+CUSTOM_WEB_RUNNER = None
+try:
+    # محاولة استيراد دالة التشغيل من ملفاتك
+    from AnnieXMedia.TitanOS.web_srv import start_server_thread
+    CUSTOM_WEB_RUNNER = start_server_thread
+    LOGGER("TitanOS").info("✅ Custom Dashboard File Found (web_srv.py).")
+except ImportError as e:
+    LOGGER("TitanOS").warning(f"⚠️ Custom Dashboard not found or error importing: {e}")
+    # إذا لم يجد الملف، لن يقوم بتشغيل الموقع ولن يوقف البوت
 
 
 # [4] دالة التشغيل الرئيسية
@@ -116,10 +109,20 @@ async def init():
 
     await StreamController.decorators()
 
-    # 7. تشغيل سيرفر الويب (الحل للمشكلة الحالية)
+    # 7. تشغيل سيرفر الويب الخاص بتصميمك (TitanOS)
     # ──────────────────────────────────────────
-    LOGGER("TitanOS").info("🌐 Initializing Web Kernel...")
-    await web_server()
+    if CUSTOM_WEB_RUNNER:
+        try:
+            LOGGER("TitanOS").info("🌐 Initializing Your Custom Dashboard...")
+            # تشغيل السيرفر في Thread منفصل عشان ميعطلش البوت
+            server_thread = threading.Thread(target=CUSTOM_WEB_RUNNER, daemon=True)
+            server_thread.start()
+            port = getattr(config, "PORT", 8080)
+            LOGGER("TitanOS").info(f"✅ Dashboard should be live on port: {port}")
+        except Exception as web_e:
+            LOGGER("TitanOS").error(f"❌ Failed to start Custom Dashboard: {web_e}")
+    else:
+        LOGGER("TitanOS").warning("⚠️ No web server found. The bot is running without the dashboard.")
 
     # 8. رسالة البدء
     LOGGER("AnnieXMedia").info("\x1b[32mAnnie Music Bot & TitanOS Started Successfully.\x1b[0m")
