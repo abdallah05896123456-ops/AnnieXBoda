@@ -3,935 +3,811 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="description" content="Titan OS Ultimate Control Panel - Production Build">
-    <meta name="theme-color" content="#050507">
-    <title>Titan OS • Command Center</title>
+    <meta name="description" content="Titan OS - Ultimate Control Panel">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#000000">
+    <title>Titan OS | Command Center</title>
 
-    <!-- FONTS -->
+    <!-- مكتبات الخطوط والأيقونات -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- ICONS -->
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;500;700;900&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
     <style>
-        /* =========================================
-           1. CORE VARIABLES & RESET (TITAN DESIGN SYSTEM)
-           ========================================= */
+        /* ============================================================
+           1. TITAN GLASS DESIGN SYSTEM (IPHONE STYLE)
+           ============================================================ */
         :root {
-            /* Colors */
-            --bg-deep: #050507;
-            --bg-panel: rgba(20, 20, 25, 0.75);
-            --bg-card: rgba(30, 30, 35, 0.5);
-            --bg-input: rgba(0, 0, 0, 0.4);
+            --bg-deep: #000000;
+            --glass-material: rgba(28, 28, 30, 0.65);
+            --glass-border: rgba(255, 255, 255, 0.12);
+            --glass-highlight: rgba(255, 255, 255, 0.05);
             
-            /* Accents */
-            --accent-primary: #0A84FF;
-            --accent-glow: rgba(10, 132, 255, 0.5);
-            --accent-secondary: #BF5AF2;
-            --danger: #FF453A;
-            --success: #32D74B;
-            --warning: #FFD60A;
-            --text-main: #FFFFFF;
-            --text-muted: #98989F;
-
-            /* Effects */
-            --glass-blur: 30px;
-            --border-light: 1px solid rgba(255, 255, 255, 0.1);
-            --border-active: 1px solid rgba(10, 132, 255, 0.6);
-            --shadow-card: 0 15px 40px rgba(0, 0, 0, 0.6);
-            --radius-xl: 24px;
-            --radius-lg: 16px;
-            --radius-md: 10px;
-            --anim-speed: 0.3s;
+            /* ألوان النيون المتقدمة */
+            --accent-blue: #0A84FF;
+            --accent-purple: #BF5AF2;
+            --accent-green: #30D158;
+            --accent-red: #FF453A;
+            --accent-orange: #FF9F0A;
+            
+            --text-primary: #FFFFFF;
+            --text-secondary: #8E8E93;
+            
+            --radius-xl: 28px;
+            --radius-lg: 18px;
+            --radius-sm: 10px;
+            
+            --blur-strength: 25px;
+            --transition: cubic-bezier(0.25, 0.8, 0.25, 1);
         }
 
         * {
             box-sizing: border-box;
-            outline: none;
             -webkit-tap-highlight-color: transparent;
+            outline: none;
+            user-select: none;
         }
 
-        html, body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            font-family: 'Cairo', sans-serif;
+        body {
+            margin: 0; padding: 0;
             background-color: var(--bg-deep);
-            color: var(--text-main);
-            overflow: hidden; /* App-like feel */
-        }
-
-        /* Scrollbar Styling */
-        ::-webkit-scrollbar { width: 5px; height: 5px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--accent-primary); }
-
-        /* Typography Utilities */
-        .font-tech { font-family: 'Rajdhani', sans-serif; letter-spacing: 0.5px; }
-        .text-sm { font-size: 0.85rem; }
-        .text-xs { font-size: 0.75rem; }
-        .text-muted { color: var(--text-muted); }
-        .text-gradient {
-            background: linear-gradient(90deg, #fff, var(--accent-primary));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        /* =========================================
-           2. BACKGROUND ANIMATION (CANVAS)
-           ========================================= */
-        #star-canvas {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 0;
-            pointer-events: none;
-        }
-
-        /* =========================================
-           3. LAYOUT STRUCTURE
-           ========================================= */
-        .app-container {
-            position: relative;
-            z-index: 10;
-            display: flex;
-            width: 100%;
-            height: 100%;
-            max-width: 1800px;
-            margin: 0 auto;
-            padding: 20px;
-            gap: 20px;
-        }
-
-        /* --- Sidebar --- */
-        .sidebar {
-            width: 300px;
-            flex-shrink: 0;
-            background: var(--bg-panel);
-            backdrop-filter: blur(var(--glass-blur));
-            border: var(--border-light);
-            border-radius: var(--radius-xl);
-            padding: 24px;
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            transition: transform var(--anim-speed) ease;
-            box-shadow: var(--shadow-card);
-        }
-
-        .brand {
-            text-align: center;
-            padding-bottom: 20px;
-            border-bottom: var(--border-light);
-        }
-        .brand h1 { margin: 0; font-size: 1.8rem; letter-spacing: 2px; text-transform: uppercase; }
-        .brand span { font-size: 0.75rem; letter-spacing: 4px; color: var(--accent-primary); opacity: 0.9; }
-
-        .nav-menu { flex: 1; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
-        .nav-item {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            padding: 14px 18px;
-            border-radius: var(--radius-lg);
-            color: var(--text-muted);
-            cursor: pointer;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            font-weight: 600;
-            position: relative;
+            color: var(--text-primary);
+            font-family: 'Cairo', sans-serif;
+            height: 100vh;
+            width: 100vw;
             overflow: hidden;
-        }
-        .nav-item i { width: 24px; text-align: center; transition: 0.3s; font-size: 1.1rem; }
-        .nav-item:hover { background: rgba(255,255,255,0.08); color: #fff; transform: translateX(-5px); }
-        .nav-item.active {
-            background: linear-gradient(90deg, rgba(10, 132, 255, 0.15), transparent);
-            color: var(--accent-primary);
-            border-right: 3px solid var(--accent-primary);
-        }
-        .nav-item.active i { transform: scale(1.2); text-shadow: 0 0 15px var(--accent-primary); }
-
-        .user-mini {
             display: flex;
+            justify-content: center;
             align-items: center;
-            gap: 15px;
-            padding: 16px;
-            background: rgba(0,0,0,0.3);
-            border-radius: var(--radius-lg);
-            border: var(--border-light);
         }
-        .user-avatar { 
-            width: 45px; height: 45px; 
-            border-radius: 50%; object-fit: cover; 
-            border: 2px solid var(--accent-primary);
-            box-shadow: 0 0 15px var(--accent-glow);
-        }
-        .user-info h4 { margin: 0; font-size: 0.95rem; font-weight: 700; }
-        .ping-dot { 
-            width: 8px; height: 8px; 
-            background: var(--success); 
-            border-radius: 50%; display: inline-block; 
-            box-shadow: 0 0 10px var(--success);
-            animation: pulse 2s infinite;
-        }
-        @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.2); } 100% { opacity: 1; transform: scale(1); } }
 
-        /* --- Main Content --- */
+        /* خلفية النجوم المتحركة */
+        #cosmos-canvas {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 0; pointer-events: none;
+        }
+
+        /* الحاوية الرئيسية (شاشة التطبيق) */
+        .app-container {
+            position: relative; z-index: 10;
+            width: 95%; height: 92%;
+            max-width: 1600px;
+            display: flex; gap: 20px;
+            transition: 0.3s;
+        }
+
+        /* ============================================================
+           2. SIDEBAR (القائمة الجانبية الزجاجية)
+           ============================================================ */
+        .glass-panel {
+            background: var(--glass-material);
+            backdrop-filter: blur(var(--blur-strength));
+            -webkit-backdrop-filter: blur(var(--blur-strength));
+            border: 1px solid var(--glass-border);
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            border-radius: var(--radius-xl);
+        }
+
+        .sidebar {
+            width: 320px;
+            display: flex; flex-direction: column;
+            padding: 24px;
+            flex-shrink: 0;
+            transition: transform 0.4s var(--transition);
+        }
+
+        .brand-header {
+            text-align: center; margin-bottom: 30px;
+            border-bottom: 1px solid var(--glass-border);
+            padding-bottom: 20px;
+        }
+        .brand-logo {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 2rem; font-weight: 700; letter-spacing: 2px;
+            background: linear-gradient(135deg, #fff 0%, var(--accent-blue) 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .brand-sub { font-size: 0.7rem; letter-spacing: 4px; color: var(--text-secondary); opacity: 0.8; }
+
+        .nav-menu { flex: 1; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+        
+        .nav-btn {
+            display: flex; align-items: center; gap: 16px;
+            padding: 16px 20px;
+            border-radius: var(--radius-lg);
+            color: var(--text-secondary);
+            font-size: 1rem; font-weight: 600;
+            cursor: pointer; transition: all 0.3s var(--transition);
+            background: transparent; border: none;
+            text-align: right;
+        }
+        .nav-btn:hover { background: var(--glass-highlight); color: #fff; transform: translateX(-5px); }
+        .nav-btn.active {
+            background: rgba(10, 132, 255, 0.15);
+            color: var(--accent-blue);
+            box-shadow: 0 0 20px rgba(10, 132, 255, 0.1);
+        }
+        .nav-btn i { width: 24px; text-align: center; font-size: 1.2rem; }
+
+        /* قائمة المجموعات النشطة المصغرة */
+        .active-groups-mini {
+            margin-top: 20px; padding-top: 20px;
+            border-top: 1px solid var(--glass-border);
+            max-height: 200px; overflow-y: auto;
+        }
+        .mini-group-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px; border-radius: var(--radius-sm);
+            cursor: pointer; transition: 0.2s;
+        }
+        .mini-group-item:hover { background: rgba(255,255,255,0.05); }
+        .mini-group-item.selected { border: 1px solid var(--accent-green); background: rgba(48, 209, 88, 0.05); }
+        .pulse-dot { width: 8px; height: 8px; background: var(--accent-green); border-radius: 50%; box-shadow: 0 0 8px var(--accent-green); }
+
+        /* ============================================================
+           3. MAIN STAGE (منطقة التحكم الرئيسية)
+           ============================================================ */
         .main-stage {
             flex: 1;
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            overflow-y: auto;
-            overflow-x: hidden;
-            padding-right: 5px; 
-        }
-
-        /* Top Bar (Mobile mainly) */
-        .top-bar { display: none; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-
-        /* Grid System */
-        .grid-dashboard {
-            display: grid;
-            grid-template-columns: 2.2fr 1fr;
-            grid-template-rows: auto auto;
-            gap: 24px;
-        }
-
-        /* Card Utils */
-        .card {
-            background: var(--bg-panel);
-            backdrop-filter: blur(var(--glass-blur));
-            border: var(--border-light);
+            display: flex; flex-direction: column; gap: 20px;
+            overflow-y: auto; overflow-x: hidden;
             border-radius: var(--radius-xl);
-            padding: 24px;
-            position: relative;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            box-shadow: var(--shadow-card);
-            transition: 0.3s;
+            padding-right: 5px; /* Scrollbar padding */
         }
-        .card:hover { border-color: rgba(255,255,255,0.2); }
-        
-        .card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-        }
-        .card-title { font-weight: 800; display: flex; align-items: center; gap: 10px; font-size: 1.1rem; }
-        
-        /* =========================================
-           4. MODULES (PLAYER, STATS, LISTS)
-           ========================================= */
 
-        /* -- Video Player (The Core) -- */
-        .player-wrapper {
-            width: 100%;
-            aspect-ratio: 16/9;
+        /* Header Bar */
+        .top-bar {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 15px 25px;
+            min-height: 80px;
+        }
+        .focus-toggle {
+            display: flex; align-items: center; gap: 10px;
+            background: rgba(0,0,0,0.3); padding: 8px 16px; border-radius: 30px;
+            border: 1px solid var(--glass-border); cursor: pointer; transition: 0.3s;
+        }
+        .focus-toggle.active { border-color: var(--accent-orange); color: var(--accent-orange); box-shadow: 0 0 15px rgba(255, 159, 10, 0.2); }
+        
+        .user-pill {
+            display: flex; align-items: center; gap: 12px;
+            background: var(--glass-material); padding: 8px 12px 8px 20px;
+            border-radius: 40px; border: 1px solid var(--glass-border);
+        }
+        .user-avatar { width: 40px; height: 40px; border-radius: 50%; border: 2px solid var(--accent-blue); }
+
+        /* ============================================================
+           4. VIDEO PLAYER (المشغل السينمائي)
+           ============================================================ */
+        .cinema-card {
+            position: relative; overflow: hidden;
+            width: 100%; aspect-ratio: 16/9;
             background: #000;
-            border-radius: var(--radius-lg);
-            overflow: hidden;
-            position: relative;
-            border: 1px solid rgba(255,255,255,0.1);
-            box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+            border-radius: var(--radius-xl);
+            border: 1px solid var(--glass-border);
+            box-shadow: 0 30px 60px rgba(0,0,0,0.8);
+            group-isolate: true;
         }
-        video#main-player { width: 100%; height: 100%; object-fit: contain; }
+        video#stream-player { width: 100%; height: 100%; object-fit: contain; }
         
-        .player-overlay {
+        /* طبقة التحكم فوق الفيديو */
+        .player-hud {
             position: absolute; inset: 0;
-            background: linear-gradient(0deg, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.4) 40%, rgba(0,0,0,0) 100%);
+            background: linear-gradient(to top, rgba(0,0,0,0.95), transparent 60%);
             display: flex; flex-direction: column; justify-content: flex-end;
-            padding: 30px;
-            opacity: 1; transition: opacity 0.4s;
+            padding: 30px; opacity: 0; transition: opacity 0.4s ease;
         }
-        .player-wrapper:hover .player-overlay { opacity: 1; }
+        .cinema-card:hover .player-hud { opacity: 1; }
+
+        .track-info { margin-bottom: 20px; transform: translateY(10px); transition: 0.4s; }
+        .cinema-card:hover .track-info { transform: translateY(0); }
+        .track-title { font-size: 1.8rem; font-weight: 800; margin: 0; text-shadow: 0 5px 15px rgba(0,0,0,1); }
+        .track-artist { font-size: 1.1rem; color: #ccc; margin-top: 5px; }
+
+        /* أزرار التحكم الزجاجية */
+        .controls-row { display: flex; align-items: center; gap: 20px; justify-content: center; }
+        .glass-btn {
+            width: 55px; height: 55px; border-radius: 50%;
+            border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.1); color: #fff;
+            backdrop-filter: blur(10px);
+            cursor: pointer; transition: 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+            display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
+        }
+        .glass-btn:hover { background: rgba(255,255,255,0.25); transform: scale(1.15); border-color: #fff; }
+        .glass-btn:active { transform: scale(0.95); }
         
-        .track-info-large { margin-bottom: 25px; transform: translateY(0); transition: 0.3s; }
-        .track-title { font-size: 1.8rem; font-weight: 900; margin: 0; text-shadow: 0 4px 20px rgba(0,0,0,0.9); line-height: 1.2; }
-        .track-meta { font-size: 1rem; color: #ccc; margin-top: 5px; display: flex; gap: 10px; align-items: center; }
-        .live-badge { background: var(--danger); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; }
-
-        .player-controls { display: flex; align-items: center; gap: 20px; }
-        .p-btn {
-            background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1); color: #fff;
-            width: 50px; height: 50px; border-radius: 14px;
-            cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; font-size: 1.2rem;
-            backdrop-filter: blur(5px);
+        .play-btn-lg {
+            width: 75px; height: 75px; font-size: 2rem;
+            background: var(--accent-blue); border: none;
+            box-shadow: 0 0 30px var(--accent-blue);
         }
-        .p-btn:hover { background: rgba(255,255,255,0.25); transform: translateY(-3px); box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
-        .p-btn:active { transform: scale(0.95); }
+        .play-btn-lg:hover { background: #2997ff; box-shadow: 0 0 50px var(--accent-blue); }
+
+        /* شريط التقدم */
+        .seek-wrapper {
+            width: 100%; display: flex; align-items: center; gap: 15px;
+            margin-bottom: 15px; font-family: monospace; font-size: 0.9rem;
+        }
+        input[type=range] {
+            flex: 1; -webkit-appearance: none; background: rgba(255,255,255,0.2);
+            height: 4px; border-radius: 2px; cursor: pointer;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 14px; height: 14px; background: #fff;
+            border-radius: 50%; box-shadow: 0 0 10px rgba(255,255,255,0.5);
+            transition: 0.2s;
+        }
+        input[type=range]:hover::-webkit-slider-thumb { transform: scale(1.3); }
+
+        /* ============================================================
+           5. DASHBOARD WIDGETS (الإحصائيات والأدوات)
+           ============================================================ */
+        .grid-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+        .widget-card { padding: 25px; position: relative; overflow: hidden; display: flex; flex-direction: column; }
         
-        .p-btn.play-xl {
-            width: 70px; height: 70px; border-radius: 24px;
-            background: var(--accent-primary); border: none;
-            box-shadow: 0 10px 40px var(--accent-glow); font-size: 1.8rem;
+        .stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 10px; }
+        .stat-item {
+            background: rgba(255,255,255,0.03); padding: 15px; border-radius: var(--radius-lg);
+            text-align: center; border: 1px solid rgba(255,255,255,0.05);
         }
-        .p-btn.play-xl:hover { transform: scale(1.05); box-shadow: 0 15px 50px var(--accent-glow); }
+        .stat-num { font-size: 1.6rem; font-weight: 800; font-family: 'Rajdhani'; color: var(--accent-blue); }
 
-        /* -- Stats Grid -- */
-        .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 24px; }
-        .stat-box {
-            background: rgba(255,255,255,0.03); padding: 20px; border-radius: var(--radius-lg);
-            text-align: center; border: 1px solid rgba(255,255,255,0.05); position: relative; overflow: hidden;
+        /* Inputs & Actions */
+        .neon-input {
+            width: 100%; background: rgba(0,0,0,0.4); border: 1px solid var(--glass-border);
+            padding: 15px 20px; border-radius: var(--radius-lg); color: #fff; font-family: inherit;
+            margin-bottom: 15px; transition: 0.3s;
         }
-        .stat-box::before {
-            content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 2px;
-            background: linear-gradient(90deg, transparent, var(--accent-primary), transparent);
-            opacity: 0.5;
-        }
-        .stat-val { font-size: 1.8rem; font-weight: 800; color: var(--accent-primary); text-shadow: 0 0 20px var(--accent-glow); }
-        .stat-label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.5px; margin-top: 5px; }
+        .neon-input:focus { border-color: var(--accent-blue); box-shadow: 0 0 15px rgba(10, 132, 255, 0.2); }
 
-        /* -- Lists (Active Calls / Queue) -- */
-        .list-container {
-            display: flex; flex-direction: column; gap: 12px;
-            max-height: 350px; overflow-y: auto; padding-right: 5px;
+        .action-btn {
+            width: 100%; padding: 15px; border-radius: var(--radius-lg); border: none;
+            background: var(--glass-highlight); color: #fff; font-weight: bold; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+            transition: 0.3s; margin-bottom: 10px;
         }
-        .list-item {
-            display: flex; align-items: center; gap: 15px;
-            padding: 14px; border-radius: var(--radius-md);
-            background: rgba(255,255,255,0.03); border: 1px solid transparent;
-            cursor: pointer; transition: 0.2s; position: relative; overflow: hidden;
-        }
-        .list-item:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.1); transform: translateX(-5px); }
-        .list-item.active { 
-            background: rgba(10, 132, 255, 0.1); border-color: var(--accent-primary); 
-            box-shadow: inset 4px 0 0 var(--accent-primary);
-        }
-        .list-thumb { width: 45px; height: 45px; border-radius: 10px; object-fit: cover; background: #111; border: 1px solid rgba(255,255,255,0.1); }
-        .list-content { flex: 1; }
-        .list-title { font-weight: 700; font-size: 0.95rem; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
-        .list-sub { font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
+        .action-btn:hover { background: rgba(255,255,255,0.1); transform: translateY(-2px); }
+        .btn-blue { background: var(--accent-blue); box-shadow: 0 5px 20px rgba(10, 132, 255, 0.3); }
+        .btn-blue:hover { background: #2997ff; }
+        .btn-danger { background: rgba(255, 69, 58, 0.2); color: var(--accent-red); border: 1px solid rgba(255,69,58,0.3); }
+        .btn-danger:hover { background: var(--accent-red); color: white; }
 
-        /* -- Inputs & Buttons -- */
-        .input-group { display: flex; gap: 12px; margin-top: 15px; }
-        .titan-input {
-            flex: 1; background: var(--bg-input); border: var(--border-light); color: #fff;
-            padding: 14px 20px; border-radius: var(--radius-md); font-family: inherit; font-size: 1rem;
-            transition: 0.3s;
+        /* Modal Overlay */
+        .modal-wrap {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85); backdrop-filter: blur(15px);
+            z-index: 100; display: none; align-items: center; justify-content: center;
         }
-        .titan-input:focus { border-color: var(--accent-primary); box-shadow: 0 0 20px rgba(10, 132, 255, 0.2); }
-        
-        .titan-btn {
-            padding: 0 24px; height: 50px; border-radius: var(--radius-md); border: none; cursor: pointer;
-            font-weight: 700; background: rgba(255,255,255,0.1); color: #fff; transition: 0.3s;
-            display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 0.95rem;
-        }
-        .titan-btn.primary { background: var(--accent-primary); box-shadow: 0 5px 20px var(--accent-glow); }
-        .titan-btn.danger { background: rgba(255, 69, 58, 0.15); color: var(--danger); border: 1px solid rgba(255, 69, 58, 0.3); }
-        .titan-btn.danger:hover { background: var(--danger); color: #fff; box-shadow: 0 5px 20px rgba(255, 69, 58, 0.4); }
-        .titan-btn:hover { filter: brightness(1.2); transform: translateY(-2px); }
-        .titan-btn:active { transform: scale(0.98); }
+        .modal-wrap.active { display: flex; animation: fadeScale 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        .glass-modal { width: 90%; max-width: 500px; padding: 40px; }
 
-        /* -- Toast Notification -- */
-        #toast-container { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); z-index: 2000; display: flex; flex-direction: column; gap: 12px; pointer-events: none; }
-        .toast {
-            background: rgba(15, 15, 20, 0.95); backdrop-filter: blur(15px);
-            border: 1px solid rgba(255,255,255,0.1); padding: 16px 30px; border-radius: 40px;
-            color: #fff; font-size: 0.95rem; box-shadow: 0 15px 40px rgba(0,0,0,0.6);
-            animation: slideUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; 
-            pointer-events: auto; display: flex; align-items: center; gap: 15px; min-width: 300px;
-        }
-        @keyframes slideUp { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes fadeScale { from{opacity:0; transform:scale(0.9);} to{opacity:1; transform:scale(1);} }
 
-        /* -- Modal -- */
-        .modal-overlay {
-            position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 1000;
-            backdrop-filter: blur(8px); display: none; align-items: center; justify-content: center;
-        }
-        .modal-overlay.open { display: flex; animation: fadeIn 0.3s; }
-        .modal-box {
-            width: 90%; max-width: 550px; background: #0f0f12; border: 1px solid rgba(255,255,255,0.1);
-            border-radius: var(--radius-xl); padding: 30px; box-shadow: 0 30px 80px rgba(0,0,0,0.7);
-            transform: scale(0.95); animation: zoomIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-        }
-        @keyframes fadeIn { from{opacity:0} to{opacity:1} }
-        @keyframes zoomIn { from{transform:scale(0.9)} to{transform:scale(1)} }
-
-        /* =========================================
-           5. RESPONSIVE DESIGN (MOBILE)
-           ========================================= */
-        @media (max-width: 1024px) {
-            .grid-dashboard { grid-template-columns: 1fr; }
-            .sidebar {
-                position: fixed; left: -100%; top: 0; height: 100%; z-index: 100;
-                box-shadow: 50px 0 100px rgba(0,0,0,0.8);
+        /* Responsive */
+        @media (max-width: 1100px) {
+            .app-container { flex-direction: column; width: 100%; height: 100%; border-radius: 0; }
+            .sidebar { 
+                position: fixed; right: -100%; top: 0; height: 100%; z-index: 50; 
+                width: 280px; box-shadow: -10px 0 50px rgba(0,0,0,0.8);
             }
-            .sidebar.open { left: 0; }
-            .top-bar { display: flex; }
-            .app-container { flex-direction: column; padding: 15px; }
-            .player-wrapper { border-radius: var(--radius-md); }
-            .p-btn { width: 44px; height: 44px; }
-            .p-btn.play-xl { width: 60px; height: 60px; }
-            .track-title { font-size: 1.4rem; }
+            .sidebar.active { right: 0; }
+            .grid-2 { grid-template-columns: 1fr; }
+            .mobile-menu-btn { display: block !important; }
         }
-
-        /* Helper Classes */
-        .hidden { display: none !important; }
-        .d-flex { display: flex; }
-        .flex-col { flex-direction: column; }
-        .gap-10 { gap: 10px; }
-        .w-100 { width: 100%; }
-        .text-center { text-align: center; }
-        .mb-20 { margin-bottom: 20px; }
-        .danger-zone { border: 1px solid rgba(255, 69, 58, 0.2); padding: 15px; border-radius: var(--radius-md); background: rgba(255, 69, 58, 0.05); }
+        .mobile-menu-btn { display: none; font-size: 1.5rem; background:none; border:none; color:#fff; }
+        .hidden-section { display: none; }
 
     </style>
 </head>
 <body>
 
-    <!-- BACKGROUND ENGINE -->
-    <canvas id="star-canvas"></canvas>
+    <!-- محرك الخلفية (نجوم متحركة) -->
+    <canvas id="cosmos-canvas"></canvas>
 
-    <!-- MODAL: YOUTUBE PLAYER -->
-    <div class="modal-overlay" id="yt-modal">
-        <div class="modal-box">
-            <h3 class="card-title" style="font-size:1.5rem; margin-bottom:10px;">
-                <i class="fa-brands fa-youtube" style="color:#FF0000; font-size:1.8rem;"></i> تشغيل محتوى
-            </h3>
-            <p class="text-muted text-sm" style="margin-bottom:20px; line-height:1.6;">
-                يمكنك تشغيل أي مقطع صوتي أو فيديو مباشرة على البوت. يدعم الروابط المباشرة والبحث بالاسم.
-            </p>
-            <div class="input-group flex-col">
-                <input type="text" id="yt-search-input" class="titan-input" placeholder="اسم الأغنية أو رابط الفيديو..." autofocus>
-                <div class="d-flex gap-10" style="margin-top:10px;">
-                    <button class="titan-btn primary w-100" onclick="playCustomTrack()">
-                        <i class="fa-solid fa-play"></i> تشغيل الآن
-                    </button>
-                    <button class="titan-btn w-100" onclick="closeModal('yt-modal')">إلغاء</button>
-                </div>
+    <!-- نافذة تشغيل ميديا (MODAL) -->
+    <div class="modal-wrap" id="mediaModal">
+        <div class="glass-panel glass-modal">
+            <h2 style="margin-top:0"><i class="fa-brands fa-youtube" style="color:#FF0000"></i> تشغيل ميديا جديدة</h2>
+            <p style="color:#aaa; margin-bottom:20px;">يمكنك لصق رابط يوتيوب أو كتابة اسم الأغنية للتشغيل في المجموعة المختارة.</p>
+            
+            <input type="text" id="mediaInput" class="neon-input" placeholder="مثال: سورة البقرة أو رابط مباشر..." autofocus>
+            
+            <div style="display:flex; gap:15px;">
+                <button class="action-btn btn-blue" onclick="submitPlayReq()">
+                    <i class="fa-solid fa-play"></i> تشغيل الآن
+                </button>
+                <button class="action-btn" onclick="toggleModal('mediaModal')" style="width:120px;">إلغاء</button>
             </div>
         </div>
     </div>
 
-    <!-- TOAST CONTAINER -->
-    <div id="toast-container"></div>
-
-    <!-- MAIN APP STRUCTURE -->
+    <!-- الحاوية الرئيسية للتطبيق -->
     <div class="app-container">
-        
-        <!-- MOBILE TOP BAR -->
-        <div class="top-bar">
-            <div class="brand" style="border:none; padding:0; text-align:right;">
-                <h1 class="font-tech" style="font-size:1.4rem">TITAN <span style="font-size:1.4rem;color:var(--accent-primary)">OS</span></h1>
-            </div>
-            <button class="titan-btn" style="width:45px; padding:0;" onclick="toggleSidebar()"><i class="fa-solid fa-bars"></i></button>
-        </div>
 
-        <!-- SIDEBAR NAVIGATION -->
-        <aside class="sidebar" id="sidebar">
-            <div class="brand">
-                <h1 class="font-tech">TITAN <span>KERNEL</span></h1>
-            </div>
-
-            <div class="user-mini">
-                <img src="https://ui-avatars.com/api/?name=Admin&background=0A84FF&color=fff&bold=true" class="user-avatar" alt="Admin">
-                <div class="user-info">
-                    <h4>Root Administrator</h4>
-                    <div class="text-xs text-muted"><span class="ping-dot"></span> System Online <span id="ping-sidebar" class="font-tech" style="color:var(--accent-primary)">--ms</span></div>
-                </div>
+        <!-- القائمة الجانبية -->
+        <aside class="glass-panel sidebar" id="mainSidebar">
+            <div class="brand-header">
+                <div class="brand-logo">TITAN OS</div>
+                <div class="brand-sub">ULTIMATE KERNEL v4.5</div>
             </div>
 
             <nav class="nav-menu">
-                <div class="nav-item active" onclick="switchTab('dashboard', this)">
-                    <i class="fa-solid fa-gauge-high"></i> لوحة القيادة
-                </div>
-                <div class="nav-item" onclick="switchTab('security', this)">
-                    <i class="fa-solid fa-shield-halved"></i> الحماية والحظر
-                </div>
-                <div class="nav-item" onclick="switchTab('settings', this)">
-                    <i class="fa-solid fa-server"></i> إعدادات السيرفر
-                </div>
-                
-                <div style="flex:1"></div> <!-- Spacer -->
-                
-                <div class="nav-item" style="color:var(--danger); border-top:1px solid rgba(255,255,255,0.05); border-radius:0;" onclick="logout()">
-                    <i class="fa-solid fa-power-off"></i> تسجيل خروج
-                </div>
+                <button class="nav-btn active" onclick="switchView('dashboard', this)">
+                    <i class="fa-solid fa-layer-group"></i> لوحة التحكم
+                </button>
+                <button class="nav-btn" onclick="switchView('security', this)">
+                    <i class="fa-solid fa-shield-cat"></i> نظام الحماية
+                </button>
+                <button class="nav-btn" onclick="switchView('settings', this)">
+                    <i class="fa-solid fa-server"></i> السيرفر
+                </button>
             </nav>
+
+            <div style="margin-top:20px;">
+                <div style="display:flex; justify-content:space-between; color:var(--text-secondary); font-size:0.8rem; margin-bottom:10px;">
+                    <span>المجموعات المتصلة</span>
+                    <i class="fa-solid fa-rotate" style="cursor:pointer" onclick="updateCallsList()"></i>
+                </div>
+                <div class="active-groups-mini" id="groupsList">
+                    <!-- سيتم تعبئة القائمة هنا -->
+                    <div style="text-align:center; padding:20px; color:#555;">جاري البحث...</div>
+                </div>
+            </div>
+
+            <button class="action-btn btn-danger" onclick="window.location.href='/logout'" style="margin-top:auto">
+                <i class="fa-solid fa-power-off"></i> تسجيل خروج
+            </button>
         </aside>
 
-        <!-- CONTENT STAGE -->
-        <main class="main-stage">
+        <!-- المسرح الرئيسي -->
+        <main class="glass-panel main-stage">
             
-            <!-- VIEW: DASHBOARD -->
-            <div id="view-dashboard" class="view-section">
-                <div class="grid-dashboard">
-                    
-                    <!-- LEFT COLUMN: PLAYER -->
-                    <div class="d-flex flex-col gap-20">
-                        <!-- PLAYER CARD -->
-                        <div class="card" style="padding:0; border:none; background:transparent; overflow:visible;">
-                            <div class="player-wrapper">
-                                <video id="main-player" playsinline preload="auto" poster="https://telegra.ph/file/5eb6df308e92f4477813d.jpg"></video>
-                                <div class="player-overlay">
-                                    <div class="track-info-large">
-                                        <div class="track-meta font-tech">
-                                            <span class="live-badge">LIVE STREAM</span>
-                                            <span id="p-artist">No Signal</span>
-                                        </div>
-                                        <h2 class="track-title" id="p-title">System Standby</h2>
-                                    </div>
-                                    <div class="player-controls">
-                                        <button class="p-btn" title="Seek Back" onclick="showToast('البث المباشر لا يدعم الرجوع', 'warning')"><i class="fa-solid fa-rotate-left"></i></button>
-                                        <button class="p-btn play-xl" id="btn-play-pause" onclick="togglePlay()"><i class="fa-solid fa-play"></i></button>
-                                        <button class="p-btn" title="Skip Track" onclick="playerAction('skip')"><i class="fa-solid fa-forward-step"></i></button>
-                                        
-                                        <div style="flex:1"></div>
-                                        
-                                        <button class="p-btn" title="Play URL" onclick="openModal('yt-modal')"><i class="fa-brands fa-youtube"></i></button>
-                                        <button class="p-btn" title="Mute" onclick="toggleMute()"><i class="fa-solid fa-volume-high" id="vol-icon"></i></button>
-                                        <button class="p-btn" title="Fullscreen" onclick="toggleFullscreen()"><i class="fa-solid fa-expand"></i></button>
-                                    </div>
-                                </div>
-                            </div>
+            <!-- الشريط العلوي -->
+            <header class="top-bar glass-panel" style="border-radius: var(--radius-lg); margin: 20px 20px 0 20px;">
+                <button class="mobile-menu-btn" onclick="toggleSidebar()"><i class="fa-solid fa-bars"></i></button>
+                
+                <div class="focus-toggle" id="focusBtn" onclick="toggleFocusMode()">
+                    <i class="fa-solid fa-eye"></i> <span>وضع التركيز (Server Focus)</span>
+                </div>
+
+                <div class="user-pill">
+                    <div style="text-align:left;">
+                        <div style="font-weight:bold; font-size:0.9rem;">Root Admin</div>
+                        <div style="font-size:0.7rem; color:var(--accent-green);">Online <span id="ping-badge">--ms</span></div>
+                    </div>
+                    <img src="https://ui-avatars.com/api/?name=Admin&background=0A84FF&color=fff" class="user-avatar">
+                </div>
+            </header>
+
+            <div style="padding: 20px;">
+                
+                <!-- [VIEW 1] DASHBOARD -->
+                <div id="view-dashboard" class="view-section">
+                    <div class="grid-2">
+                        <!-- عمود المشغل -->
+                        <div style="display:flex; flex-direction:column; gap:20px;">
                             
-                            <!-- LIVE STATS ROW -->
-                            <div class="stats-row">
-                                <div class="stat-box">
-                                    <div class="stat-val font-tech" id="stat-cpu">0%</div>
-                                    <div class="stat-label"><i class="fa-solid fa-microchip"></i> CPU LOAD</div>
-                                </div>
-                                <div class="stat-box">
-                                    <div class="stat-val font-tech" id="stat-ram">0%</div>
-                                    <div class="stat-label"><i class="fa-solid fa-memory"></i> RAM USAGE</div>
-                                </div>
-                                <div class="stat-box">
-                                    <div class="stat-val font-tech" id="stat-ping">0ms</div>
-                                    <div class="stat-label"><i class="fa-solid fa-network-wired"></i> LATENCY</div>
+                            <!-- كارت الفيديو السينمائي -->
+                            <div class="cinema-card">
+                                <video id="stream-player" playsinline poster="https://telegra.ph/file/5eb6df308e92f4477813d.jpg"></video>
+                                <div class="player-hud">
+                                    <div class="track-info">
+                                        <h2 class="track-title" id="track-title">System Idle</h2>
+                                        <div class="track-artist" id="track-artist">Select a group to start monitoring</div>
+                                    </div>
+                                    
+                                    <!-- شريط الوقت (للعرض فقط لأن البث مباشر) -->
+                                    <div class="seek-wrapper">
+                                        <span id="curr-time">00:00</span>
+                                        <input type="range" value="0" min="0" max="100" id="seek-bar" onchange="seekLocal(this.value)">
+                                        <span id="dur-time">LIVE</span>
+                                    </div>
+
+                                    <!-- أزرار التحكم -->
+                                    <div class="controls-row">
+                                        <button class="glass-btn" title="Seek Back 10s" onclick="playerCmd('seek_back')"><i class="fa-solid fa-rotate-left"></i></button>
+                                        <button class="glass-btn" title="Pause" onclick="playerCmd('pause')"><i class="fa-solid fa-pause"></i></button>
+                                        
+                                        <button class="glass-btn play-btn-lg" id="play-pause-btn" onclick="togglePlayLocal()">
+                                            <i class="fa-solid fa-play"></i>
+                                        </button>
+                                        
+                                        <button class="glass-btn" title="Next" onclick="playerCmd('skip')"><i class="fa-solid fa-forward-step"></i></button>
+                                        <button class="glass-btn" title="Seek Fwd 10s" onclick="playerCmd('seek_fwd')"><i class="fa-solid fa-rotate-right"></i></button>
+                                        
+                                        <div style="width:20px;"></div> <!-- فاصل -->
+                                        
+                                        <button class="glass-btn" onclick="toggleMute()"><i class="fa-solid fa-volume-high" id="vol-icon"></i></button>
+                                        <button class="glass-btn" onclick="toggleFullscreen()"><i class="fa-solid fa-expand"></i></button>
+                                    </div>
                                 </div>
                             </div>
+
+                            <!-- الإحصائيات الحية -->
+                            <div class="widget-card glass-panel" style="border-radius: var(--radius-lg);">
+                                <h3 style="margin:0; color:var(--text-secondary)">مراقبة الموارد (Live Resources)</h3>
+                                <div class="stat-row">
+                                    <div class="stat-item">
+                                        <div class="stat-num" id="cpu-val">0%</div>
+                                        <div style="font-size:0.8rem">CPU Load</div>
+                                    </div>
+                                    <div class="stat-item">
+                                        <div class="stat-num" id="ram-val">0%</div>
+                                        <div style="font-size:0.8rem">RAM Usage</div>
+                                    </div>
+                                    <div class="stat-item">
+                                        <div class="stat-num" id="ping-val">0ms</div>
+                                        <div style="font-size:0.8rem">Telegram Ping</div>
+                                    </div>
+                                </div>
+                            </div>
+
                         </div>
 
-                        <!-- QUEUE CARD -->
-                        <div class="card">
-                            <div class="card-header">
-                                <div class="card-title"><i class="fa-solid fa-layer-group" style="color:var(--accent-secondary)"></i> الطابور (Media Queue)</div>
-                                <button class="titan-btn text-xs" style="height:35px;" onclick="playerAction('stop')"><i class="fa-solid fa-trash"></i> إفراغ</button>
+                        <!-- عمود التحكم الجانبي -->
+                        <div style="display:flex; flex-direction:column; gap:20px;">
+                            
+                            <div class="widget-card glass-panel" style="border-radius: var(--radius-lg);">
+                                <h3 style="margin-bottom:15px; display:flex; align-items:center; gap:10px;">
+                                    <i class="fa-solid fa-gamepad" style="color:var(--accent-purple)"></i> تحكم سريع
+                                </h3>
+                                
+                                <button class="action-btn" onclick="toggleModal('mediaModal')">
+                                    <i class="fa-brands fa-youtube" style="color:#f00"></i> تشغيل من الرابط/بحث
+                                </button>
+                                <button class="action-btn" onclick="playerCmd('resume')">
+                                    <i class="fa-solid fa-play"></i> استئناف البث (Resume)
+                                </button>
+                                <button class="action-btn" onclick="playerCmd('loop')">
+                                    <i class="fa-solid fa-repeat"></i> تكرار (Loop)
+                                </button>
+                                <button class="action-btn btn-danger" onclick="playerCmd('stop')">
+                                    <i class="fa-solid fa-stop"></i> إيقاف وتفريغ الطابور
+                                </button>
                             </div>
-                            <div class="list-container" id="queue-list">
-                                <div class="text-center text-muted" style="padding:40px; border:1px dashed rgba(255,255,255,0.1); border-radius:10px;">
-                                    <i class="fa-solid fa-music" style="font-size:2rem; margin-bottom:10px; opacity:0.5;"></i><br>
-                                    لا يوجد وسائط في الانتظار
+
+                            <div class="widget-card glass-panel" style="flex:1; border-radius: var(--radius-lg);">
+                                <h3 style="margin-bottom:10px;">السجل المصغر</h3>
+                                <div id="mini-log" style="font-family:monospace; font-size:0.8rem; color:var(--accent-green); opacity:0.8; overflow:hidden;">
+                                    > System Ready...<br>
+                                    > Waiting for commands...
                                 </div>
                             </div>
+
                         </div>
                     </div>
+                </div>
 
-                    <!-- RIGHT COLUMN: SIDE TOOLS -->
-                    <div class="d-flex flex-col gap-20">
+                <!-- [VIEW 2] SECURITY -->
+                <div id="view-security" class="view-section hidden-section">
+                    <div class="widget-card glass-panel" style="border-radius: var(--radius-lg);">
+                        <h2><i class="fa-solid fa-user-shield"></i> الحظر العام (GBAN System)</h2>
+                        <p style="color:var(--text-secondary)">حظر مستخدم نهائياً من استخدام البوت في جميع المجموعات.</p>
                         
-                        <!-- ACTIVE CALLS -->
-                        <div class="card" style="max-height: 500px;">
-                            <div class="card-header">
-                                <div class="card-title"><i class="fa-solid fa-tower-broadcast" style="color:var(--success)"></i> البث النشط</div>
-                                <button class="titan-btn text-xs" style="height:35px; width:35px; padding:0;" onclick="fetchActiveCalls()"><i class="fa-solid fa-rotate"></i></button>
+                        <div style="margin-top:20px; max-width:500px;">
+                            <input type="number" id="sec-uid" class="neon-input" placeholder="Telegram User ID (Ex: 123456789)">
+                            <div style="display:flex; gap:10px;">
+                                <button class="action-btn btn-danger" onclick="securityAct('block')">حظر المستخدم</button>
+                                <button class="action-btn" onclick="securityAct('unblock')">رفع الحظر</button>
                             </div>
-                            <div class="list-container" id="active-calls-list">
-                                <div class="text-center text-muted" style="padding:30px">
-                                    <i class="fa-solid fa-circle-notch fa-spin"></i> جاري البحث عن مجموعات...
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- SYSTEM TOOLS -->
-                        <div class="card">
-                            <div class="card-header">
-                                <div class="card-title"><i class="fa-solid fa-screwdriver-wrench"></i> أوامر النظام</div>
-                            </div>
-                            <div class="d-flex flex-col gap-10">
-                                <button class="titan-btn w-100" onclick="sysAction('turbo')">
-                                    <i class="fa-solid fa-rocket" style="color:var(--warning)"></i> تنظيف الكاش (Turbo Mode)
-                                </button>
-                                <button class="titan-btn w-100" onclick="sysAction('update')">
-                                    <i class="fa-brands fa-git-alt"></i> تحديث السورس (Git Pull)
-                                </button>
-                                <div class="danger-zone" style="margin-top:10px;">
-                                    <p class="text-xs text-muted" style="margin-bottom:10px;">منطقة الخطر</p>
-                                    <button class="titan-btn w-100 danger" onclick="sysAction('restart')">
-                                        <i class="fa-solid fa-rotate"></i> إعادة تشغيل البوت (Reboot)
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- LOGS MINI -->
-                        <div class="card" style="flex:1; min-height:200px;">
-                            <div class="card-header">
-                                <div class="card-title"><i class="fa-solid fa-terminal"></i> سجلات النظام</div>
-                                <a href="/api/utils/logs" target="_blank" class="text-xs text-muted" style="text-decoration:none;"><i class="fa-solid fa-external-link-alt"></i> كامل</a>
-                            </div>
-                            <div id="mini-logs" style="font-family:'Courier New'; font-size:0.75rem; color:#0f0; background:#000; padding:10px; border-radius:5px; height:100%; overflow:hidden; opacity:0.8; line-height:1.4;">
-                                [SYSTEM] Initializing Titan Kernel...<br>
-                                [NET] Connected to Telegram API...<br>
-                                [AUDIO] PyTgCalls Client Started...<br>
-                                [WEB] Flask Server Running on Port 8080...<br>
-                                <span class="blink">_</span>
-                            </div>
-                        </div>
-
-                    </div>
-                </div>
-            </div>
-
-            <!-- VIEW: SECURITY -->
-            <div id="view-security" class="view-section hidden">
-                <div class="grid-dashboard">
-                    <div class="card">
-                        <div class="card-header"><div class="card-title"><i class="fa-solid fa-user-lock"></i> حظر المستخدمين (Global Ban)</div></div>
-                        <p class="text-muted text-sm">منع مستخدم من استخدام البوت في جميع المجموعات.</p>
-                        <div class="input-group">
-                            <input id="ban-uid" type="number" class="titan-input" placeholder="User ID (Ex: 123456789)">
-                            <button class="titan-btn danger" onclick="securityAction('block_user', 'enable')">حظر</button>
-                            <button class="titan-btn" onclick="securityAction('block_user', 'disable')">فك حظر</button>
-                        </div>
-                    </div>
-                    <div class="card">
-                        <div class="card-header"><div class="card-title"><i class="fa-solid fa-ban"></i> حظر المجموعات (Blacklist)</div></div>
-                        <p class="text-muted text-sm">منع البوت من العمل في مجموعة معينة.</p>
-                        <div class="input-group">
-                            <input id="ban-chatid" type="text" class="titan-input" placeholder="Chat ID (Ex: -1001234...)">
-                            <button class="titan-btn danger" onclick="securityAction('blacklist_chat', 'enable')">تجميد</button>
-                            <button class="titan-btn" onclick="securityAction('blacklist_chat', 'disable')">سماح</button>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- VIEW: SETTINGS (Placeholder for future expansion) -->
-            <div id="view-settings" class="view-section hidden">
-                <div class="card text-center">
-                    <i class="fa-solid fa-gear" style="font-size:3rem; margin-bottom:20px; color:var(--text-muted)"></i>
-                    <h2>إعدادات النظام المتقدمة</h2>
-                    <p>هذا القسم قيد التطوير في الإصدار القادم.</p>
+                <!-- [VIEW 3] SETTINGS -->
+                <div id="view-settings" class="view-section hidden-section">
+                    <div class="widget-card glass-panel" style="border-radius: var(--radius-lg);">
+                        <h2><i class="fa-solid fa-gears"></i> صيانة السيرفر (Server Ops)</h2>
+                        
+                        <div class="grid-2" style="margin-top:20px;">
+                            <button class="action-btn" onclick="sysAct('clean')">
+                                <i class="fa-solid fa-broom"></i> تنظيف الكاش (Turbo Clean)
+                            </button>
+                            <button class="action-btn" onclick="sysAct('update')">
+                                <i class="fa-brands fa-git-alt"></i> تحديث السورس (Git Pull)
+                            </button>
+                            <button class="action-btn btn-danger" onclick="sysAct('restart')">
+                                <i class="fa-solid fa-power-off"></i> إعادة تشغيل البوت (Reboot)
+                            </button>
+                            <a href="/api/logs" target="_blank" class="action-btn" style="text-decoration:none;">
+                                <i class="fa-solid fa-file-code"></i> تحميل السجلات (Logs)
+                            </a>
+                        </div>
+                    </div>
                 </div>
+
             </div>
-            
         </main>
     </div>
-
-    <!-- JAVASCRIPT KERNEL -->
+    <!-- سكربت المحرك (TITAN KERNEL JS) -->
     <script>
-        /**
-         * TITAN OS KERNEL SCRIPT (v4.0.0)
-         * - Handles Animation, API Calls, Video Streaming, and UI Interactions.
-         */
-
-        // --- GLOBAL STATE ---
         const API_BASE = '/api';
-        let currentChatId = localStorage.getItem('titan_chat_id') || null;
-        let isPlaying = false;
-        let isMuted = false;
-        let updateInterval = null;
+        let currentChatId = localStorage.getItem('titan_chat_id'); // حفظ الجروب المختار
+        let focusMode = false;
+        let statsInterval = null;
 
-        // --- [1] STAR ENGINE (CANVAS ANIMATION) ---
-        const canvas = document.getElementById('star-canvas');
+        // 1. تهيئة النظام عند التحميل
+        document.addEventListener('DOMContentLoaded', () => {
+            initCosmos();
+            updateCallsList();
+            startMonitoring();
+            
+            // استعادة الجروب الأخير
+            if(currentChatId) {
+                log(`Resumed session for Chat: ${currentChatId}`);
+            }
+        });
+
+        // 2. محرك الخلفية (Cosmos Engine) - أنيميشن النجوم
+        const canvas = document.getElementById('cosmos-canvas');
         const ctx = canvas.getContext('2d');
-        let width, height;
-        const stars = [];
-        let shootingStar = null;
+        let stars = [];
+
+        function initCosmos() {
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            
+            // إنشاء 100 نجمة
+            for(let i=0; i<100; i++) stars.push(createStar());
+            animateCosmos();
+        }
+
+        function createStar() {
+            return {
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                size: Math.random() * 2,
+                speed: Math.random() * 0.5,
+                alpha: Math.random()
+            };
+        }
 
         function resizeCanvas() {
-            width = canvas.width = window.innerWidth;
-            height = canvas.height = window.innerHeight;
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
         }
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
 
-        class Star {
-            constructor() { this.reset(); }
-            reset() {
-                this.x = Math.random() * width;
-                this.y = Math.random() * height;
-                this.size = Math.random() * 2;
-                this.alpha = Math.random();
-                this.speed = Math.random() * 0.05;
-                this.blinkSpeed = 0.005 + Math.random() * 0.01;
-            }
-            update() {
-                this.alpha += this.blinkSpeed;
-                if (this.alpha > 1 || this.alpha < 0) this.blinkSpeed *= -1;
-                this.y -= this.speed;
-                if (this.y < 0) this.y = height;
-            }
-            draw() {
-                ctx.fillStyle = `rgba(255, 255, 255, ${Math.abs(this.alpha)})`;
+        function animateCosmos() {
+            if(focusMode) return; // توفير الموارد في وضع التركيز
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#FFF';
+            
+            stars.forEach(star => {
+                star.y -= star.speed;
+                if(star.y < 0) star.y = canvas.height;
+                
+                ctx.globalAlpha = star.alpha;
                 ctx.beginPath();
-                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.arc(star.x, star.y, star.size, 0, Math.PI*2);
                 ctx.fill();
+            });
+            requestAnimationFrame(animateCosmos);
+        }
+
+        // 3. وظائف النظام الأساسية
+        function toggleSidebar() {
+            document.getElementById('mainSidebar').classList.toggle('active');
+        }
+
+        function switchView(viewId, btn) {
+            // إخفاء الكل وإظهار المطلوب
+            document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden-section'));
+            document.getElementById('view-' + viewId).classList.remove('hidden-section');
+            
+            // تحديث الأزرار
+            document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+            if(btn) btn.classList.add('active');
+            
+            // إغلاق القائمة في الموبايل
+            if(window.innerWidth < 1100) document.getElementById('mainSidebar').classList.remove('active');
+        }
+
+        function toggleFocusMode() {
+            focusMode = !focusMode;
+            const btn = document.getElementById('focusBtn');
+            if(focusMode) {
+                btn.classList.add('active');
+                ctx.clearRect(0, 0, canvas.width, canvas.height); // مسح الخلفية
+                log("Server Focus Mode: ON (Animation Stopped)");
+            } else {
+                btn.classList.remove('active');
+                animateCosmos();
+                log("Server Focus Mode: OFF");
             }
         }
 
-        // Initialize 250 Stars
-        for(let i=0; i<250; i++) stars.push(new Star());
-
-        class Meteor {
-            constructor() {
-                this.active = false;
-                this.x = 0; this.y = 0;
-                this.vx = 0; this.vy = 0;
-                this.opacity = 0;
-            }
-            fire() {
-                this.active = true;
-                this.x = Math.random() * width;
-                this.y = 0;
-                this.vx = -3 + Math.random() * 6; 
-                this.vy = 4 + Math.random() * 4; 
-                this.opacity = 1;
-            }
-            update() {
-                if(!this.active) return;
-                this.x += this.vx;
-                this.y += this.vy;
-                this.opacity -= 0.005;
-                if(this.y > height || this.opacity <= 0) this.active = false;
-            }
-            draw() {
-                if(!this.active) return;
-                const gradient = ctx.createLinearGradient(this.x, this.y, this.x - this.vx * 10, this.y - this.vy * 10);
-                gradient.addColorStop(0, 'rgba(255,255,255,1)');
-                gradient.addColorStop(1, 'rgba(10, 132, 255, 0)');
-                
-                ctx.strokeStyle = gradient;
-                ctx.lineWidth = 2;
-                ctx.lineCap = 'round';
-                ctx.beginPath();
-                ctx.moveTo(this.x, this.y);
-                ctx.lineTo(this.x - this.vx * 15, this.y - this.vy * 15);
-                ctx.stroke();
-                
-                // Glow Head
-                ctx.shadowBlur = 10;
-                ctx.shadowColor = "#fff";
-                ctx.fillStyle = "#fff";
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, 1.5, 0, Math.PI*2);
-                ctx.fill();
-                ctx.shadowBlur = 0;
-            }
-        }
-        
-        const meteor = new Meteor();
-
-        function animateFrame() {
-            ctx.clearRect(0, 0, width, height);
-            stars.forEach(s => { s.update(); s.draw(); });
-            meteor.update();
-            meteor.draw();
-            requestAnimationFrame(animateFrame);
-        }
-        animateFrame();
-
-        // Fire meteor every 30-60 seconds
-        setInterval(() => { meteor.fire(); }, 30000 + Math.random() * 30000);
-        setTimeout(() => meteor.fire(), 2000); // Initial fire
-
-        // --- [2] UI LOGIC ---
-        function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
-        
-        function switchTab(tabId, navElement) {
-            document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
-            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-            
-            document.getElementById(`view-${tabId}`).classList.remove('hidden');
-            if(navElement) navElement.classList.add('active');
-            
-            if(window.innerWidth < 1024) document.getElementById('sidebar').classList.remove('open');
+        function log(msg) {
+            const el = document.getElementById('mini-log');
+            el.innerHTML = `> ${msg}<br>${el.innerHTML}`;
         }
 
-        function showToast(msg, type='success') {
-            const container = document.getElementById('toast-container');
-            const toast = document.createElement('div');
-            toast.className = 'toast';
+        // 4. الاتصال بالبايثون (API Calls)
+        async function updateCallsList() {
+            const list = document.getElementById('groupsList');
+            list.innerHTML = '<div style="text-align:center; padding:10px;"><i class="fa-solid fa-circle-notch fa-spin"></i></div>';
             
-            let iconCode = type === 'error' ? 'fa-circle-xmark' : 
-                           type === 'warning' ? 'fa-triangle-exclamation' : 'fa-circle-check';
-            let color = type === 'error' ? 'var(--danger)' : 
-                        type === 'warning' ? 'var(--warning)' : 'var(--success)';
-            
-            toast.innerHTML = `<i class="fa-solid ${iconCode}" style="color:${color}; font-size:1.2rem;"></i> <span>${msg}</span>`;
-            
-            container.appendChild(toast);
-            setTimeout(() => {
-                toast.style.opacity = '0';
-                toast.style.transform = 'translateY(20px)';
-                setTimeout(() => toast.remove(), 300);
-            }, 4000);
-        }
-
-        function openModal(id) { document.getElementById(id).classList.add('open'); }
-        function closeModal(id) { document.getElementById(id).classList.remove('open'); }
-
-        // --- [3] API & PLAYER LOGIC ---
-        
-        async function fetchStatus() {
-            try {
-                const res = await fetch(`${API_BASE}/settings/status`);
-                const data = await res.json();
-                
-                document.getElementById('stat-ram').innerText = data.ram + '%';
-                document.getElementById('stat-cpu').innerText = data.cpu + '%';
-                document.getElementById('stat-ping').innerText = data.ping + 'ms';
-                document.getElementById('ping-sidebar').innerText = data.ping + 'ms';
-            } catch(e) { console.error('Status Fetch Error'); }
-        }
-
-        async function fetchActiveCalls() {
-            const list = document.getElementById('active-calls-list');
             try {
                 const res = await fetch(`${API_BASE}/player/active_calls`);
                 const data = await res.json();
                 
                 list.innerHTML = '';
                 if(!data.chats || data.chats.length === 0) {
-                    list.innerHTML = `
-                        <div class="text-center text-muted" style="padding:30px">
-                            <i class="fa-solid fa-microphone-slash" style="font-size:1.5rem; opacity:0.5; margin-bottom:10px;"></i><br>
-                            لا توجد مكالمات نشطة حالياً
-                        </div>`;
+                    list.innerHTML = '<div style="text-align:center; color:#666; font-size:0.9rem;">لا توجد مكالمات نشطة</div>';
                     return;
                 }
 
                 data.chats.forEach(chat => {
-                    const div = document.createElement('div');
-                    div.className = `list-item ${currentChatId == chat.chat_id ? 'active' : ''}`;
-                    div.onclick = () => selectChat(chat.chat_id, chat.name);
-                    
-                    div.innerHTML = `
-                        <img src="${chat.cover || 'https://telegra.ph/file/5eb6df308e92f4477813d.jpg'}" class="list-thumb">
-                        <div class="list-content">
-                            <div class="list-title">${chat.name}</div>
-                            <div class="list-sub font-tech"><i class="fa-solid fa-id-card"></i> ${chat.chat_id}</div>
+                    const isSelected = currentChatId == chat.chat_id ? 'selected' : '';
+                    const html = `
+                    <div class="mini-group-item ${isSelected}" onclick="selectChat('${chat.chat_id}', '${chat.name}')">
+                        <div class="pulse-dot"></div>
+                        <div style="overflow:hidden;">
+                            <div style="font-weight:bold; font-size:0.9rem; white-space:nowrap;">${chat.name}</div>
+                            <div style="font-size:0.7rem; color:#888;">ID: ${chat.chat_id}</div>
                         </div>
-                        <i class="fa-solid fa-chevron-left text-muted text-xs"></i>
-                    `;
-                    list.appendChild(div);
+                    </div>`;
+                    list.innerHTML += html;
                 });
-            } catch(e) { 
-                list.innerHTML = '<div class="text-center text-danger">خطأ في الاتصال بالسيرفر</div>';
-            }
+
+            } catch(e) { console.error(e); }
         }
 
         function selectChat(id, name) {
             currentChatId = id;
             localStorage.setItem('titan_chat_id', id);
-            showToast(`تم الاتصال بالمجموعة: ${name}`);
-            fetchActiveCalls(); // Update visual selection
-            updatePlayerInfo(); // Immediate update
+            log(`Connected to Group: ${name}`);
+            updateCallsList(); // لتحديث التظليل
+            refreshPlayer(); // تحديث المشغل فوراً
         }
 
-        // --- VIDEO PLAYER SYNC ---
-        async function updatePlayerInfo() {
+        // 5. التحكم في المشغل
+        function refreshPlayer() {
+            if(!currentChatId) return;
+            
+            // تحديث مصدر الفيديو مع إضافة timestamp لمنع الكاش
+            const player = document.getElementById('stream-player');
+            const newSrc = `/stream/live/${currentChatId}?t=${Date.now()}`;
+            
+            // التحديث فقط إذا تغير المصدر
+            if(!player.src.includes(currentChatId)) {
+                player.src = newSrc;
+                player.load();
+                // محاولة التشغيل التلقائي (قد تمنعها المتصفحات)
+                player.play().catch(e => console.log("Autoplay blocked"));
+            }
+            
+            fetchTrackInfo();
+        }
+
+        async function fetchTrackInfo() {
             if(!currentChatId) return;
             try {
                 const res = await fetch(`${API_BASE}/player/track_info/${currentChatId}`);
                 const data = await res.json();
                 
-                // Update Metadata
-                document.getElementById('p-title').innerText = data.title || "No Media";
-                document.getElementById('p-artist').innerText = data.artist || "Connected";
+                document.getElementById('track-title').innerText = data.title || "Unknown";
+                document.getElementById('track-artist').innerText = data.artist || "Unknown";
                 
-                // Update Play/Pause Icon
-                const icon = document.getElementById('btn-play-pause').querySelector('i');
-                if(data.is_playing) {
-                    icon.className = 'fa-solid fa-pause';
-                    isPlaying = true;
-                } else {
-                    icon.className = 'fa-solid fa-play';
-                    isPlaying = false;
-                }
+                // تحديث زر التشغيل بناءً على حالة البوت
+                const icon = document.getElementById('play-pause-btn').querySelector('i');
+                icon.className = data.is_playing ? 'fa-solid fa-pause' : 'fa-solid fa-play';
 
-                // Update Video Source (Smart Switching)
-                const video = document.getElementById('main-player');
-                const streamUrl = `/stream/live/${currentChatId}`;
-                
-                // Only reload if the source is different or empty
-                if (!video.src || !video.src.includes(currentChatId)) {
-                    // Add timestamp to prevent caching old streams
-                    video.src = streamUrl + `?t=${Date.now()}`;
-                    video.load();
-                    
-                    const playPromise = video.play();
-                    if (playPromise !== undefined) {
-                        playPromise.catch(error => {
-                            console.log("Auto-play prevented by browser policy.");
-                            // Show a "Click to Play" overlay if needed
-                        });
-                    }
-                }
-
-            } catch(e) { console.error('Player Sync Error', e); }
+            } catch(e) {}
         }
 
-        // --- CONTROLS ---
-        async function playerAction(cmd) {
-            if(!currentChatId) return showToast('يرجى اختيار مجموعة من القائمة أولاً', 'error');
+        async function playerCmd(cmd) {
+            if(!currentChatId) return alert("الرجاء اختيار مجموعة من القائمة الجانبية أولاً!");
             
-            const fd = new FormData();
-            fd.append('cmd', cmd);
-            fd.append('chat_id', currentChatId);
+            // التعامل مع التقديم والتأخير محلياً للمشغل (للمعاينة)
+            const player = document.getElementById('stream-player');
+            if (cmd === 'seek_fwd') { player.currentTime += 10; return; }
+            if (cmd === 'seek_back') { player.currentTime -= 10; return; }
+
+            // إرسال الأمر للبوت (Pause, Resume, Skip, Stop)
+            const formData = new FormData();
+            formData.append('cmd', cmd);
+            formData.append('chat_id', currentChatId);
 
             try {
-                const res = await fetch(`${API_BASE}/player/control`, { method:'POST', body: fd });
-                const j = await res.json();
+                const res = await fetch(`${API_BASE}/player/control`, { method:'POST', body: formData });
+                const json = await res.json();
                 
-                if(j.status === 'success' || j.status === 'OK') {
-                    showToast('تم تنفيذ الأمر بنجاح');
-                    setTimeout(updatePlayerInfo, 500); // Quick refresh
+                if(json.status === 'Success') {
+                    log(`Command Executed: ${cmd}`);
+                    setTimeout(fetchTrackInfo, 1000); // تحديث المعلومات
                 } else {
-                    showToast(j.error || 'حدث خطأ غير معروف', 'error');
+                    log(`Error: ${json.error}`);
                 }
-            } catch(e) { showToast('فشل الاتصال بالبوت', 'error'); }
+            } catch(e) { log("Connection Error"); }
         }
 
-        function togglePlay() {
-            playerAction(isPlaying ? 'pause' : 'resume');
+        // تشغيل ميديا جديدة (بحث/رابط)
+        function toggleModal(id) {
+            document.getElementById(id).classList.toggle('active');
         }
 
-        function toggleMute() {
-            const video = document.getElementById('main-player');
-            video.muted = !video.muted;
-            document.getElementById('vol-icon').className = video.muted ? 'fa-solid fa-volume-xmark' : 'fa-solid fa-volume-high';
-        }
-        
-        function toggleFullscreen() {
-            const elem = document.querySelector('.player-wrapper');
-            if (!document.fullscreenElement) {
-                elem.requestFullscreen().catch(err => {
-                    showToast(`Error: ${err.message}`, 'error');
+        async function submitPlayReq() {
+            const query = document.getElementById('mediaInput').value;
+            if(!query || !currentChatId) return alert("أدخل الرابط واختر المجموعة!");
+            
+            toggleModal('mediaModal');
+            log("Sending Play Request...");
+            
+            try {
+                const res = await fetch(`${API_BASE}/player/play`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ chat_id: currentChatId, query: query })
                 });
-            } else {
-                document.exitFullscreen();
-            }
+                const json = await res.json();
+                if(json.status === 'Success') log(`Playing: ${json.title}`);
+                else log(`Error: ${json.error}`);
+            } catch(e) { log("Failed to send request"); }
         }
 
-        async function playCustomTrack() {
-            const query = document.getElementById('yt-search-input').value;
-            if(!query || !currentChatId) return showToast('أدخل البحث واختر مجموعة', 'error');
+        // 6. المراقبة الدورية (Stats Loop)
+        function startMonitoring() {
+            if(statsInterval) clearInterval(statsInterval);
+            statsInterval = setInterval(async () => {
+                // جلب إحصائيات السيرفر
+                try {
+                    const res = await fetch(`${API_BASE}/system/status`);
+                    const d = await res.json();
+                    document.getElementById('cpu-val').innerText = d.cpu + '%';
+                    document.getElementById('ram-val').innerText = d.ram + '%';
+                    document.getElementById('ping-val').innerText = d.ping + 'ms';
+                    document.getElementById('ping-badge').innerText = d.ping + 'ms';
+                } catch(e) {}
+
+                // تحديث معلومات التراك إذا كان هناك جروب مختار
+                if(currentChatId) fetchTrackInfo();
+            }, 3000);
+        }
+
+        // أدوات مساعدة
+        function togglePlayLocal() {
+            const p = document.getElementById('stream-player');
+            if(p.paused) { p.play(); playerCmd('resume'); }
+            else { p.pause(); playerCmd('pause'); }
+        }
+        function toggleMute() {
+            const p = document.getElementById('stream-player');
+            p.muted = !p.muted;
+            document.getElementById('vol-icon').className = p.muted ? 'fa-solid fa-volume-xmark' : 'fa-solid fa-volume-high';
+        }
+        function toggleFullscreen() {
+            const el = document.querySelector('.cinema-card');
+            if(!document.fullscreenElement) el.requestFullscreen();
+            else document.exitFullscreen();
+        }
+        function seekLocal(val) {
+            // شريط وهمي للمشاهدة
+            const p = document.getElementById('stream-player');
+            // هذا يحتاج حساب المدة، سنتركه للعرض حالياً
+        }
+
+        // أوامر النظام والأمان
+        async function sysAct(action) {
+            if(action === 'restart' && !confirm("هل أنت متأكد من إعادة تشغيل البوت؟")) return;
+            await fetch(`${API_BASE}/system/action`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ action: action })
+            });
+            log(`System Action: ${action}`);
+        }
+
+        async function securityAct(type) {
+            const uid = document.getElementById('sec-uid').value;
+            if(!uid) return alert("أدخل الآيدي!");
             
-            closeModal('yt-modal');
-            showToast('جاري إرسال الطلب للبوت...', 'info');
-
-            const fd = new FormData();
-            fd.append('chat_id', currentChatId);
-            fd.append('query', query);
-
-            try {
-                const res = await fetch(`${API_BASE}/player/play_custom`, { method:'POST', body: fd });
-                const j = await res.json();
-                if(j.status === 'success') showToast(j.msg || 'تم التشغيل بنجاح');
-                else showToast(j.error || 'خطأ', 'error');
-            } catch(e) { showToast('فشل الاتصال', 'error'); }
+            await fetch(`${API_BASE}/security/block`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ user_id: uid, block: (type === 'block') })
+            });
+            log(`User ${type}ed: ${uid}`);
         }
 
-        async function sysAction(action) {
-            if(action === 'restart' && !confirm('تحذير: سيتم إيقاف الب
+    </script>
+</body>
+</html>
