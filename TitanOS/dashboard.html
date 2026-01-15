@@ -3,746 +3,846 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Titan OS • Ultimate Control</title>
-    
-    <!-- Fonts -->
+    <meta name="description" content="Titan OS Ultimate Control Panel">
+    <meta name="theme-color" content="#000000">
+    <title>Titan OS • Command Center</title>
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
     <style>
         /* =========================================
-           1. CORE STYLES & VARIABLES
+           1. CORE VARIABLES & RESET
            ========================================= */
         :root {
-            --bg-main: #050509;
-            --bg-glass: rgba(20, 25, 35, 0.7);
-            --bg-card: rgba(30, 35, 45, 0.4);
-            --accent: #0A84FF;
-            --accent-glow: rgba(10, 132, 255, 0.5);
+            /* Colors */
+            --bg-deep: #050507;
+            --bg-panel: rgba(20, 20, 25, 0.65);
+            --bg-card: rgba(30, 30, 35, 0.4);
+            --bg-input: rgba(0, 0, 0, 0.3);
+            
+            /* Accents */
+            --accent-primary: #0A84FF;
+            --accent-glow: rgba(10, 132, 255, 0.4);
+            --accent-secondary: #BF5AF2;
             --danger: #FF453A;
             --success: #32D74B;
             --warning: #FFD60A;
-            --text-main: #ffffff;
-            --text-muted: #8b9bb4;
-            --border: 1px solid rgba(255, 255, 255, 0.08);
-            --radius: 16px;
-            --anim: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            --text-main: #FFFFFF;
+            --text-muted: #98989F;
+
+            /* Effects */
+            --glass-blur: 24px;
+            --border-light: 1px solid rgba(255, 255, 255, 0.08);
+            --border-active: 1px solid rgba(10, 132, 255, 0.5);
+            --shadow-card: 0 10px 40px rgba(0, 0, 0, 0.5);
+            --radius-xl: 24px;
+            --radius-lg: 16px;
+            --radius-md: 10px;
+            --anim-speed: 0.3s;
         }
 
-        * { margin: 0; padding: 0; box-sizing: border-box; outline: none; -webkit-tap-highlight-color: transparent; }
-        
-        body {
-            background-color: var(--bg-main);
-            color: var(--text-main);
+        * {
+            box-sizing: border-box;
+            outline: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
             font-family: 'Cairo', sans-serif;
-            height: 100vh;
-            overflow: hidden;
-            display: flex;
+            background-color: var(--bg-deep);
+            color: var(--text-main);
+            overflow: hidden; /* App-like feel */
         }
 
-        /* Scrollbar */
-        ::-webkit-scrollbar { width: 5px; height: 5px; }
-        ::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 10px; }
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
 
-        /* Helpers */
-        .font-tech { font-family: 'Rajdhani', sans-serif; letter-spacing: 1px; }
-        .text-gradient { background: linear-gradient(135deg, #fff, var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .hidden { display: none !important; }
-        .fade-in { animation: fadeIn 0.4s ease forwards; }
-
-        /* Animation Background */
-        #star-canvas {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            z-index: -1; opacity: 0.6; pointer-events: none;
+        /* Typography Utilities */
+        .font-tech { font-family: 'Rajdhani', sans-serif; }
+        .text-sm { font-size: 0.85rem; }
+        .text-xs { font-size: 0.75rem; }
+        .text-muted { color: var(--text-muted); }
+        .text-gradient {
+            background: linear-gradient(90deg, #fff, var(--accent-primary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
 
         /* =========================================
-           2. SIDEBAR NAVIGATION
+           2. BACKGROUND ANIMATION (CANVAS)
            ========================================= */
+        #star-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        /* =========================================
+           3. LAYOUT STRUCTURE
+           ========================================= */
+        .app-container {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            width: 100%;
+            height: 100%;
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+            gap: 20px;
+        }
+
+        /* --- Sidebar --- */
         .sidebar {
-            width: 260px;
-            background: var(--bg-glass);
-            backdrop-filter: blur(20px);
-            border-left: var(--border);
+            width: 280px;
+            flex-shrink: 0;
+            background: var(--bg-panel);
+            backdrop-filter: blur(var(--glass-blur));
+            border: var(--border-light);
+            border-radius: var(--radius-xl);
+            padding: 24px;
             display: flex;
             flex-direction: column;
-            padding: 20px;
-            z-index: 100;
-            transition: transform var(--anim);
+            gap: 20px;
+            transition: transform var(--anim-speed) ease;
         }
 
         .brand {
             text-align: center;
             padding-bottom: 20px;
-            border-bottom: var(--border);
-            margin-bottom: 20px;
+            border-bottom: var(--border-light);
         }
-        .brand h1 { font-size: 1.8rem; font-weight: 900; letter-spacing: 2px; margin: 0; }
-        .brand span { color: var(--accent); font-size: 1rem; letter-spacing: 4px; display: block; margin-top: -5px; }
+        .brand h1 { margin: 0; font-size: 1.8rem; letter-spacing: 2px; text-transform: uppercase; }
+        .brand span { font-size: 0.75rem; letter-spacing: 4px; color: var(--accent-primary); opacity: 0.8; }
 
-        .nav-list { flex: 1; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+        .nav-menu { flex: 1; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
         .nav-item {
-            display: flex; align-items: center; gap: 15px;
-            padding: 12px 15px;
-            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 12px 16px;
+            border-radius: var(--radius-lg);
             color: var(--text-muted);
             cursor: pointer;
-            transition: var(--anim);
+            transition: all 0.2s ease;
             font-weight: 600;
         }
+        .nav-item i { width: 20px; text-align: center; transition: 0.2s; }
         .nav-item:hover { background: rgba(255,255,255,0.05); color: #fff; }
         .nav-item.active {
             background: rgba(10, 132, 255, 0.15);
-            color: var(--accent);
+            color: var(--accent-primary);
             border: 1px solid rgba(10, 132, 255, 0.2);
-            box-shadow: 0 0 15px rgba(10, 132, 255, 0.1);
         }
-        .nav-item i { width: 20px; text-align: center; }
+        .nav-item.active i { transform: scale(1.1); text-shadow: 0 0 10px var(--accent-primary); }
 
-        /* User Status */
-        .user-status {
-            background: rgba(0,0,0,0.3);
-            padding: 15px;
-            border-radius: var(--radius);
-            display: flex; align-items: center; gap: 10px;
-            border: var(--border);
+        .user-mini {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px;
+            background: rgba(0,0,0,0.2);
+            border-radius: var(--radius-lg);
+            border: var(--border-light);
         }
-        .status-dot { width: 10px; height: 10px; background: var(--success); border-radius: 50%; box-shadow: 0 0 10px var(--success); }
-        .ping-val { font-size: 0.8rem; color: var(--text-muted); }
+        .user-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid var(--accent-secondary); }
+        .user-info h4 { margin: 0; font-size: 0.9rem; }
+        .ping-dot { width: 8px; height: 8px; background: var(--success); border-radius: 50%; display: inline-block; box-shadow: 0 0 8px var(--success); }
 
-        /* =========================================
-           3. MAIN CONTENT AREA
-           ========================================= */
-        .main-content {
+        /* --- Main Content --- */
+        .main-stage {
             flex: 1;
-            padding: 25px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
             overflow-y: auto;
-            position: relative;
+            overflow-x: hidden;
+            padding-right: 5px; /* space for scrollbar */
         }
 
-        .mobile-header {
-            display: none;
+        /* Top Bar (Mobile mainly) */
+        .top-bar { display: none; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+
+        /* Grid System */
+        .grid-dashboard {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            grid-template-rows: auto auto;
+            gap: 20px;
+        }
+
+        /* Card Utils */
+        .card {
+            background: var(--bg-panel);
+            backdrop-filter: blur(var(--glass-blur));
+            border: var(--border-light);
+            border-radius: var(--radius-xl);
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .card-header {
+            display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+            margin-bottom: 16px;
         }
-        .menu-btn { background: none; border: none; color: #fff; font-size: 1.5rem; cursor: pointer; }
-
-        /* SECTIONS GRID */
-        .view-section { display: none; opacity: 0; }
-        .view-section.active { display: block; animation: fadeIn 0.4s forwards; opacity: 1; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-
-        /* =========================================
-           4. MODULES & CARDS
-           ========================================= */
+        .card-title { font-weight: 700; display: flex; align-items: center; gap: 8px; }
         
-        /* Stats Bar */
-        .stats-grid {
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 15px; margin-bottom: 25px;
-        }
-        .stat-card {
-            background: var(--bg-card);
-            border: var(--border);
-            padding: 15px;
-            border-radius: var(--radius);
-            text-align: center;
-            backdrop-filter: blur(10px);
-        }
-        .stat-val { font-size: 1.8rem; font-weight: 700; color: var(--accent); text-shadow: 0 0 15px var(--accent-glow); }
-        .stat-label { font-size: 0.8rem; color: var(--text-muted); letter-spacing: 1px; margin-top: 5px; }
+        /* =========================================
+           4. MODULES (PLAYER, STATS, LISTS)
+           ========================================= */
 
-        /* Main Player */
-        .player-container {
+        /* -- Video Player -- */
+        .player-wrapper {
+            width: 100%;
+            aspect-ratio: 16/9;
             background: #000;
-            border-radius: 20px;
+            border-radius: var(--radius-lg);
             overflow: hidden;
             position: relative;
             border: 1px solid rgba(255,255,255,0.1);
             box-shadow: 0 20px 50px rgba(0,0,0,0.6);
-            aspect-ratio: 16/9;
-            max-height: 500px;
-            margin-bottom: 25px;
         }
-        video { width: 100%; height: 100%; object-fit: contain; }
-        .player-overlay {
-            position: absolute; bottom: 0; left: 0; width: 100%;
-            background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
-            padding: 30px;
-            display: flex; flex-direction: column; gap: 15px;
-        }
-        .track-title { font-size: 1.8rem; font-weight: 800; }
-        .track-meta { color: var(--text-muted); font-size: 1rem; display: flex; align-items: center; gap: 10px; }
-
-        .controls { display: flex; align-items: center; gap: 15px; margin-top: 10px; }
-        .btn-ctrl {
-            width: 45px; height: 45px; border-radius: 12px;
-            background: rgba(255,255,255,0.1); border: none; color: #fff;
-            cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; font-size: 1.2rem;
-        }
-        .btn-ctrl:hover { background: rgba(255,255,255,0.2); transform: scale(1.05); }
-        .btn-play {
-            width: 65px; height: 65px; border-radius: 50%;
-            background: var(--accent); box-shadow: 0 0 20px var(--accent-glow);
-            font-size: 1.5rem;
-        }
-        .btn-play:hover { transform: scale(1.1); }
-
-        /* Active Terminals (Cards) */
-        .terminals-grid {
-            display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 20px;
-        }
-        .terminal-card {
-            background: var(--bg-card);
-            border: var(--border);
-            border-radius: var(--radius);
-            overflow: hidden;
-            transition: 0.3s;
-            cursor: pointer;
-            position: relative;
-        }
-        .terminal-card:hover { transform: translateY(-5px); border-color: var(--accent); box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        .terminal-card.active-focus { border: 2px solid var(--accent); box-shadow: 0 0 20px var(--accent-glow); }
+        video#main-player { width: 100%; height: 100%; object-fit: contain; }
         
-        .t-cover { height: 140px; width: 100%; object-fit: cover; }
-        .t-info { padding: 15px; }
-        .t-title { font-weight: 700; font-size: 1.1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .t-sub { color: var(--text-muted); font-size: 0.85rem; margin-top: 5px; }
-        .live-badge { 
-            position: absolute; top: 10px; left: 10px; 
-            background: var(--danger); color: #fff; 
-            padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: bold;
-            box-shadow: 0 0 10px var(--danger);
+        .player-overlay {
+            position: absolute; inset: 0;
+            background: linear-gradient(0deg, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0) 50%);
+            display: flex; flex-direction: column; justify-content: flex-end;
+            padding: 20px;
+            opacity: 1; transition: opacity 0.3s;
         }
+        .player-wrapper:hover .player-overlay { opacity: 1; }
+        
+        .track-info-large { margin-bottom: 16px; }
+        .track-title { font-size: 1.4rem; font-weight: 800; margin: 0; text-shadow: 0 2px 10px rgba(0,0,0,0.8); }
+        .track-meta { font-size: 0.9rem; color: #ccc; }
 
-        /* Empty State */
-        .empty-state {
-            text-align: center;
-            padding: 50px;
-            color: var(--text-muted);
-            border: 2px dashed rgba(255,255,255,0.1);
-            border-radius: 20px;
-            margin-top: 20px;
+        .player-controls { display: flex; align-items: center; gap: 20px; }
+        .p-btn {
+            background: rgba(255,255,255,0.1); border: none; color: #fff;
+            width: 44px; height: 44px; border-radius: 12px;
+            cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; font-size: 1.1rem;
         }
-        .empty-state i { font-size: 3rem; margin-bottom: 15px; opacity: 0.5; }
-        .empty-state h3 { font-size: 1.5rem; color: #fff; margin-bottom: 10px; }
+        .p-btn:hover { background: rgba(255,255,255,0.2); transform: translateY(-2px); }
+        .p-btn.play-xl {
+            width: 60px; height: 60px; border-radius: 20px;
+            background: var(--accent-primary); box-shadow: 0 8px 25px var(--accent-glow); font-size: 1.4rem;
+        }
+        .p-btn.play-xl:hover { transform: scale(1.05); }
 
-        /* Forms & Inputs */
+        /* -- Stats Grid -- */
+        .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 20px; }
+        .stat-box {
+            background: rgba(255,255,255,0.03); padding: 15px; border-radius: var(--radius-lg);
+            text-align: center; border: 1px solid rgba(255,255,255,0.05);
+        }
+        .stat-val { font-size: 1.5rem; font-weight: 800; color: var(--accent-primary); }
+        .stat-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+
+        /* -- Lists (Active Calls / Queue) -- */
+        .list-container {
+            display: flex; flex-direction: column; gap: 10px;
+            max-height: 300px; overflow-y: auto;
+        }
+        .list-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px; border-radius: var(--radius-md);
+            background: rgba(255,255,255,0.03); border: 1px solid transparent;
+            cursor: pointer; transition: 0.2s;
+        }
+        .list-item:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.1); }
+        .list-item.active { background: rgba(10, 132, 255, 0.1); border-color: var(--accent-primary); }
+        .list-thumb { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; background: #111; }
+        .list-content { flex: 1; }
+        .list-title { font-weight: 700; font-size: 0.9rem; margin-bottom: 2px; }
+        .list-sub { font-size: 0.75rem; color: var(--text-muted); }
+
+        /* -- Inputs & Forms -- */
+        .input-group { display: flex; gap: 10px; margin-top: 10px; }
         .titan-input {
-            width: 100%; background: rgba(0,0,0,0.3); border: var(--border);
-            padding: 12px 15px; border-radius: 10px; color: #fff; margin-bottom: 10px;
+            flex: 1; background: var(--bg-input); border: var(--border-light); color: #fff;
+            padding: 12px 16px; border-radius: var(--radius-md); font-family: inherit;
         }
-        .titan-input:focus { border-color: var(--accent); }
-        .btn-action {
-            width: 100%; padding: 12px; border-radius: 10px; border: none; cursor: pointer;
-            font-weight: bold; background: rgba(255,255,255,0.1); color: #fff; transition: 0.2s;
+        .titan-input:focus { border-color: var(--accent-primary); }
+        .titan-btn {
+            padding: 0 20px; border-radius: var(--radius-md); border: none; cursor: pointer;
+            font-weight: 700; background: rgba(255,255,255,0.1); color: #fff; transition: 0.2s;
         }
-        .btn-action.primary { background: var(--accent); }
-        .btn-action.danger { background: rgba(255, 69, 58, 0.2); color: var(--danger); }
-        .btn-action:hover { filter: brightness(1.2); }
+        .titan-btn.primary { background: var(--accent-primary); }
+        .titan-btn.danger { background: rgba(255, 69, 58, 0.2); color: var(--danger); }
+        .titan-btn:hover { filter: brightness(1.2); }
 
-        /* File List */
-        .file-item {
-            display: flex; justify-content: space-between; align-items: center;
-            background: rgba(255,255,255,0.03); padding: 12px; border-radius: 10px;
-            margin-bottom: 8px; border: 1px solid transparent;
-        }
-        .file-item:hover { border-color: rgba(255,255,255,0.1); background: rgba(255,255,255,0.05); }
-
-        /* Toast */
-        #toast-box { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 2000; }
+        /* -- Toast Notification -- */
+        #toast-container { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 2000; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
         .toast {
-            background: rgba(10, 15, 20, 0.95); border: 1px solid var(--border);
-            padding: 12px 25px; border-radius: 30px; color: #fff; margin-top: 10px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.8); display: flex; align-items: center; gap: 10px;
-            animation: slideUp 0.3s forwards;
+            background: rgba(20, 20, 20, 0.9); backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1); padding: 12px 24px; border-radius: 30px;
+            color: #fff; font-size: 0.9rem; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            animation: slideUp 0.3s ease-out forwards; pointer-events: auto; display: flex; align-items: center; gap: 10px;
         }
-        @keyframes slideUp { from{transform:translateY(20px);opacity:0} to{transform:translateY(0);opacity:1} }
+        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
-        /* Modal */
-        .modal {
+        /* -- Modal -- */
+        .modal-overlay {
             position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 1000;
-            display: none; align-items: center; justify-content: center; backdrop-filter: blur(5px);
+            backdrop-filter: blur(5px); display: none; align-items: center; justify-content: center;
         }
-        .modal.open { display: flex; animation: fadeIn 0.2s; }
+        .modal-overlay.open { display: flex; animation: fadeIn 0.2s; }
         .modal-box {
-            background: #121418; width: 90%; max-width: 450px; padding: 25px;
-            border-radius: 20px; border: 1px solid rgba(255,255,255,0.1);
-            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            width: 90%; max-width: 500px; background: #121214; border: 1px solid rgba(255,255,255,0.1);
+            border-radius: var(--radius-xl); padding: 24px; box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+            transform: scale(0.95); animation: zoomIn 0.2s forwards;
+        }
+        @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+        @keyframes zoomIn { from{transform:scale(0.95)} to{transform:scale(1)} }
+
+        /* =========================================
+           5. RESPONSIVE DESIGN (MOBILE)
+           ========================================= */
+        @media (max-width: 1024px) {
+            .grid-dashboard { grid-template-columns: 1fr; }
+            .sidebar {
+                position: fixed; left: -100%; top: 0; height: 100%; z-index: 100;
+                box-shadow: 20px 0 50px rgba(0,0,0,0.5);
+            }
+            .sidebar.open { left: 0; }
+            .top-bar { display: flex; }
+            .app-container { flex-direction: column; padding: 10px; }
+            .player-wrapper { border-radius: var(--radius-md); }
         }
 
-        /* Mobile Responsive */
-        @media (max-width: 768px) {
-            .sidebar { position: fixed; right: -100%; height: 100%; box-shadow: -10px 0 30px rgba(0,0,0,0.8); }
-            .sidebar.active { right: 0; }
-            .mobile-header { display: flex; }
-            .main-content { padding: 15px; }
-            .stats-grid { grid-template-columns: 1fr 1fr; }
-            .player-container { max-height: 250px; }
-        }
+        /* Helper Classes */
+        .hidden { display: none !important; }
+        .d-flex { display: flex; }
+        .flex-col { flex-direction: column; }
+        .gap-10 { gap: 10px; }
+        .w-100 { width: 100%; }
+        .text-center { text-align: center; }
+        .mb-20 { margin-bottom: 20px; }
 
     </style>
 </head>
 <body>
 
-    <!-- Background Starfield -->
     <canvas id="star-canvas"></canvas>
 
-    <!-- Toast Container -->
-    <div id="toast-box"></div>
-
-    <!-- YouTube Play Modal -->
-    <div class="modal" id="yt-modal">
+    <div class="modal-overlay" id="yt-modal">
         <div class="modal-box">
-            <h3 style="margin-bottom:15px"><i class="fa-brands fa-youtube" style="color:#f00"></i> تشغيل مخصص</h3>
-            <input type="text" id="yt-query" class="titan-input" placeholder="رابط يوتيوب أو اسم الأغنية...">
-            <div style="display:flex; gap:10px; margin-top:15px">
-                <button class="btn-action primary" onclick="playCustom()">تشغيل</button>
-                <button class="btn-action" onclick="closeModal('yt-modal')">إلغاء</button>
+            <h3 class="card-title"><i class="fa-brands fa-youtube" style="color:#FF0000"></i> تشغيل من يوتيوب</h3>
+            <p class="text-muted text-sm">ابحث عن أي مقطع أو ضع الرابط المباشر</p>
+            <div class="input-group flex-col">
+                <input type="text" id="yt-search-input" class="titan-input" placeholder="اكتب اسم الأغنية...">
+                <div class="d-flex gap-10">
+                    <button class="titan-btn primary w-100" onclick="playCustomTrack()">تشغيل الآن</button>
+                    <button class="titan-btn w-100" onclick="closeModal('yt-modal')">إلغاء</button>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Sidebar -->
-    <aside class="sidebar" id="sidebar">
-        <div class="brand">
-            <h1 class="font-tech">TITAN <span style="color:var(--accent); display:inline">OS</span></h1>
-            <span class="font-tech">ULTIMATE KERNEL</span>
-        </div>
+    <div id="toast-container"></div>
 
-        <div class="user-status">
-            <div class="status-dot"></div>
-            <div>
-                <div style="font-weight:bold; font-size:0.9rem">System Online</div>
-                <div class="ping-val font-tech" id="ping-disp">PING: --ms</div>
-            </div>
-        </div>
-
-        <div class="nav-list" style="margin-top:20px">
-            <div class="nav-item active" onclick="switchView('dashboard', this)">
-                <i class="fa-solid fa-gauge"></i> لوحة القيادة
-            </div>
-            <div class="nav-item" onclick="switchView('terminals', this)">
-                <i class="fa-solid fa-server"></i> المحطات النشطة
-            </div>
-            <div class="nav-item" onclick="switchView('files', this)">
-                <i class="fa-solid fa-folder-open"></i> الملفات والكاش
-            </div>
-            <div class="nav-item" onclick="switchView('security', this)">
-                <i class="fa-solid fa-shield-cat"></i> الحماية
-            </div>
-            <div class="nav-item" onclick="switchView('system', this)">
-                <i class="fa-solid fa-gears"></i> النظام
-            </div>
-            <div class="nav-item" style="margin-top:auto; color:var(--danger)" onclick="logout()">
-                <i class="fa-solid fa-right-from-bracket"></i> خروج
-            </div>
-        </div>
-    </aside>
-
-    <!-- Main Content -->
-    <main class="main-content">
+    <div class="app-container">
         
-        <!-- Mobile Header -->
-        <div class="mobile-header">
-            <h2 class="font-tech">TITAN OS</h2>
-            <button class="menu-btn" onclick="toggleSidebar()"><i class="fa-solid fa-bars"></i></button>
+        <div class="top-bar">
+            <div class="brand">
+                <h1 class="font-tech" style="font-size:1.4rem">TITAN <span style="font-size:1.4rem;color:var(--accent-primary)">OS</span></h1>
+            </div>
+            <button class="titan-btn" onclick="toggleSidebar()"><i class="fa-solid fa-bars"></i></button>
         </div>
 
-        <!-- VIEW 1: DASHBOARD -->
-        <div id="view-dashboard" class="view-section active">
-            
-            <!-- Real-time Stats -->
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-val font-tech" id="stat-cpu">--%</div>
-                    <div class="stat-label">CPU LOAD</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-val font-tech" id="stat-ram">--%</div>
-                    <div class="stat-label">RAM USAGE</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-val font-tech" id="stat-ping">--</div>
-                    <div class="stat-label">LATENCY (MS)</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-val font-tech" style="color:var(--success)" id="stat-calls">0</div>
-                    <div class="stat-label">ACTIVE CALLS</div>
+        <aside class="sidebar" id="sidebar">
+            <div class="brand">
+                <h1 class="font-tech">TITAN <span>KERNEL</span></h1>
+            </div>
+
+            <div class="user-mini">
+                <img src="https://ui-avatars.com/api/?name=Admin&background=0A84FF&color=fff" class="user-avatar" alt="Admin">
+                <div class="user-info">
+                    <h4>Root Admin</h4>
+                    <div class="text-xs text-muted"><span class="ping-dot"></span> Online <span id="ping-sidebar" class="font-tech">--ms</span></div>
                 </div>
             </div>
 
-            <!-- Main Player -->
-            <div class="player-container">
-                <div class="live-badge" style="top:20px; left:20px; font-size:1rem; padding:5px 12px; z-index:10">LIVE FEED</div>
-                <video id="main-video" autoplay playsinline></video>
-                <div class="player-overlay">
-                    <div>
-                        <h2 class="track-title" id="p-title">انتظار الاتصال...</h2>
-                        <div class="track-meta">
-                            <i class="fa-solid fa-music"></i> <span id="p-artist">No Active Stream</span>
-                            <span style="margin:0 10px">|</span>
-                            <span class="font-tech" id="p-chatid">ID: --</span>
+            <nav class="nav-menu">
+                <div class="nav-item active" onclick="switchTab('dashboard')">
+                    <i class="fa-solid fa-gauge-high"></i> لوحة القيادة
+                </div>
+                <div class="nav-item" onclick="switchTab('calls')">
+                    <i class="fa-solid fa-headset"></i> المكالمات النشطة
+                </div>
+                <div class="nav-item" onclick="switchTab('files')">
+                    <i class="fa-solid fa-folder-tree"></i> إدارة الملفات
+                </div>
+                <div class="nav-item" onclick="switchTab('security')">
+                    <i class="fa-solid fa-shield-halved"></i> الحماية والحظر
+                </div>
+                <div class="nav-item" onclick="switchTab('settings')">
+                    <i class="fa-solid fa-gear"></i> إعدادات النظام
+                </div>
+                <div class="nav-item" style="margin-top:auto; color:var(--danger)" onclick="logout()">
+                    <i class="fa-solid fa-power-off"></i> تسجيل خروج
+                </div>
+            </nav>
+        </aside>
+
+        <main class="main-stage">
+            
+            <div id="view-dashboard" class="view-section">
+                <div class="grid-dashboard">
+                    
+                    <div class="d-flex flex-col gap-20">
+                        <div class="card" style="padding:0; border:none; background:transparent">
+                            <div class="player-wrapper">
+                                <video id="main-player" playsinline preload="metadata"></video>
+                                <div class="player-overlay">
+                                    <div class="track-info-large">
+                                        <h2 class="track-title" id="p-title">انتظار الاتصال...</h2>
+                                        <div class="track-meta font-tech" id="p-artist">No Active Stream</div>
+                                    </div>
+                                    <div class="player-controls">
+                                        <button class="p-btn" onclick="playerAction('seek_back')"><i class="fa-solid fa-rotate-left"></i></button>
+                                        <button class="p-btn play-xl" id="btn-play-pause" onclick="togglePlay()"><i class="fa-solid fa-play"></i></button>
+                                        <button class="p-btn" onclick="playerAction('skip')"><i class="fa-solid fa-forward-step"></i></button>
+                                        <div style="flex:1"></div>
+                                        <button class="p-btn" onclick="openModal('yt-modal')"><i class="fa-brands fa-youtube"></i></button>
+                                        <button class="p-btn" onclick="toggleMute()"><i class="fa-solid fa-volume-high" id="vol-icon"></i></button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="stats-row">
+                                <div class="stat-box">
+                                    <div class="stat-val font-tech" id="stat-cpu">--%</div>
+                                    <div class="stat-label">CPU LOAD</div>
+                                </div>
+                                <div class="stat-box">
+                                    <div class="stat-val font-tech" id="stat-ram">--%</div>
+                                    <div class="stat-label">RAM USAGE</div>
+                                </div>
+                                <div class="stat-box">
+                                    <div class="stat-val font-tech" id="stat-ping">--</div>
+                                    <div class="stat-label">LATENCY</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="card-header">
+                                <div class="card-title"><i class="fa-solid fa-list-ol"></i> الطابور (Queue)</div>
+                                <button class="titan-btn text-xs" onclick="clearQueue()">مسح الكل</button>
+                            </div>
+                            <div class="list-container" id="queue-list">
+                                <div class="text-center text-muted" style="padding:20px">لا يوجد وسائط في الانتظار</div>
+                            </div>
                         </div>
                     </div>
-                    <div class="controls">
-                        <button class="btn-ctrl" onclick="playerCmd('seek_back')"><i class="fa-solid fa-rotate-left"></i></button>
-                        <button class="btn-ctrl btn-play" id="btn-play-pause" onclick="togglePlay()"><i class="fa-solid fa-play"></i></button>
-                        <button class="btn-ctrl" onclick="playerCmd('skip')"><i class="fa-solid fa-forward-step"></i></button>
-                        <div style="flex:1"></div>
-                        <button class="btn-ctrl" style="color:var(--danger)" onclick="openModal('yt-modal')"><i class="fa-brands fa-youtube"></i></button>
-                        <button class="btn-ctrl" onclick="toggleMute()"><i class="fa-solid fa-volume-high" id="vol-icon"></i></button>
+
+                    <div class="d-flex flex-col gap-20">
+                        
+                        <div class="card" style="max-height: 400px;">
+                            <div class="card-header">
+                                <div class="card-title"><i class="fa-solid fa-tower-broadcast"></i> البث النشط</div>
+                                <button class="titan-btn text-xs" onclick="fetchActiveCalls()"><i class="fa-solid fa-sync"></i></button>
+                            </div>
+                            <div class="list-container" id="active-calls-list">
+                                <div class="text-center text-muted" style="padding:20px"><i class="fa-solid fa-circle-notch fa-spin"></i> جاري البحث...</div>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="card-header">
+                                <div class="card-title"><i class="fa-solid fa-microchip"></i> أدوات النظام</div>
+                            </div>
+                            <div class="d-flex flex-col gap-10">
+                                <button class="titan-btn w-100" onclick="sysAction('turbo')"><i class="fa-solid fa-rocket"></i> تنظيف الكاش (Turbo)</button>
+                                <button class="titan-btn w-100" onclick="sysAction('update')"><i class="fa-brands fa-git-alt"></i> تحديث السورس</button>
+                                <button class="titan-btn w-100 danger" onclick="sysAction('restart')"><i class="fa-solid fa-rotate"></i> إعادة تشغيل البوت</button>
+                            </div>
+                        </div>
+
+                        <div class="card" style="flex:1">
+                            <div class="card-header">
+                                <div class="card-title"><i class="fa-solid fa-terminal"></i> السجلات</div>
+                                <a href="/api/utils/logs" target="_blank" class="text-xs text-muted">تحميل</a>
+                            </div>
+                            <div id="mini-logs" style="font-family:'Courier New'; font-size:0.75rem; color:var(--text-muted); height:150px; overflow:hidden; opacity:0.7;">
+                                System initialized...<br>
+                                Connected to Telegram API...<br>
+                                Titan OS Kernel Ready.
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             </div>
 
-            <!-- Queue Snippet -->
-            <div style="background:var(--bg-card); padding:20px; border-radius:var(--radius); border:var(--border)">
-                <h3 style="margin-bottom:15px"><i class="fa-solid fa-list"></i> قائمة الانتظار السريعة</h3>
-                <div id="mini-queue" class="text-muted">لا يوجد بيانات حالياً...</div>
-            </div>
-
-        </div>
-
-        <!-- VIEW 2: ACTIVE TERMINALS (CALLS) -->
-        <div id="view-terminals" class="view-section">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px">
-                <h2><i class="fa-solid fa-satellite-dish"></i> المحطات النشطة</h2>
-                <button class="btn-action primary" style="width:auto" onclick="fetchCalls()"><i class="fa-solid fa-sync"></i> تحديث</button>
+            <div id="view-security" class="view-section hidden">
+                <div class="grid-dashboard">
+                    <div class="card">
+                        <div class="card-header"><div class="card-title">حظر المستخدمين</div></div>
+                        <div class="input-group">
+                            <input id="ban-uid" type="number" class="titan-input" placeholder="User ID">
+                            <button class="titan-btn danger" onclick="securityAction('block_user', 'enable')">حظر</button>
+                            <button class="titan-btn" onclick="securityAction('block_user', 'disable')">فك حظر</button>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header"><div class="card-title">حظر المجموعات (Blacklist)</div></div>
+                        <div class="input-group">
+                            <input id="ban-chatid" type="text" class="titan-input" placeholder="Chat ID">
+                            <button class="titan-btn danger" onclick="securityAction('blacklist_chat', 'enable')">تجميد</button>
+                            <button class="titan-btn" onclick="securityAction('blacklist_chat', 'disable')">سماح</button>
+                        </div>
+                    </div>
+                </div>
             </div>
             
-            <div id="terminals-grid" class="terminals-grid">
-                <!-- Cards will be injected here -->
-            </div>
-            
-            <!-- Empty State Template -->
-            <div id="no-calls-msg" class="empty-state hidden">
-                <i class="fa-solid fa-tower-cell"></i>
-                <h3 class="font-tech">NO ACTIVE GROUP CALL NOW</h3>
-                <p>النظام في وضع الاستعداد، ابدأ مكالمة لتظهر هنا.</p>
-            </div>
-        </div>
+            </main>
+    </div>
 
-        <!-- VIEW 3: FILES -->
-        <div id="view-files" class="view-section">
-            <h2><i class="fa-solid fa-hard-drive"></i> إدارة التخزين</h2>
-            <div class="stat-card" style="margin:20px 0; text-align:left; display:flex; justify-content:space-between">
-                <div>
-                    <div class="stat-label">TOTAL CACHED FILES</div>
-                    <div class="stat-val" id="file-count">0</div>
-                </div>
-                <div>
-                    <div class="stat-label">TOTAL SIZE</div>
-                    <div class="stat-val" style="color:var(--warning)" id="file-size">0 MB</div>
-                </div>
-            </div>
-            <div id="file-list-container"></div>
-        </div>
-
-        <!-- VIEW 4: SECURITY -->
-        <div id="view-security" class="view-section">
-            <h2><i class="fa-solid fa-user-shield"></i> مركز الحماية</h2>
-            <div class="terminals-grid" style="margin-top:20px">
-                <div class="stat-card" style="text-align:right">
-                    <h3 style="margin-bottom:15px; color:var(--danger)">حظر مستخدم (Global Ban)</h3>
-                    <input type="number" id="sec-uid" class="titan-input" placeholder="User ID (Telegram ID)">
-                    <div style="display:flex; gap:10px">
-                        <button class="btn-action danger" onclick="securityCmd('block_user', 'enable')">حظر نهائي</button>
-                        <button class="btn-action" onclick="securityCmd('block_user', 'disable')">إلغاء الحظر</button>
-                    </div>
-                </div>
-
-                <div class="stat-card" style="text-align:right">
-                    <h3 style="margin-bottom:15px; color:var(--warning)">تجميد مجموعة (Blacklist)</h3>
-                    <input type="text" id="sec-chatid" class="titan-input" placeholder="Chat ID (e.g. -100...)">
-                    <div style="display:flex; gap:10px">
-                        <button class="btn-action danger" onclick="securityCmd('blacklist_chat', 'enable')">تجميد وإخراج</button>
-                        <button class="btn-action" onclick="securityCmd('blacklist_chat', 'disable')">سماح</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- VIEW 5: SYSTEM -->
-        <div id="view-system" class="view-section">
-            <h2><i class="fa-solid fa-server"></i> التحكم بالنظام</h2>
-            <div class="terminals-grid" style="margin-top:20px">
-                <button class="btn-action primary" onclick="sysCmd('turbo')">
-                    <i class="fa-solid fa-broom"></i> تنظيف الكاش (Turbo Mode)
-                </button>
-                <button class="btn-action" onclick="sysCmd('update')">
-                    <i class="fa-brands fa-git-alt"></i> تحديث السورس (Git Pull)
-                </button>
-                <button class="btn-action danger" onclick="sysCmd('restart')">
-                    <i class="fa-solid fa-power-off"></i> إعادة تشغيل البوت
-                </button>
-                <a href="/api/utils/logs" target="_blank" class="btn-action" style="text-align:center; text-decoration:none">
-                    <i class="fa-solid fa-file-code"></i> تحميل السجلات (Logs)
-                </a>
-            </div>
-        </div>
-
-    </main>
-
-    <!-- SCRIPTS -->
     <script>
-        // --- CONFIG & STATE ---
-        const API = '/api';
-        let focusedChat = localStorage.getItem('titan_focus') || null;
-        let isPlaying = false;
+        /* TITAN OS KERNEL SCRIPT
+           Contains: Star Engine, API Client, UI Controller
+        */
 
-        // --- BACKGROUND ANIMATION ---
+        // --- CONSTANTS ---
+        const API_BASE = '/api';
+        let currentChatId = localStorage.getItem('titan_chat_id') || null;
+        let isPlaying = false;
+        let pollInterval = null;
+
+        // --- STAR ENGINE (BACKGROUND) ---
         const canvas = document.getElementById('star-canvas');
         const ctx = canvas.getContext('2d');
         let width, height;
         const stars = [];
+        let shootingStar = null;
 
-        function initStars() {
+        function resize() {
             width = canvas.width = window.innerWidth;
             height = canvas.height = window.innerHeight;
-            for(let i=0; i<150; i++) {
-                stars.push({
-                    x: Math.random() * width,
-                    y: Math.random() * height,
-                    r: Math.random() * 2,
-                    s: Math.random() * 0.5
-                });
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        class Star {
+            constructor() {
+                this.reset();
+            }
+            reset() {
+                this.x = Math.random() * width;
+                this.y = Math.random() * height;
+                this.size = Math.random() * 2;
+                this.alpha = Math.random();
+                this.speed = Math.random() * 0.05;
+                this.blinkSpeed = 0.005 + Math.random() * 0.01;
+            }
+            update() {
+                this.alpha += this.blinkSpeed;
+                if (this.alpha > 1 || this.alpha < 0) this.blinkSpeed *= -1;
+                this.y -= this.speed; // Slight upward drift
+                if (this.y < 0) this.y = height;
+            }
+            draw() {
+                ctx.fillStyle = `rgba(255, 255, 255, ${Math.abs(this.alpha)})`;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
             }
         }
-        function drawStars() {
-            ctx.clearRect(0,0,width,height);
-            ctx.fillStyle = '#fff';
-            stars.forEach(st => {
-                ctx.beginPath(); ctx.arc(st.x, st.y, st.r, 0, Math.PI*2); ctx.fill();
-                st.y -= st.s;
-                if(st.y < 0) st.y = height;
-            });
-            requestAnimationFrame(drawStars);
+
+        // Create 200 background stars
+        for(let i=0; i<200; i++) stars.push(new Star());
+
+        // Shooting Star Logic (The "Meteor" requested)
+        class Meteor {
+            constructor() {
+                this.active = false;
+                this.x = 0; this.y = 0;
+                this.vx = 0; this.vy = 0;
+                this.len = 0;
+            }
+            fire() {
+                this.active = true;
+                this.x = Math.random() * width;
+                this.y = 0;
+                this.vx = -4 + Math.random() * 8; // Random angle
+                this.vy = 5 + Math.random() * 5; // Fast down
+                this.len = 0;
+                this.opacity = 1;
+            }
+            update() {
+                if(!this.active) return;
+                this.x += this.vx;
+                this.y += this.vy;
+                this.len += 2;
+                if(this.y > height || this.x < 0 || this.x > width) this.active = false;
+            }
+            draw() {
+                if(!this.active) return;
+                ctx.strokeStyle = `rgba(10, 132, 255, ${this.opacity})`;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y);
+                ctx.lineTo(this.x - this.vx * 4, this.y - this.vy * 4); // Tail
+                ctx.stroke();
+                
+                // Glow head
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, 1.5, 0, Math.PI*2);
+                ctx.fill();
+            }
         }
-        window.onresize = initStars;
-        initStars(); drawStars();
+        
+        const meteor = new Meteor();
 
-        // --- NAVIGATION ---
-        function switchView(id, btn) {
-            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
-            document.getElementById('view-' + id).classList.add('active');
-            
-            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-            if(btn) btn.classList.add('active');
-
-            if(id === 'terminals') fetchCalls();
-            if(id === 'files') fetchFiles();
-            
-            // Mobile Sidebar Close
-            if(window.innerWidth < 768) document.getElementById('sidebar').classList.remove('active');
+        // Animation Loop
+        function animate() {
+            ctx.clearRect(0, 0, width, height);
+            stars.forEach(s => { s.update(); s.draw(); });
+            meteor.update();
+            meteor.draw();
+            requestAnimationFrame(animate);
         }
+        animate();
 
+        // Trigger Shooting Star every 3 minutes (180,000 ms) as requested
+        // Also a small chance every 10 seconds for variety, but big one is fixed
+        setInterval(() => { meteor.fire(); }, 180000); 
+        // Initial fire for effect
+        setTimeout(() => meteor.fire(), 2000);
+
+        // --- UI CONTROLLER ---
         function toggleSidebar() {
-            document.getElementById('sidebar').classList.toggle('active');
+            document.getElementById('sidebar').classList.toggle('open');
         }
 
-        function logout() { window.location.href = '/logout'; }
+        function switchTab(tabId) {
+            // Hide all views
+            document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
+            // Remove active class from nav
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            
+            // Logic to show specific views (simplified for this file)
+            if(tabId === 'dashboard') document.getElementById('view-dashboard').classList.remove('hidden');
+            else if(tabId === 'security') document.getElementById('view-security').classList.remove('hidden');
+            else showToast('صفحة قيد التطوير', 'info');
 
-        // --- TOAST NOTIFICATIONS ---
-        function toast(msg, type='success') {
-            const box = document.getElementById('toast-box');
-            const el = document.createElement('div');
-            el.className = 'toast';
-            el.innerHTML = `<i class="fa-solid ${type=='success'?'fa-check':'fa-triangle-exclamation'}" style="color:${type=='success'?'var(--success)':'var(--danger)'}"></i> ${msg}`;
-            box.appendChild(el);
-            setTimeout(() => el.remove(), 4000);
+            // Highlight nav
+            event.currentTarget.classList.add('active');
+            if(window.innerWidth < 1024) toggleSidebar(); // Close sidebar on mobile
         }
 
-        // --- API CORE ---
-        async function fetchStats() {
+        function showToast(msg, type='success') {
+            const c = document.getElementById('toast-container');
+            const d = document.createElement('div');
+            d.className = 'toast';
+            let icon = type === 'error' ? '<i class="fa-solid fa-circle-exclamation" style="color:var(--danger)"></i>' : '<i class="fa-solid fa-check-circle" style="color:var(--success)"></i>';
+            d.innerHTML = `${icon} <span>${msg}</span>`;
+            c.appendChild(d);
+            setTimeout(() => d.remove(), 4000);
+        }
+
+        function openModal(id) { document.getElementById(id).classList.add('open'); }
+        function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+        // --- API INTEGRATION ---
+        
+        async function fetchStatus() {
             try {
-                const res = await fetch(`${API}/settings/status`);
+                const res = await fetch(`${API_BASE}/settings/status`);
                 const data = await res.json();
-                document.getElementById('stat-cpu').innerText = data.cpu + '%';
+                
                 document.getElementById('stat-ram').innerText = data.ram + '%';
-                document.getElementById('stat-ping').innerText = data.ping;
-                document.getElementById('ping-disp').innerText = `PING: ${data.ping}ms`;
-            } catch(e) { console.error(e); }
+                document.getElementById('stat-cpu').innerText = data.cpu + '%';
+                document.getElementById('stat-ping').innerText = data.ping + 'ms';
+                document.getElementById('ping-sidebar').innerText = data.ping + 'ms';
+            } catch(e) { console.error('Status Error', e); }
         }
 
-        async function fetchCalls() {
+        async function fetchActiveCalls() {
+            const list = document.getElementById('active-calls-list');
             try {
-                const res = await fetch(`${API}/player/active_calls`);
+                const res = await fetch(`${API_BASE}/player/active_calls`);
                 const data = await res.json();
-                const grid = document.getElementById('terminals-grid');
-                const empty = document.getElementById('no-calls-msg');
                 
-                document.getElementById('stat-calls').innerText = data.chats ? data.chats.length : 0;
-
-                grid.innerHTML = '';
-                
-                if(!data.chats || data.chats.length === 0 || (data.chats.length===1 && data.chats[0].chat_id=="0")) {
-                    empty.classList.remove('hidden');
+                list.innerHTML = '';
+                if(!data.chats || data.chats.length === 0) {
+                    list.innerHTML = '<div class="text-center text-muted" style="padding:10px">لا توجد مكالمات نشطة</div>';
                     return;
                 }
-                
-                empty.classList.add('hidden');
+
                 data.chats.forEach(chat => {
-                    const card = document.createElement('div');
-                    card.className = `terminal-card ${focusedChat == chat.chat_id ? 'active-focus' : ''}`;
-                    card.onclick = () => focusChat(chat.chat_id);
-                    card.innerHTML = `
-                        <div class="live-badge">ON AIR</div>
-                        <img src="${chat.cover || 'https://telegra.ph/file/5eb6df308e92f4477813d.jpg'}" class="t-cover">
-                        <div class="t-info">
-                            <div class="t-title">${chat.name}</div>
-                            <div class="t-sub font-tech">ID: ${chat.chat_id}</div>
+                    const div = document.createElement('div');
+                    div.className = `list-item ${currentChatId == chat.chat_id ? 'active' : ''}`;
+                    div.onclick = () => selectChat(chat.chat_id, chat.name);
+                    div.innerHTML = `
+                        <img src="${chat.cover || 'https://via.placeholder.com/40'}" class="list-thumb">
+                        <div class="list-content">
+                            <div class="list-title">${chat.name}</div>
+                            <div class="list-sub font-tech">ID: ${chat.chat_id}</div>
                         </div>
+                        <i class="fa-solid fa-chevron-left text-muted text-xs"></i>
                     `;
-                    grid.appendChild(card);
+                    list.appendChild(div);
                 });
-
-                // Auto focus if none
-                if(!focusedChat && data.chats.length > 0) focusChat(data.chats[0].chat_id);
-
-            } catch(e) { console.error(e); }
+            } catch(e) { 
+                list.innerHTML = '<div class="text-center text-danger">خطأ في الاتصال</div>';
+            }
         }
 
-        function focusChat(id) {
-            focusedChat = id;
-            localStorage.setItem('titan_focus', id);
-            toast('تم تحديد المحطة: ' + id);
-            fetchCalls(); // refresh UI highlight
-            updatePlayer();
+        function selectChat(id, name) {
+            currentChatId = id;
+            localStorage.setItem('titan_chat_id', id);
+            showToast(`تم الاتصال بـ: ${name}`);
+            fetchActiveCalls(); // refresh highlight
+            updatePlayerInfo();
         }
 
-        async function updatePlayer() {
-            if(!focusedChat) return;
+        async function updatePlayerInfo() {
+            if(!currentChatId) return;
             try {
-                const res = await fetch(`${API}/player/track_info/${focusedChat}`);
+                const res = await fetch(`${API_BASE}/player/track_info/${currentChatId}`);
                 const data = await res.json();
                 
+                // Update Text
                 document.getElementById('p-title').innerText = data.title;
                 document.getElementById('p-artist').innerText = data.artist || data.duration;
-                document.getElementById('p-chatid').innerText = 'ID: ' + focusedChat;
-
-                // Play/Pause Icon
-                const ico = document.getElementById('btn-play-pause').querySelector('i');
+                
+                // Update Play Button Icon
+                const icon = document.getElementById('btn-play-pause').querySelector('i');
                 if(data.is_playing) {
-                    ico.className = 'fa-solid fa-pause';
+                    icon.className = 'fa-solid fa-pause';
                     isPlaying = true;
                 } else {
-                    ico.className = 'fa-solid fa-play';
+                    icon.className = 'fa-solid fa-play';
                     isPlaying = false;
                 }
 
-                // Video Source Logic
-                const vid = document.getElementById('main-video');
-                const streamUrl = `/stream/live/${focusedChat}`;
-                if(!vid.src.includes(focusedChat)) {
-                    vid.src = streamUrl;
-                    vid.load();
-                    // Attempt autoplay
-                    vid.play().catch(e=>console.log("Autoplay blocked"));
+                // Handle Video Stream
+                const video = document.getElementById('main-player');
+                const streamUrl = `/stream/live/${currentChatId}`;
+                
+                // Only reset source if URL changed significantly to avoid glitching
+                if(!video.src || !video.src.includes(currentChatId)) {
+                    video.src = streamUrl;
+                    video.load();
+                }
+                // Try to autoplay if user interacted
+                if(data.is_playing && video.paused) {
+                    video.play().catch(e => console.log('Autoplay blocked until interaction'));
                 }
 
-            } catch(e) {}
+            } catch(e) { console.error('Player Info Error', e); }
         }
 
-        async function playerCmd(cmd) {
-            if(!focusedChat) return toast('اختر محطة أولاً', 'error');
+        async function playerAction(cmd) {
+            if(!currentChatId) return showToast('اختر مجموعة أولاً', 'error');
+            
             const fd = new FormData();
             fd.append('cmd', cmd);
-            fd.append('chat_id', focusedChat);
-            
+            fd.append('chat_id', currentChatId);
+
             try {
-                await fetch(`${API}/player/control`, {method:'POST', body:fd});
-                toast('تم تنفيذ الأمر: ' + cmd);
-                setTimeout(updatePlayer, 500);
-            } catch(e) { toast('خطأ في الاتصال', 'error'); }
+                const res = await fetch(`${API_BASE}/player/control`, { method:'POST', body: fd });
+                const j = await res.json();
+                if(j.error) showToast(j.error, 'error');
+                else {
+                    showToast('تم تنفيذ الأمر');
+                    setTimeout(updatePlayerInfo, 500);
+                }
+            } catch(e) { showToast('فشل الاتصال', 'error'); }
         }
 
-        async function playCustom() {
-            const q = document.getElementById('yt-query').value;
-            if(!q || !focusedChat) return toast('أدخل الرابط واختر المحطة', 'error');
+        function togglePlay() {
+            playerAction(isPlaying ? 'pause' : 'resume');
+        }
+
+        async function playCustomTrack() {
+            const query = document.getElementById('yt-search-input').value;
+            if(!query || !currentChatId) return showToast('أدخل البحث واختر مجموعة', 'error');
+            
             closeModal('yt-modal');
-            
+            showToast('جاري البحث والتشغيل...', 'info');
+
             const fd = new FormData();
-            fd.append('query', q);
-            fd.append('chat_id', focusedChat);
+            fd.append('chat_id', currentChatId);
+            fd.append('query', query);
+
+            try {
+                const res = await fetch(`${API_BASE}/player/play_custom`, { method:'POST', body: fd });
+                const j = await res.json();
+                if(j.status === 'success') showToast(j.msg);
+                else showToast(j.error || 'خطأ', 'error');
+            } catch(e) { showToast('فشل الاتصال', 'error'); }
+        }
+
+        async function sysAction(action) {
+            if(action === 'restart' && !confirm('هل أنت متأكد من إعادة التشغيل؟')) return;
             
-            toast('جاري المعالجة...', 'warning');
-            try {
-                const res = await fetch(`${API}/player/play_custom`, {method:'POST', body:fd});
+            if(action === 'turbo') {
+                const res = await fetch(`${API_BASE}/utils/turbo`, { method:'POST' });
                 const j = await res.json();
-                if(j.status == 'success') toast(j.msg);
-                else toast(j.error, 'error');
-            } catch(e) { toast('فشل التشغيل', 'error'); }
-        }
-
-        async function fetchFiles() {
-            try {
-                const res = await fetch(`${API}/utils/cache_list`);
-                const data = await res.json();
-                document.getElementById('file-count').innerText = data.total_count;
-                document.getElementById('file-size').innerText = data.total_size_mb;
-                
-                const list = document.getElementById('file-list-container');
-                list.innerHTML = '';
-                data.files.forEach(f => {
-                    list.innerHTML += `
-                    <div class="file-item">
-                        <div>
-                            <div style="font-weight:bold">${f.name}</div>
-                            <div class="font-tech text-muted">${f.size}</div>
-                        </div>
-                        <i class="fa-solid fa-file-audio text-muted"></i>
-                    </div>`;
-                });
-            } catch(e) {}
-        }
-
-        // Security & System Wrappers
-        async function securityCmd(ep, act) {
-            const id = document.getElementById(ep=='block_user'?'sec-uid':'sec-chatid').value;
-            if(!id) return toast('ID مطلوب', 'error');
-            const fd = new FormData();
-            fd.append(ep=='block_user'?'user_id':'chat_id', id);
-            fd.append('action', act);
-            await fetch(`${API}/security/${ep}`, {method:'POST', body:fd});
-            toast('تم تنفيذ العملية');
-        }
-
-        async function sysCmd(act) {
-            if(act == 'restart' && !confirm('إعادة تشغيل النظام؟')) return;
-            if(act == 'turbo') {
-                const res = await fetch(`${API}/utils/turbo`, {method:'POST'});
-                const j = await res.json();
-                toast(j.status);
-            } else {
-                const fd = new FormData(); fd.append('action', act);
-                await fetch(`${API}/utils/action`, {method:'POST', body:fd});
-                toast('تم إرسال الأمر للنظام');
+                showToast(j.status || 'Turbo Done');
+                return;
             }
+
+            const fd = new FormData();
+            fd.append('action', action);
+            fetch(`${API_BASE}/utils/action`, { method:'POST', body: fd })
+                .then(r=>r.json()).then(j=>showToast(j.status));
         }
 
-        // Modals & Video
-        function openModal(id) { document.getElementById(id).classList.add('open'); }
-        function closeModal(id) { document.getElementById(id).classList.remove('open'); }
-        function toggleMute() {
-            const v = document.getElementById('main-video');
-            v.muted = !v.muted;
-            document.getElementById('vol-icon').className = v.muted ? 'fa-solid fa-volume-xmark' : 'fa-solid fa-volume-high';
-        }
+        async function securityAction(endpoint, action) {
+            const idInput = endpoint === 'block_user' ? 'ban-uid' : 'ban-chatid';
+            const idVal = document.getElementById(idInput).value;
+            if(!idVal) return showToast('أدخل الـ ID', 'error');
 
-        // --- LOOPS ---
-        setInterval(() => {
-            fetchStats();
-            if(focusedChat) updatePlayer();
-        }, 2000);
+            const fd = new FormData();
+            fd.append(endpoint === 'block_user' ? 'user_id' : 'chat_id', idVal);
+            fd.append('action', action);
+
+            try {
+                const res = await fetch(`${API_BASE}/security/${endpoint}`, { method:'POST', body:fd });
+                const j = await res.json();
+                showToast(j.status || j.error, j.error ? 'error' : 'success');
+            } catch(e) { showToast('خطأ سيرفر', 'error'); }
+        }
         
-        // Initial Fetch
-        fetchStats();
-        fetchCalls();
+        function logout() {
+            window.location.href = '/logout';
+        }
+
+        // --- INITIALIZATION ---
+        window.addEventListener('DOMContentLoaded', () => {
+            fetchStatus();
+            fetchActiveCalls();
+            
+            // Polling
+            setInterval(() => {
+                fetchStatus();
+                if(currentChatId) updatePlayerInfo();
+            }, 2500);
+        });
 
     </script>
 </body>
