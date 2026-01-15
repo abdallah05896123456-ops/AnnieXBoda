@@ -2,22 +2,23 @@
 <html lang="ar" dir="rtl">
 <head>
     <!-- 
-        TITAN OS | ULTIMATE FRONTEND KERNEL V7.0
-        Developed for High Performance on Mobile & Desktop
-        Features: Smart GPU Animation, Real-time WebSocket-like Polling, Full Control
+        TITAN OS | ULTIMATE FRONTEND KERNEL V8.0
+        Build: Production | Date: 2025
+        Engine: Native JS + CSS3 Hardware Acceleration
+        Developed for: High Performance Control Systems
     -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="description" content="Titan OS Control Panel">
-    <meta name="theme-color" content="#000000">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#000000">
     <title>Titan OS | Command Center</title>
 
-    <!-- External Assets (Fonts & Icons) -->
+    <!-- External Assets -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
 
     <style>
         /* 
@@ -26,32 +27,45 @@
            ================================================================
         */
         :root {
-            /* Colors */
+            /* Palette - Deep Space Theme */
             --bg-deep: #050505;
-            --glass-bg: rgba(20, 20, 23, 0.7);
+            --bg-panel: rgba(20, 20, 25, 0.75);
+            --bg-card: rgba(30, 30, 35, 0.6);
+            
+            /* Glassmorphism Variables */
             --glass-border: rgba(255, 255, 255, 0.08);
-            --glass-highlight: rgba(255, 255, 255, 0.05);
+            --glass-highlight: rgba(255, 255, 255, 0.04);
+            --glass-blur: 25px;
             
-            --primary: #2563EB;   /* Royal Blue */
-            --primary-glow: rgba(37, 99, 235, 0.4);
+            /* Neon Accents */
+            --primary: #3B82F6;    /* Titan Blue */
+            --primary-glow: rgba(59, 130, 246, 0.5);
             
-            --success: #10B981;
-            --warning: #F59E0B;
-            --danger: #EF4444;
+            --success: #10B981;    /* Emerald Green */
+            --success-glow: rgba(16, 185, 129, 0.4);
             
+            --danger: #EF4444;     /* Reactor Red */
+            --danger-glow: rgba(239, 68, 68, 0.4);
+            
+            --warning: #F59E0B;    /* Amber */
+            
+            /* Text Colors */
             --text-main: #FFFFFF;
-            --text-muted: #9CA3AF;
+            --text-muted: #94A3B8;
             
-            /* Dimensions */
-            --sidebar-width: 280px;
-            --header-height: 70px;
+            /* Layout Dimensions */
+            --sidebar-width: 290px;
+            --header-height: 75px;
             --radius-xl: 24px;
-            --radius-md: 14px;
+            --radius-lg: 16px;
+            --radius-md: 12px;
             --radius-sm: 8px;
             
-            /* Animation Speeds */
-            --trans-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            --trans-smooth: 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+            /* Animations */
+            --ease-elastic: cubic-bezier(0.34, 1.56, 0.64, 1);
+            --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+            --trans-fast: 0.2s;
+            --trans-med: 0.4s;
         }
 
         /* 
@@ -59,14 +73,18 @@
            2. GLOBAL RESET & BASE STYLES
            ================================================================
         */
-        * {
+        *, *::before, *::after {
             box-sizing: border-box;
             -webkit-tap-highlight-color: transparent;
             outline: none;
             user-select: none;
-            scrollbar-width: thin;
-            scrollbar-color: var(--glass-border) transparent;
         }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--primary); }
 
         body {
             margin: 0; padding: 0;
@@ -77,816 +95,745 @@
             width: 100vw;
             overflow: hidden;
             display: flex;
+            justify-content: center;
+            align-items: center;
         }
 
-        /* The Canvas sits behind everything */
+        /* The Animated Cosmos Background */
         #cosmos-engine {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             z-index: 0; pointer-events: none;
         }
 
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
+        /* Main App Container */
+        .titan-shell {
+            position: relative; z-index: 10;
+            width: 100%; height: 100%;
+            max-width: 1920px;
+            display: flex;
+            background: rgba(0,0,0,0.2);
+            /* On desktop we might want a bordered look, but full screen is requested */
+        }
 
-        /* Typography Utilities */
+        /* Typography Helpers */
         .font-mono { font-family: 'JetBrains Mono', monospace; }
         .text-gradient {
-            background: linear-gradient(135deg, #fff 0%, var(--primary) 100%);
+            background: linear-gradient(135deg, #fff 30%, var(--primary) 100%);
             -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         }
 
         /* 
            ================================================================
-           3. SIDEBAR NAVIGATION
+           3. SIDEBAR NAVIGATION (Glass Panel)
            ================================================================
         */
         .sidebar {
             width: var(--sidebar-width);
-            background: var(--glass-bg);
-            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            height: 100%;
+            background: var(--bg-panel);
+            backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur));
             border-left: 1px solid var(--glass-border);
             display: flex; flex-direction: column;
+            padding: 25px;
+            transition: transform var(--trans-med) var(--ease-smooth);
             z-index: 100;
-            transition: transform var(--trans-smooth);
-            padding: 20px;
         }
 
-        .brand-box {
-            padding: 10px 0 30px 0;
-            text-align: center;
+        .brand-section {
+            margin-bottom: 35px;
+            padding-bottom: 20px;
             border-bottom: 1px solid var(--glass-border);
-            margin-bottom: 20px;
+            text-align: center;
         }
-        .brand-title { font-size: 1.8rem; font-weight: 800; letter-spacing: 2px; margin: 0; }
-        .brand-ver { font-size: 0.7rem; color: var(--text-muted); letter-spacing: 4px; opacity: 0.8; }
+        .brand-title {
+            font-size: 1.8rem; font-weight: 900; letter-spacing: 1px; margin: 0;
+            text-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+        }
+        .brand-ver {
+            font-family: 'JetBrains Mono'; font-size: 0.65rem; color: var(--text-muted);
+            background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 20px;
+            display: inline-block; margin-top: 5px; letter-spacing: 2px;
+        }
 
-        .nav-list { flex: 1; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+        .nav-list { flex: 1; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
         
-        .nav-item {
+        .nav-btn {
             display: flex; align-items: center; gap: 15px;
             padding: 14px 18px;
             border-radius: var(--radius-md);
             color: var(--text-muted);
-            font-weight: 600; font-size: 0.95rem;
-            cursor: pointer;
-            transition: var(--trans-fast);
+            font-size: 0.95rem; font-weight: 600;
+            cursor: pointer; transition: all 0.2s;
+            background: transparent; border: none; text-align: right;
             position: relative; overflow: hidden;
         }
+        .nav-btn i { width: 24px; text-align: center; font-size: 1.1rem; transition: 0.2s; }
         
-        .nav-item:hover { background: var(--glass-highlight); color: #fff; transform: translateX(-5px); }
-        .nav-item.active {
-            background: rgba(37, 99, 235, 0.15);
+        .nav-btn:hover { background: var(--glass-highlight); color: #fff; padding-right: 25px; }
+        .nav-btn:hover i { color: var(--primary); transform: scale(1.1); }
+        
+        .nav-btn.active {
+            background: rgba(59, 130, 246, 0.15);
             color: var(--primary);
             border-right: 3px solid var(--primary);
         }
-        .nav-item i { width: 24px; text-align: center; font-size: 1.1rem; }
+        .nav-btn.active i { color: var(--primary); }
 
-        .sidebar-footer { margin-top: auto; padding-top: 20px; border-top: 1px solid var(--glass-border); }
+        /* Mini Groups List in Sidebar */
+        .groups-mini-list {
+            margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--glass-border);
+            max-height: 250px; overflow-y: auto;
+        }
+        .group-chip {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px; border-radius: var(--radius-sm);
+            cursor: pointer; transition: 0.2s;
+            border: 1px solid transparent; margin-bottom: 5px;
+        }
+        .group-chip:hover { background: rgba(255,255,255,0.03); }
+        .group-chip.active {
+            background: rgba(16, 185, 129, 0.1);
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+        .pulse-led {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--text-muted); transition: 0.3s;
+        }
+        .group-chip.active .pulse-led {
+            background: var(--success);
+            box-shadow: 0 0 10px var(--success);
+        }
 
         /* 
            ================================================================
-           4. MAIN STAGE & LAYOUT
+           4. MAIN CONTENT AREA
            ================================================================
         */
-        .main-content {
-            flex: 1;
-            position: relative; z-index: 10;
-            display: flex; flex-direction: column;
-            overflow: hidden;
-            background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.4) 100%);
+        .main-stage {
+            flex: 1; height: 100%;
+            overflow-y: auto; overflow-x: hidden;
+            position: relative;
+            padding: 0 20px 20px 20px;
         }
 
         /* Top Header */
         .top-header {
+            position: sticky; top: 0; z-index: 50;
             height: var(--header-height);
             display: flex; align-items: center; justify-content: space-between;
-            padding: 0 25px;
+            background: rgba(5, 5, 5, 0.8);
+            backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
+            margin: 0 -20px 20px -20px; padding: 0 30px;
             border-bottom: 1px solid var(--glass-border);
-            background: rgba(5, 5, 5, 0.6);
-            backdrop-filter: blur(10px);
         }
 
-        .toggle-menu-btn {
+        .mobile-toggle {
             display: none; width: 40px; height: 40px;
             align-items: center; justify-content: center;
-            font-size: 1.2rem; color: #fff;
-            background: var(--glass-highlight); border-radius: 10px; cursor: pointer;
+            background: var(--glass-highlight); border-radius: 10px;
+            color: #fff; border: none; font-size: 1.2rem;
         }
 
-        .status-pill {
+        .focus-switch {
             display: flex; align-items: center; gap: 10px;
-            padding: 6px 16px; border-radius: 30px;
-            background: var(--glass-border); font-size: 0.85rem;
-            border: 1px solid rgba(255,255,255,0.05);
+            background: rgba(0,0,0,0.4); padding: 8px 16px; border-radius: 30px;
+            border: 1px solid var(--glass-border); cursor: pointer; transition: 0.3s;
         }
-        .ping-dot { width: 8px; height: 8px; background: var(--success); border-radius: 50%; box-shadow: 0 0 10px var(--success); }
-
-        /* Views Container */
-        .view-container {
-            flex: 1; overflow-y: auto; padding: 25px;
-            scroll-behavior: smooth;
+        .focus-switch.active {
+            border-color: var(--warning); color: var(--warning);
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.15);
         }
-        .view-section { display: none; animation: fadeIn 0.4s ease forwards; }
-        .view-section.active { display: block; }
-
-        @keyframes fadeIn { from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:translateY(0);} }
 
         /* 
            ================================================================
-           5. DASHBOARD COMPONENTS
+           5. DASHBOARD LAYOUT (The Cinema Grid)
            ================================================================
         */
-        
-        /* A. Manual Join Input */
-        .manual-join-card {
-            background: var(--glass-bg); padding: 15px;
-            border-radius: var(--radius-md); border: 1px solid var(--glass-border);
-            margin-bottom: 25px; display: flex; gap: 10px; align-items: center;
-            flex-wrap: wrap;
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 2.5fr 1fr;
+            gap: 25px;
+            animation: fadeIn 0.6s var(--ease-smooth);
         }
-        
-        /* B. Active Groups Horizontal List */
-        .groups-rail-wrapper {
-            margin-bottom: 25px;
-        }
-        .section-title { font-size: 1rem; color: var(--text-muted); margin-bottom: 12px; display: flex; justify-content: space-between; }
-        
-        .groups-rail {
-            display: flex; gap: 12px; overflow-x: auto; padding-bottom: 10px;
-        }
-        .group-chip {
-            min-width: 160px; max-width: 160px;
-            background: rgba(30, 30, 35, 0.8);
-            border: 1px solid var(--glass-border);
-            padding: 15px; border-radius: var(--radius-md);
-            cursor: pointer; transition: 0.2s; position: relative;
-        }
-        .group-chip:hover { background: rgba(50, 50, 60, 0.9); transform: translateY(-2px); }
-        .group-chip.selected {
-            border-color: var(--primary);
-            background: rgba(37, 99, 235, 0.1);
-            box-shadow: 0 10px 20px -10px var(--primary-glow);
-        }
-        .group-chip h4 { margin: 0 0 5px 0; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .group-chip p { margin: 0; font-size: 0.7rem; color: var(--text-muted); }
-        .pulse-indicator {
-            position: absolute; top: 10px; left: 10px;
-            width: 8px; height: 8px; background: var(--success);
-            border-radius: 50%; box-shadow: 0 0 8px var(--success);
-        }
+        @keyframes fadeIn { from{opacity:0; transform:translateY(20px);} to{opacity:1; transform:translateY(0);} }
 
-        /* C. The Player (Video & Controls) */
-        .player-wrapper {
-            display: none; /* Hidden until group selected */
-        }
-        .player-wrapper.active { display: block; animation: slideUp 0.5s ease; }
-        
-        @keyframes slideUp { from{opacity:0; transform:translateY(30px);} to{opacity:1; transform:translateY(0);} }
-
-        .cinema-screen {
+        /* A. The Cinema Player Card (Main Attraction) */
+        .cinema-card {
+            grid-column: 1 / -1; /* Full width initially, or change based on layout */
+            position: relative;
             width: 100%; aspect-ratio: 16/9;
-            background: #000; border-radius: var(--radius-xl);
-            overflow: hidden; position: relative;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            background: #000;
+            border-radius: var(--radius-xl);
+            overflow: hidden;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.6);
             border: 1px solid var(--glass-border);
         }
-        video { width: 100%; height: 100%; object-fit: contain; }
-
-        .controls-deck {
-            background: var(--glass-bg); border: 1px solid var(--glass-border);
-            border-radius: var(--radius-xl); padding: 25px; margin-top: 20px;
-            backdrop-filter: blur(30px);
-        }
-
-        .track-meta { text-align: center; margin-bottom: 20px; }
-        .track-title { font-size: 1.4rem; font-weight: 800; color: #fff; margin-bottom: 5px; }
-        .track-artist { font-size: 0.9rem; color: var(--text-muted); }
-
-        /* Seek Bar */
-        .seek-box { display: flex; align-items: center; gap: 15px; margin-bottom: 25px; }
-        .time-label { font-family: 'JetBrains Mono'; font-size: 0.75rem; color: var(--text-muted); width: 45px; }
-        input[type=range] {
-            flex: 1; -webkit-appearance: none; background: rgba(255,255,255,0.1);
-            height: 6px; border-radius: 3px; cursor: pointer;
-        }
-        input[type=range]::-webkit-slider-thumb {
-            -webkit-appearance: none; width: 18px; height: 18px;
-            background: #fff; border-radius: 50%;
-            box-shadow: 0 0 15px rgba(255,255,255,0.5); transition: 0.2s;
-        }
-        input[type=range]:hover::-webkit-slider-thumb { transform: scale(1.2); background: var(--primary); }
-
-        /* Buttons Grid */
-        .btn-grid { display: flex; justify-content: center; align-items: center; gap: 20px; flex-wrap: wrap; }
         
-        .c-btn {
+        video#titan-video {
+            width: 100%; height: 100%; object-fit: contain;
+        }
+
+        /* HUD - Heads Up Display (Controls Overlay) */
+        .player-hud {
+            position: absolute; inset: 0;
+            background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.4) 40%, transparent 100%);
+            display: flex; flex-direction: column; justify-content: flex-end;
+            padding: 30px;
+            opacity: 1; transition: opacity 0.3s;
+        }
+        /* Hide HUD when idle logic can be added via JS */
+        
+        .track-info-overlay {
+            margin-bottom: 25px;
+            transform: translateY(0); transition: 0.4s var(--ease-elastic);
+        }
+        .track-title { font-size: 2rem; font-weight: 800; color: #fff; margin: 0 0 5px 0; line-height: 1.2; }
+        .track-artist { font-size: 1.1rem; color: rgba(255,255,255,0.7); font-weight: 500; }
+
+        /* Progress Bar */
+        .seek-container {
+            display: flex; align-items: center; gap: 15px; margin-bottom: 20px;
+        }
+        .time-badge { font-family: 'JetBrains Mono'; font-size: 0.8rem; color: rgba(255,255,255,0.6); width: 50px; }
+        
+        input[type=range] {
+            flex: 1; -webkit-appearance: none; background: rgba(255,255,255,0.15);
+            height: 4px; border-radius: 2px; cursor: pointer; transition: 0.2s;
+        }
+        input[type=range]:hover { height: 6px; background: rgba(255,255,255,0.25); }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 12px; height: 12px; background: #fff;
+            border-radius: 50%; box-shadow: 0 0 10px rgba(255,255,255,0.5);
+            transition: 0.2s; transform: scale(1);
+        }
+        input[type=range]:hover::-webkit-slider-thumb { transform: scale(1.4); background: var(--primary); }
+
+        /* Controls Row */
+        .controls-row {
+            display: flex; align-items: center; justify-content: center; gap: 20px;
+            padding-top: 10px;
+        }
+        
+        .glass-btn {
             width: 50px; height: 50px; border-radius: 50%;
-            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
-            color: #fff; font-size: 1.1rem; cursor: pointer;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #fff; font-size: 1.2rem;
             display: flex; align-items: center; justify-content: center;
+            cursor: pointer; transition: all 0.2s var(--ease-elastic);
+            backdrop-filter: blur(10px);
+        }
+        .glass-btn:hover { background: rgba(255,255,255,0.2); transform: scale(1.1); }
+        .glass-btn:active { transform: scale(0.9); }
+
+        .play-btn-lg {
+            width: 80px; height: 80px; font-size: 2.2rem;
+            background: var(--primary); border: none;
+            box-shadow: 0 10px 30px var(--primary-glow);
+        }
+        .play-btn-lg:hover {
+            background: #2563EB; box-shadow: 0 15px 40px var(--primary-glow);
+            transform: scale(1.05);
+        }
+        .play-btn-lg.paused { background: var(--warning); box-shadow: 0 10px 30px rgba(245, 158, 11, 0.4); }
+
+        /* B. Stats Widgets */
+        .stats-deck {
+            grid-column: 1 / -1;
+            display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
+        }
+        .stat-card {
+            background: var(--bg-card); border: 1px solid var(--glass-border);
+            padding: 20px; border-radius: var(--radius-lg);
+            text-align: center; position: relative; overflow: hidden;
+        }
+        .stat-card::before {
+            content:''; position: absolute; top: 0; left: 0; width: 100%; height: 3px;
+            background: var(--primary); opacity: 0.7;
+        }
+        .stat-val { font-family: 'JetBrains Mono'; font-size: 1.8rem; font-weight: 700; color: #fff; }
+        .stat-label { font-size: 0.85rem; color: var(--text-muted); margin-top: 5px; }
+
+        /* C. Quick Actions & Logs */
+        .control-panel {
+            grid-column: 1 / -1; /* For mobile flow, on desktop we can split */
+            background: var(--bg-panel); border: 1px solid var(--glass-border);
+            border-radius: var(--radius-xl); padding: 25px;
+        }
+        .section-head {
+            font-size: 1.1rem; font-weight: 700; color: #fff; margin-bottom: 20px;
+            display: flex; align-items: center; gap: 10px;
+        }
+        
+        .action-grid { display: flex; flex-direction: column; gap: 10px; }
+        
+        .action-btn {
+            width: 100%; padding: 16px; border-radius: var(--radius-md);
+            border: 1px solid var(--glass-border); background: rgba(255,255,255,0.03);
+            color: #fff; font-weight: 600; cursor: pointer;
+            display: flex; align-items: center; justify-content: space-between;
             transition: 0.2s;
         }
-        .c-btn:hover { background: rgba(255,255,255,0.15); transform: translateY(-3px); }
-        .c-btn:active { transform: scale(0.95); }
-        
-        .play-btn-lg {
-            width: 70px; height: 70px; font-size: 2rem;
-            background: var(--primary); border: none;
-            box-shadow: 0 10px 30px rgba(37, 99, 235, 0.4);
+        .action-btn:hover { background: rgba(255,255,255,0.08); transform: translateX(-5px); }
+        .action-btn i { color: var(--text-muted); }
+        .action-btn.danger {
+            background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3);
+            color: var(--danger);
         }
-        .play-btn-lg:hover { background: #3b82f6; box-shadow: 0 15px 40px rgba(37, 99, 235, 0.6); }
-
-        /* D. Operators Section (Dedicated Area) */
-        .operators-panel {
-            margin-top: 25px;
-            padding-top: 20px;
-            border-top: 1px solid var(--glass-border);
-        }
-        .op-list {
-            display: flex; gap: 15px; overflow-x: auto; padding: 10px 5px;
-        }
-        .op-card {
-            min-width: 80px; text-align: center;
-        }
-        .op-img {
-            width: 55px; height: 55px; border-radius: 50%;
-            border: 2px solid var(--primary); padding: 2px;
-            background: transparent; object-fit: cover; margin-bottom: 8px;
-        }
-        .op-role { font-size: 0.6rem; background: var(--glass-highlight); padding: 2px 6px; border-radius: 10px; color: var(--primary); }
-
-        /* 
-           ================================================================
-           6. INPUTS & MODALS
-           ================================================================
-        */
-        .neon-input {
-            background: rgba(0,0,0,0.4); border: 1px solid var(--glass-border);
-            color: #fff; padding: 12px 15px; border-radius: var(--radius-sm);
-            width: 100%; font-family: inherit; transition: 0.3s;
-        }
-        .neon-input:focus { border-color: var(--primary); box-shadow: 0 0 15px rgba(37, 99, 235, 0.2); }
-
-        .action-btn {
-            background: var(--primary); color: #fff; border: none;
-            padding: 12px 20px; border-radius: var(--radius-sm);
-            font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
-            transition: 0.2s; white-space: nowrap;
-        }
-        .action-btn.danger { background: rgba(239, 68, 68, 0.2); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.3); }
         .action-btn.danger:hover { background: var(--danger); color: #fff; }
 
-        .modal-overlay {
-            position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px);
-            z-index: 200; display: none; align-items: center; justify-content: center;
-            opacity: 0; transition: opacity 0.3s;
+        .console-box {
+            background: #000; border: 1px solid #333;
+            border-radius: var(--radius-md); padding: 15px;
+            font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;
+            color: var(--success); height: 200px; overflow-y: auto;
+            opacity: 0.8; margin-top: 20px;
         }
-        .modal-overlay.open { display: flex; opacity: 1; }
-        .modal-box {
-            background: #151515; border: 1px solid var(--glass-border);
-            width: 90%; max-width: 500px; padding: 30px; border-radius: var(--radius-xl);
-            transform: scale(0.9); transition: transform 0.3s;
-        }
-        .modal-overlay.open .modal-box { transform: scale(1); }
 
         /* 
            ================================================================
-           7. MOBILE OPTIMIZATION (RESPONSIVE)
+           6. OPERATORS / PARTICIPANTS CARDS (New Requirement)
            ================================================================
         */
-        @media (max-width: 1024px) {
-            .sidebar {
-                position: fixed; top: 0; right: -100%; height: 100%;
-                box-shadow: -10px 0 50px #000;
-            }
-            .sidebar.active { right: 0; }
-            .toggle-menu-btn { display: flex; }
-            .top-header { padding: 0 15px; }
-            .view-container { padding: 15px; }
-            
-            /* Compact controls for mobile */
-            .c-btn { width: 42px; height: 42px; font-size: 1rem; }
-            .play-btn-lg { width: 60px; height: 60px; font-size: 1.5rem; }
-            .btn-grid { gap: 15px; }
-            
-            /* Manual Join on Mobile stack */
-            .manual-join-card { flex-direction: column; align-items: stretch; }
+        .participants-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 15px; margin-top: 15px;
+        }
+        .user-card {
+            background: var(--bg-card); border: 1px solid var(--glass-border);
+            border-radius: var(--radius-md); padding: 15px;
+            text-align: center; position: relative; transition: 0.3s;
+            cursor: pointer; overflow: hidden;
+        }
+        .user-card:hover {
+            border-color: var(--primary); transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+        }
+        .user-avatar {
+            width: 50px; height: 50px; border-radius: 50%; margin: 0 auto 10px;
+            border: 2px solid var(--glass-border); object-fit: cover;
+        }
+        .user-name { font-size: 0.85rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .user-role { font-size: 0.7rem; color: var(--text-muted); background: rgba(255,255,255,0.05); border-radius: 10px; padding: 2px 6px; display: inline-block; margin-top: 5px; }
+        
+        .card-actions {
+            position: absolute; inset: 0; background: rgba(0,0,0,0.85);
+            display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+            opacity: 0; transition: 0.2s;
+        }
+        .user-card:hover .card-actions { opacity: 1; }
+        
+        .mini-btn {
+            font-size: 0.75rem; padding: 5px 10px; border-radius: 6px; border: none; cursor: pointer; width: 80%;
+        }
+        .btn-ban { background: var(--danger); color: #fff; }
+        .btn-focus { background: var(--primary); color: #fff; }
+
+        /* 
+           ================================================================
+           7. MODALS
+           ================================================================
+        */
+        .modal-overlay {
+            position: fixed; inset: 0; z-index: 200;
+            background: rgba(0,0,0,0.85); backdrop-filter: blur(10px);
+            display: none; align-items: center; justify-content: center;
+        }
+        .modal-overlay.active { display: flex; animation: fadeScale 0.3s var(--ease-elastic); }
+        @keyframes fadeScale { from{opacity:0; transform:scale(0.9);} to{opacity:1; transform:scale(1);} }
+
+        .modal-box {
+            background: #111; border: 1px solid var(--glass-border);
+            width: 90%; max-width: 500px; padding: 30px; border-radius: var(--radius-xl);
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+        }
+        .neon-input {
+            width: 100%; background: #000; border: 1px solid #333;
+            padding: 15px; border-radius: var(--radius-md); color: #fff;
+            font-family: inherit; margin: 15px 0; transition: 0.3s;
+        }
+        .neon-input:focus { border-color: var(--primary); box-shadow: 0 0 15px var(--primary-glow); }
+
+        /* 
+           ================================================================
+           8. RESPONSIVE MEDIA QUERIES
+           ================================================================
+        */
+        @media (min-width: 1200px) {
+            .dashboard-grid { grid-template-columns: 3fr 1.2fr; }
+            .cinema-card { grid-column: 1 / 2; }
+            .control-panel { grid-column: 2 / 3; grid-row: 1 / 3; }
+            .stats-deck { grid-column: 1 / 2; }
+            .main-stage { padding: 0 40px 40px 40px; }
         }
 
-        /* Focus Mode Utility */
-        body.focus-active .sidebar { display: none !important; }
-        body.focus-active .top-header { display: none !important; }
-        body.focus-active .view-container { padding: 0; overflow: hidden; }
-        body.focus-active .player-wrapper { display: flex; flex-direction: column; height: 100vh; animation: none; }
-        body.focus-active .cinema-screen { border-radius: 0; height: 100vh; border: none; }
-        body.focus-active .controls-deck { 
-            position: absolute; bottom: 20px; left: 20px; right: 20px; 
-            margin: 0; background: rgba(0,0,0,0.8); opacity: 0; transition: opacity 0.3s;
+        @media (max-width: 1024px) {
+            .sidebar {
+                position: fixed; right: -100%; top: 0; height: 100%;
+                box-shadow: -10px 0 50px #000;
+            }
+            .sidebar.open { right: 0; transform: none; }
+            .mobile-toggle { display: flex; }
+            .top-header { margin: 0 -20px 20px -20px; padding: 0 20px; }
+            
+            .dashboard-grid { grid-template-columns: 1fr; gap: 20px; }
+            .stats-deck { grid-template-columns: 1fr 1fr 1fr; }
         }
-        body.focus-active:hover .controls-deck { opacity: 1; }
-        body.focus-active .video-container { margin: 0; }
+
+        @media (max-width: 600px) {
+            .stats-deck { grid-template-columns: 1fr; }
+            .play-btn-lg { width: 60px; height: 60px; font-size: 1.5rem; }
+            .glass-btn { width: 40px; height: 40px; font-size: 1rem; }
+            .track-title { font-size: 1.4rem; }
+            .cinema-card { aspect-ratio: 4/3; } /* Taller video on mobile */
+        }
+
+        /* Utility Classes */
+        .hidden-view { display: none; }
+
     </style>
 </head>
 <body>
 
-    <!-- 0. GRAPHICS ENGINE (Cosmos) -->
+    <!-- 0. GRAPHICS ENGINE -->
     <canvas id="cosmos-engine"></canvas>
 
-    <!-- 1. MODALS -->
-    <!-- Play Modal -->
+    <!-- 1. MODAL: PLAY URL -->
     <div class="modal-overlay" id="playModal">
         <div class="modal-box">
-            <h2 class="text-gradient"><i class="fa-brands fa-youtube"></i> تشغيل ميديا</h2>
-            <p style="color:var(--text-muted); margin-bottom:20px;">ألصق رابط يوتيوب أو ابحث عن اسم الأغنية.</p>
-            <input type="text" id="playInput" class="neon-input" placeholder="مثال: قرآن كريم..." autofocus>
-            <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
-                <button class="action-btn" style="background:#333;" onclick="toggleModal('playModal')">إلغاء</button>
-                <button class="action-btn" onclick="submitPlay()">تشغيل الآن</button>
+            <h2 class="text-gradient" style="margin-top:0"><i class="fa-brands fa-youtube"></i> تشغيل ميديا</h2>
+            <p style="color:var(--text-muted)">ألصق الرابط أو ابحث عن الاسم.</p>
+            <input type="text" id="playInput" class="neon-input" placeholder="Search query or Link..." autofocus>
+            <div style="display:flex; gap:10px;">
+                <button class="action-btn" style="background:var(--primary); border:none;" onclick="submitPlay()">تشغيل الآن</button>
+                <button class="action-btn" style="width:auto;" onclick="toggleModal('playModal')">إلغاء</button>
             </div>
         </div>
     </div>
 
-    <!-- 2. SIDEBAR -->
-    <aside class="sidebar" id="sidebar">
-        <div class="brand-box">
-            <h1 class="brand-title text-gradient">TITAN OS</h1>
-            <div class="brand-ver">ULTIMATE KERNEL V7.0</div>
-        </div>
+    <!-- 2. APP SHELL -->
+    <div class="titan-shell">
 
-        <div class="nav-list">
-            <div class="nav-item active" onclick="navTo('dashboard', this)">
-                <i class="fa-solid fa-gamepad"></i> <span>التحكم (Dashboard)</span>
+        <!-- A. SIDEBAR -->
+        <aside class="sidebar" id="sidebar">
+            <div class="brand-section">
+                <h1 class="brand-title text-gradient">TITAN OS</h1>
+                <span class="brand-ver">KERNEL V8.0</span>
             </div>
-            <div class="nav-item" onclick="navTo('security', this)">
-                <i class="fa-solid fa-shield-halved"></i> <span>نظام الحماية</span>
-            </div>
-            <div class="nav-item" onclick="navTo('server', this)">
-                <i class="fa-solid fa-server"></i> <span>السيرفر (System)</span>
-            </div>
-            <div class="nav-item" onclick="navTo('logs', this)">
-                <i class="fa-solid fa-terminal"></i> <span>السجلات (Logs)</span>
-            </div>
-        </div>
 
-        <div class="sidebar-footer">
-            <button class="action-btn danger" style="width:100%; justify-content:center;" onclick="window.location.href='/logout'">
-                <i class="fa-solid fa-power-off"></i> تسجيل خروج
-            </button>
-        </div>
-    </aside>
-
-    <!-- 3. MAIN CONTENT -->
-    <div class="main-content">
-        
-        <!-- Header -->
-        <header class="top-header">
-            <button class="toggle-menu-btn" onclick="toggleSidebar()">
-                <i class="fa-solid fa-bars"></i>
-            </button>
-            
-            <div style="display:flex; gap:15px; align-items:center;">
-                <button class="action-btn" style="padding:6px 12px; font-size:0.8rem; background:#333;" onclick="toggleFocusMode()">
-                    <i class="fa-solid fa-expand"></i> وضع التركيز
+            <div class="nav-list">
+                <button class="nav-btn active" onclick="navTo('dashboard', this)">
+                    <i class="fa-solid fa-gamepad"></i> <span>التحكم (Control)</span>
                 </button>
-                <div class="status-pill">
-                    <div class="ping-dot"></div>
-                    <span id="ping-display" class="font-mono">--ms</span>
-                </div>
+                <button class="nav-btn" onclick="navTo('security', this)">
+                    <i class="fa-solid fa-shield-halved"></i> <span>الأمان (Security)</span>
+                </button>
+                <button class="nav-btn" onclick="navTo('system', this)">
+                    <i class="fa-solid fa-server"></i> <span>السيرفر (System)</span>
+                </button>
             </div>
-        </header>
 
-        <!-- Views Area -->
-        <div class="view-container">
-            
-            <!-- A. DASHBOARD VIEW -->
-            <div id="view-dashboard" class="view-section active">
+            <div style="margin-top:auto;">
+                <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:10px; display:flex; justify-content:space-between;">
+                    <span>ACTIVE CHATS</span> <i class="fa-solid fa-rotate" onclick="updateGroups()" style="cursor:pointer"></i>
+                </div>
+                <div class="groups-mini-list" id="groupsList">
+                    <!-- populated via JS -->
+                    <div style="padding:10px; color:#555; text-align:center;">Loading...</div>
+                </div>
                 
-                <!-- Manual Join Section -->
-                <div class="manual-join-card">
-                    <i class="fa-solid fa-tower-broadcast" style="font-size:1.5rem; color:var(--primary);"></i>
-                    <div style="flex:1;">
-                        <h4 style="margin:0;">اتصال يدوي (Manual Connect)</h4>
-                        <p style="margin:0; font-size:0.8rem; color:var(--text-muted);">أدخل معرف المجموعة (ID) للتحكم فيها مباشرة.</p>
-                    </div>
-                    <div style="display:flex; gap:5px; flex:1;">
-                        <input type="number" id="manualChatId" class="neon-input" placeholder="-100123456789">
-                        <button class="action-btn" onclick="manualJoin()">اتصال</button>
-                    </div>
-                </div>
-
-                <!-- Active Groups Rail -->
-                <div class="groups-rail-wrapper">
-                    <div class="section-title">
-                        <span>المكالمات النشطة</span>
-                        <i class="fa-solid fa-rotate" style="cursor:pointer" onclick="fetchCalls()"></i>
-                    </div>
-                    <div class="groups-rail" id="groups-rail">
-                        <div style="padding:15px; color:#666;">جاري البحث عن مكالمات...</div>
-                    </div>
-                </div>
-
-                <!-- PLAYER SECTION (Hidden by default) -->
-                <div class="player-wrapper" id="player-core">
-                    <div class="cinema-screen">
-                        <video id="titan-player" playsinline></video>
-                        <!-- Focus Mode Exit Button -->
-                        <button onclick="toggleFocusMode()" style="position:absolute; top:20px; left:20px; z-index:999; background:rgba(0,0,0,0.5); border:none; color:#fff; padding:10px; border-radius:50%; cursor:pointer; display:none;" id="focus-exit">
-                            <i class="fa-solid fa-compress"></i>
-                        </button>
-                    </div>
-
-                    <div class="controls-deck">
-                        <div class="track-meta">
-                            <div class="track-title" id="meta-title">No Media Playing</div>
-                            <div class="track-artist" id="meta-artist">Select a group to control</div>
-                        </div>
-
-                        <!-- Seek -->
-                        <div class="seek-box">
-                            <span class="time-label" id="time-curr">00:00</span>
-                            <input type="range" id="seek-bar" min="0" value="0" step="1" onchange="seekCommit(this.value)" oninput="seekPreview(this.value)">
-                            <span class="time-label" id="time-dur">00:00</span>
-                        </div>
-
-                        <!-- Buttons -->
-                        <div class="btn-grid">
-                            <button class="c-btn" title="Loop" onclick="sendCmd('loop')"><i class="fa-solid fa-repeat"></i></button>
-                            <button class="c-btn" onclick="sendCmd('seek', -10)"><i class="fa-solid fa-rotate-left"></i></button>
-                            <button class="play-btn-lg" id="play-toggle" onclick="togglePlayLocal()"><i class="fa-solid fa-play"></i></button>
-                            <button class="c-btn" onclick="sendCmd('seek', 10)"><i class="fa-solid fa-rotate-right"></i></button>
-                            <button class="c-btn" onclick="toggleModal('playModal')"><i class="fa-solid fa-plus"></i></button>
-                        </div>
-                        <div style="text-align:center; margin-top:15px;">
-                            <button class="action-btn danger" style="padding:8px 15px; font-size:0.8rem;" onclick="sendCmd('stop')">
-                                <i class="fa-solid fa-stop"></i> إيقاف وتفريغ
-                            </button>
-                            <button class="action-btn" style="padding:8px 15px; font-size:0.8rem; background:#333;" onclick="sendCmd('skip')">
-                                <i class="fa-solid fa-forward-step"></i> تخطي
-                            </button>
-                        </div>
-
-                        <!-- OPERATORS SECTION -->
-                        <div class="operators-panel">
-                            <div class="section-title" style="font-size:0.8rem;">
-                                <i class="fa-solid fa-user-group"></i> المشرفين في المكالمة (Operators)
-                            </div>
-                            <div class="op-list" id="op-list">
-                                <!-- JS fills this -->
-                                <div style="font-size:0.8rem; color:#555;">لا يوجد بيانات</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <button class="action-btn danger" style="margin-top:15px; justify-content:center;" onclick="window.location.href='/logout'">
+                    <i class="fa-solid fa-power-off"></i> LOGOUT
+                </button>
             </div>
+        </aside>
 
-            <!-- B. SECURITY VIEW -->
-            <div id="view-security" class="view-section">
-                <div class="manual-join-card" style="flex-direction:column; align-items:start;">
-                    <h2 class="text-gradient"><i class="fa-solid fa-gavel"></i> نظام الحظر العام (GBAN)</h2>
-                    <p style="color:var(--text-muted)">حظر مستخدم نهائياً من استخدام البوت.</p>
+        <!-- B. MAIN STAGE -->
+        <main class="main-stage">
+            
+            <!-- Header -->
+            <header class="top-header">
+                <button class="mobile-toggle" onclick="toggleSidebar()"><i class="fa-solid fa-bars"></i></button>
+                
+                <div class="focus-switch" id="focusBtn" onclick="toggleFocusMode()">
+                    <i class="fa-solid fa-eye"></i> <span>Focus Mode</span>
+                </div>
+
+                <div style="display:flex; align-items:center; gap:15px;">
+                    <div style="text-align:left;">
+                        <div style="font-weight:700; font-size:0.9rem;">Root Admin</div>
+                        <div style="font-size:0.7rem; color:var(--success);" id="ping-display">Online 12ms</div>
+                    </div>
+                    <img src="https://ui-avatars.com/api/?name=Admin&background=3B82F6&color=fff" style="width:40px; height:40px; border-radius:50%; border:2px solid var(--primary);">
+                </div>
+            </header>
+
+            <!-- VIEW: DASHBOARD -->
+            <div id="view-dashboard" class="view-section">
+                <div class="dashboard-grid">
                     
-                    <input type="number" id="sec-uid" class="neon-input" placeholder="Telegram User ID..." style="margin:10px 0;">
+                    <!-- 1. Cinema Player -->
+                    <div class="cinema-card">
+                        <video id="titan-video" playsinline poster="https://telegra.ph/file/5eb6df308e92f4477813d.jpg"></video>
+                        
+                        <!-- HUD Overlay -->
+                        <div class="player-hud">
+                            <div class="track-info-overlay">
+                                <h2 class="track-title" id="track-title">Waiting for connection...</h2>
+                                <div class="track-artist" id="track-artist">Select a group to start</div>
+                            </div>
+
+                            <!-- Seek Bar -->
+                            <div class="seek-container">
+                                <span class="time-badge" id="curr-time">00:00</span>
+                                <input type="range" id="seek-bar" min="0" value="0" step="1" onchange="commitSeek(this.value)" oninput="previewSeek(this.value)">
+                                <span class="time-badge" id="dur-time">00:00</span>
+                            </div>
+
+                            <!-- Controls -->
+                            <div class="controls-row">
+                                <button class="glass-btn" onclick="sendCmd('loop')"><i class="fa-solid fa-repeat"></i></button>
+                                <button class="glass-btn" onclick="localSeek(-10)"><i class="fa-solid fa-rotate-left"></i></button>
+                                
+                                <!-- Unified Play/Pause Button -->
+                                <button class="play-btn-lg" id="play-btn" onclick="togglePlaySmart()">
+                                    <i class="fa-solid fa-play"></i>
+                                </button>
+                                
+                                <button class="glass-btn" onclick="localSeek(10)"><i class="fa-solid fa-rotate-right"></i></button>
+                                <button class="glass-btn" onclick="toggleMute()"><i class="fa-solid fa-volume-high" id="vol-icon"></i></button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 2. Control Side Panel -->
+                    <div class="control-panel">
+                        <div class="section-head">
+                            <i class="fa-solid fa-bolt" style="color:var(--warning)"></i> تحكم سريع
+                        </div>
+                        <div class="action-grid">
+                            <button class="action-btn" onclick="toggleModal('playModal')">
+                                <span>تشغيل من الرابط/بحث</span> <i class="fa-brands fa-youtube" style="color:red"></i>
+                            </button>
+                            <button class="action-btn" onclick="sendCmd('resume')">
+                                <span>استئناف البث (Resume)</span> <i class="fa-solid fa-play"></i>
+                            </button>
+                            <button class="action-btn" onclick="sendCmd('loop')">
+                                <span>تكرار (Loop)</span> <i class="fa-solid fa-repeat"></i>
+                            </button>
+                            <button class="action-btn danger" onclick="sendCmd('stop')">
+                                <span>إيقاف وتفريغ الطابور</span> <i class="fa-solid fa-stop"></i>
+                            </button>
+                        </div>
+                        
+                        <div class="section-head" style="margin-top:25px; font-size:0.9rem;">
+                            <i class="fa-solid fa-terminal"></i> السجل المصغر
+                        </div>
+                        <div class="console-box" id="mini-log">
+                            > Titan OS Kernel v8.0 Loaded...<br>
+                            > Ready for commands.
+                        </div>
+                    </div>
+
+                    <!-- 3. Stats Deck -->
+                    <div class="stats-deck">
+                        <div class="stat-card">
+                            <div class="stat-val text-gradient" id="ping-val">--ms</div>
+                            <div class="stat-label">Telegram Ping</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-val" style="color:var(--primary)" id="ram-val">--%</div>
+                            <div class="stat-label">RAM Usage</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-val" style="color:var(--danger)" id="cpu-val">--%</div>
+                            <div class="stat-label">CPU Load</div>
+                        </div>
+                    </div>
+                    
+                    <!-- 4. Operators / Participants (Requested Feature) -->
+                    <div class="control-panel" style="grid-column: 1 / -1;">
+                        <div class="section-head">
+                            <i class="fa-solid fa-users-viewfinder"></i> المتواجدون / المشرفون (Operators)
+                            <span style="font-size:0.7rem; color:var(--text-muted); margin-right:auto;"> اضغط للتحكم</span>
+                        </div>
+                        <div class="participants-grid" id="participants-grid">
+                            <!-- Cards will be injected here -->
+                            <div style="color:#666; font-size:0.9rem;">Select a group to load participants...</div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- VIEW: SECURITY -->
+            <div id="view-security" class="view-section hidden-view">
+                <div class="control-panel">
+                    <h2><i class="fa-solid fa-gavel"></i> نظام الحظر العام</h2>
+                    <p style="color:var(--text-muted)">أدخل معرف المستخدم لحظره نهائياً من البوت.</p>
+                    <input type="number" id="sec-uid" class="neon-input" placeholder="Telegram User ID (e.g. 123456789)">
                     <div style="display:flex; gap:10px;">
-                        <button class="action-btn danger" onclick="securityAction('block')">حظر (Ban)</button>
-                        <button class="action-btn" onclick="securityAction('unblock')" style="background:#333;">رفع الحظر (Unban)</button>
+                        <button class="action-btn danger" style="width:auto; padding:10px 30px;" onclick="secAction('block')">حظر (Ban)</button>
+                        <button class="action-btn" style="width:auto; padding:10px 30px;" onclick="secAction('unblock')">رفع الحظر</button>
                     </div>
                 </div>
             </div>
 
-            <!-- C. SERVER VIEW -->
-            <div id="view-server" class="view-section">
-                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:15px; margin-bottom:25px;">
-                    <div style="background:var(--glass-bg); padding:20px; border-radius:var(--radius-md); text-align:center;">
-                        <div style="font-size:2rem; font-weight:bold; color:var(--primary);" id="cpu-val">0%</div>
-                        <div style="font-size:0.8rem; color:#888;">CPU Load</div>
-                    </div>
-                    <div style="background:var(--glass-bg); padding:20px; border-radius:var(--radius-md); text-align:center;">
-                        <div style="font-size:2rem; font-weight:bold; color:var(--success);" id="ram-val">0%</div>
-                        <div style="font-size:0.8rem; color:#888;">RAM Usage</div>
-                    </div>
+            <!-- VIEW: SYSTEM -->
+            <div id="view-system" class="view-section hidden-view">
+                <div class="stats-deck" style="margin-bottom:20px;">
+                    <!-- Reused stats -->
                 </div>
-
-                <div class="manual-join-card" style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
-                    <button class="action-btn" onclick="sysAction('clean')"><i class="fa-solid fa-broom"></i> تنظيف الكاش</button>
-                    <button class="action-btn" onclick="sysAction('update')"><i class="fa-brands fa-git-alt"></i> تحديث السورس</button>
-                    <button class="action-btn danger" style="grid-column:1/-1;" onclick="sysAction('restart')">
-                        <i class="fa-solid fa-power-off"></i> إعادة تشغيل البوت (Reboot)
-                    </button>
+                <div class="control-panel">
+                    <h2>عمليات السيرفر</h2>
+                    <div class="action-grid">
+                        <button class="action-btn" onclick="sysAction('clean')">تنظيف الملفات المؤقتة</button>
+                        <button class="action-btn" onclick="sysAction('update')">تحديث السورس (Git Pull)</button>
+                        <button class="action-btn danger" onclick="sysAction('restart')">إعادة التشغيل (Reboot)</button>
+                        <button class="action-btn" onclick="window.open('/api/logs','_blank')">تحميل السجلات كاملة</button>
+                    </div>
                 </div>
             </div>
 
-            <!-- D. LOGS VIEW -->
-            <div id="view-logs" class="view-section">
-                <div style="background:#111; padding:20px; border-radius:var(--radius-md); border:1px solid #333; font-family:'JetBrains Mono'; font-size:0.8rem; color:#ccc; height:400px; overflow-y:auto;" id="log-viewer">
-                    > System Initialized...<br>
-                    > Waiting for logs...
-                </div>
-                <button class="action-btn" style="margin-top:10px; width:100%; justify-content:center;" onclick="window.open('/api/logs', '_blank')">تحميل الملف الكامل</button>
-            </div>
-
-        </div>
+        </main>
     </div>
 
     <!-- 
        ================================================================
-       4. TITAN KERNEL (JavaScript Logic)
+       3. TITAN KERNEL JS (The Logic Engine)
        ================================================================
     -->
     <script>
-        // --- Global State ---
-        let activeChatId = null;
-        let isPlaying = false;
-        let updateTimer = null;
-        let isSeeking = false; // To prevent slider jumping while dragging
+        // --- 1. State Management ---
+        const State = {
+            activeChat: localStorage.getItem('titan_active_chat') || null,
+            focusMode: false,
+            isPlaying: false,
+            isSeeking: false,
+            refreshRate: 2000,
+            interval: null
+        };
 
-        // --- 1. Graphics Engine (Optimized Starfield) ---
-        class Starfield {
+        // --- 2. Graphics Engine (Starfield) ---
+        class Cosmos {
             constructor() {
                 this.canvas = document.getElementById('cosmos-engine');
                 this.ctx = this.canvas.getContext('2d');
                 this.stars = [];
-                
-                // PERFORMANCE TWEAK: Reduce stars on mobile
-                this.count = window.innerWidth < 768 ? 50 : 200; 
-                this.speedMult = window.innerWidth < 768 ? 0.5 : 1;
-
                 this.resize();
                 window.addEventListener('resize', () => this.resize());
-                this.init();
+                this.initStars();
                 this.animate();
             }
-
-            resize() {
-                this.canvas.width = window.innerWidth;
-                this.canvas.height = window.innerHeight;
-            }
-
-            init() {
+            resize() { this.canvas.width = window.innerWidth; this.canvas.height = window.innerHeight; }
+            initStars() {
                 this.stars = [];
-                for(let i=0; i<this.count; i++) {
+                const count = window.innerWidth < 800 ? 50 : 120;
+                for(let i=0; i<count; i++) {
                     this.stars.push({
-                        x: Math.random() * this.canvas.width,
-                        y: Math.random() * this.canvas.height,
-                        z: Math.random() * 2, // depth
-                        a: Math.random()      // alpha
+                        x: Math.random() * this.canvas.width, y: Math.random() * this.canvas.height,
+                        z: Math.random() * 1.5 + 0.5, a: Math.random()
                     });
                 }
             }
-
             animate() {
-                // If Focus Mode is on, stop rendering to save GPU
-                if(document.body.classList.contains('focus-active')) {
-                    requestAnimationFrame(() => this.animate());
-                    return; 
-                }
-
+                if(State.focusMode) return; // Optimization: Stop drawing in focus mode
                 this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
                 this.ctx.fillStyle = '#FFF';
-
                 this.stars.forEach(s => {
-                    s.y -= (0.2 * s.z * this.speedMult);
+                    s.y -= (0.3 * s.z);
                     if(s.y < 0) { s.y = this.canvas.height; s.x = Math.random() * this.canvas.width; }
-                    
                     this.ctx.globalAlpha = s.a;
                     this.ctx.beginPath();
-                    this.ctx.arc(s.x, s.y, s.z * 0.8, 0, Math.PI*2);
+                    this.ctx.arc(s.x, s.y, s.z, 0, Math.PI*2);
                     this.ctx.fill();
                 });
-
                 requestAnimationFrame(() => this.animate());
             }
         }
 
-        // --- 2. Navigation & UI ---
-        function navTo(viewId, btn) {
-            document.querySelectorAll('.view-section').forEach(v => v.classList.remove('active'));
-            document.getElementById('view-' + viewId).classList.add('active');
-            
-            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-            btn.classList.add('active');
+        // --- 3. Core Logic ---
+        const API = {
+            post: async (ep, data) => {
+                try {
+                    const r = await fetch(`/api${ep}`, {
+                        method: 'POST', headers: {'Content-Type':'application/json'},
+                        body: JSON.stringify(data)
+                    });
+                    return await r.json();
+                } catch(e) { log("API Error: " + e, 'err'); return null; }
+            },
+            get: async (ep) => {
+                try { return await (await fetch(`/api${ep}`)).json(); } catch(e) { return null; }
+            }
+        };
 
-            if(window.innerWidth <= 1024) toggleSidebar(); // Close sidebar on mobile
+        function log(msg, type='info') {
+            const box = document.getElementById('mini-log');
+            const color = type === 'err' ? '#EF4444' : '#10B981';
+            const time = new Date().toLocaleTimeString('en-US', {hour12:false});
+            box.innerHTML = `<span style="color:${color}">[${time}]</span> ${msg}<br>` + box.innerHTML;
+        }
+
+        // --- 4. Navigation & Views ---
+        function navTo(view, btn) {
+            document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden-view'));
+            document.getElementById('view-'+view).classList.remove('hidden-view');
+            document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+            btn.classList.add('active');
+            if(window.innerWidth < 1024) toggleSidebar();
         }
 
         function toggleSidebar() {
-            document.getElementById('sidebar').classList.toggle('active');
+            document.getElementById('sidebar').classList.toggle('open');
         }
 
         function toggleFocusMode() {
-            document.body.classList.toggle('focus-active');
-            const exitBtn = document.getElementById('focus-exit');
-            if(document.body.classList.contains('focus-active')) {
-                exitBtn.style.display = 'block';
-                // Go full screen if possible
-                try { document.documentElement.requestFullscreen(); } catch(e){}
+            State.focusMode = !State.focusMode;
+            const btn = document.getElementById('focusBtn');
+            const cvs = document.getElementById('cosmos-engine');
+            if(State.focusMode) {
+                btn.classList.add('active');
+                cvs.style.display = 'none'; // Hard disable canvas
+                log("Focus Mode ON: GPU Animation Paused");
             } else {
-                exitBtn.style.display = 'none';
-                try { document.exitFullscreen(); } catch(e){}
+                btn.classList.remove('active');
+                cvs.style.display = 'block';
+                new Cosmos(); // Restart animation
+                log("Focus Mode OFF");
             }
         }
 
-        function toggleModal(id) {
-            const m = document.getElementById(id);
-            m.classList.toggle('open');
-        }
+        // --- 5. Data Polling ---
+        async function updateData() {
+            // A. Stats
+            const stats = await API.get('/system/status');
+            if(stats) {
+                document.getElementById('cpu-val').innerText = stats.cpu + '%';
+                document.getElementById('ram-val').innerText = stats.ram + '%';
+                const ping = stats.ping + 'ms';
+                document.getElementById('ping-val').innerText = ping;
+                document.getElementById('ping-display').innerText = 'Online ' + ping;
+            }
 
-        // --- 3. API & Logic ---
-        async function fetchCalls() {
-            const rail = document.getElementById('groups-rail');
-            try {
-                const res = await fetch('/api/player/active_calls');
-                const data = await res.json();
-                
-                rail.innerHTML = '';
-                if(!data.chats || data.chats.length === 0) {
-                    rail.innerHTML = '<div style="padding:15px; color:#666; font-size:0.9rem;">لا توجد مكالمات نشطة حالياً.</div>';
-                    return;
-                }
-
-                data.chats.forEach(chat => {
-                    const div = document.createElement('div');
-                    div.className = `group-chip ${activeChatId == chat.chat_id ? 'selected' : ''}`;
-                    div.innerHTML = `
-                        <div class="pulse-indicator"></div>
-                        <h4>${chat.name}</h4>
-                        <p>ID: ${chat.chat_id}</p>
-                    `;
-                    div.onclick = () => connectToChat(chat.chat_id);
-                    rail.appendChild(div);
-                });
-            } catch(e) { console.error(e); }
-        }
-
-        function manualJoin() {
-            const id = document.getElementById('manualChatId').value;
-            if(!id) return alert("الرجاء كتابة ID الجروب");
-            connectToChat(id);
-        }
-
-        function connectToChat(id) {
-            activeChatId = id;
-            document.getElementById('player-core').classList.add('active');
-            
-            // Highlight in list if exists
-            fetchCalls(); 
-            
-            // Load Stream
-            const vid = document.getElementById('titan-player');
-            vid.src = `/stream/live/${id}?t=${Date.now()}`; // Prevent cache
-            vid.play().catch(e => console.log("Autoplay blocked"));
-            
-            // Load Metadata & Operators
-            updateTrackInfo();
-            fetchOperators();
-        }
-
-        async function updateTrackInfo() {
-            if(!activeChatId) return;
-            try {
-                const res = await fetch(`/api/player/track_info/${activeChatId}`);
-                const data = await res.json();
-                
-                document.getElementById('meta-title').innerText = data.title || "No Title";
-                document.getElementById('meta-artist').innerText = data.artist || "Unknown";
-                
-                // Button State
-                isPlaying = data.is_playing;
-                document.getElementById('play-toggle').innerHTML = isPlaying ? '<i class="fa-solid fa-pause"></i>' : '<i class="fa-solid fa-play"></i>';
-
-                // Seek Bar Logic (Only update if user isn't dragging)
-                if(!isSeeking && data.duration !== 'Live' && data.duration !== '00:00') {
-                    const durParts = data.duration.split(':');
-                    const totalSec = (+durParts[0]) * 60 + (+durParts[1]);
-                    
-                    const slider = document.getElementById('seek-bar');
-                    slider.max = totalSec;
-                    slider.value = data.position || 0;
-                    
-                    document.getElementById('time-dur').innerText = data.duration;
-                    document.getElementById('time-curr').innerText = formatTime(data.position || 0);
-                }
-
-            } catch(e) {}
-        }
-
-        async function fetchOperators() {
-            if(!activeChatId) return;
-            try {
-                const res = await fetch(`/api/player/participants/${activeChatId}`);
-                const data = await res.json();
-                const list = document.getElementById('op-list');
-                
+            // B. Active Groups
+            const calls = await API.get('/player/active_calls');
+            if(calls && calls.chats) {
+                const list = document.getElementById('groupsList');
                 list.innerHTML = '';
-                if(!data.participants || data.participants.length === 0) {
-                    list.innerHTML = '<div style="font-size:0.8rem; color:#555;">لا يوجد بيانات</div>';
-                    return;
-                }
-
-                data.participants.forEach(p => {
+                calls.chats.forEach(c => {
+                    const isActive = State.activeChat == c.chat_id;
                     list.innerHTML += `
-                    <div class="op-card">
-                        <img src="${p.photo_url}" class="op-img">
-                        <div style="font-size:0.7rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:80px;">${p.name}</div>
-                        <span class="op-role">${p.role}</span>
+                    <div class="group-chip ${isActive ? 'active' : ''}" onclick="switchChat('${c.chat_id}')">
+                        <div class="pulse-led"></div>
+                        <div style="font-size:0.85rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                            ${c.name}
+                        </div>
                     </div>`;
                 });
-            } catch(e) {}
-        }
-
-        // --- 4. Controls ---
-        async function sendCmd(cmd, val=null) {
-            if(!activeChatId) return alert("اختر مكالمة أولاً");
-            
-            // Client side immediate feedback for seek buttons
-            if (cmd === 'seek' && (val === 10 || val === -10)) {
-                 const vid = document.getElementById('titan-player');
-                 val = vid.currentTime + val; // Convert relative to absolute for server
             }
 
-            const payload = { chat_id: activeChatId, cmd: cmd };
-            if(val !== null) payload.value = val;
-
-            await fetch('/api/player/control', {
-                method:'POST', headers:{'Content-Type':'application/json'},
-                body: JSON.stringify(payload)
-            });
-            setTimeout(updateTrackInfo, 300);
-        }
-
-        function togglePlayLocal() {
-            const vid = document.getElementById('titan-player');
-            if(vid.paused) { vid.play(); sendCmd('resume'); }
-            else { vid.pause(); sendCmd('pause'); }
-        }
-
-        // Seek Bar Interactions
-        function seekPreview(val) { isSeeking = true; document.getElementById('time-curr').innerText = formatTime(val); }
-        function seekCommit(val) { isSeeking = false; sendCmd('seek', val); }
-        
-        async function submitPlay() {
-            const q = document.getElementById('playInput').value;
-            if(!q || !activeChatId) return alert("بيانات ناقصة");
-            toggleModal('playModal');
-            await fetch('/api/player/play', {
-                method:'POST', headers:{'Content-Type':'application/json'},
-                body: JSON.stringify({ chat_id: activeChatId, query: q })
-            });
-        }
-
-        // --- 5. System Actions ---
-        async function sysAction(act) {
-            if(act === 'restart' && !confirm('إعادة التشغيل؟')) return;
-            await fetch('/api/system/action', {
-                method:'POST', headers:{'Content-Type':'application/json'},
-                body: JSON.stringify({ action: act })
-            });
-        }
-
-        async function securityAction(type) {
-            const uid = document.getElementById('sec-uid').value;
-            if(!uid) return;
-            await fetch('/api/security/block', {
-                method:'POST', headers:{'Content-Type':'application/json'},
-                body: JSON.stringify({ user_id: uid, block: (type === 'block') })
-            });
-            alert('تم التنفيذ');
-        }
-
-        // --- 6. Utilities & Init ---
-        function formatTime(s) {
-            const m = Math.floor(s / 60);
-            const sec = Math.floor(s % 60);
-            return `${m}:${sec < 10 ? '0' : ''}${sec}`;
-        }
-
-        // Polling Loop
-        setInterval(async () => {
-            // System Stats
-            try {
-                const res = await fetch('/api/system/status');
-                const d = await res.json();
-                document.getElementById('cpu-val').innerText = d.cpu + '%';
-                document.getElementById('ram-val').innerText = d.ram + '%';
-                document.getElementById('ping-display').innerText = d.ping + 'ms';
-            } catch(e) {}
-
-            // Calls List Refresh (every 5s)
-            if(Date.now() % 5000 < 1000) fetchCalls();
-
-            // Track Info (if active)
-            if(activeChatId) updateTrackInfo();
-
-        }, 1000);
-
-        // Boot
-        window.addEventListener('DOMContentLoaded', () => {
-            new Starfield();
-            fetchCalls();
-        });
-
-    </script>
-</body>
-</html>
+            // C. Track Info (If chat selected)
+            if(State.activeChat) {
+                const track = await API.get(`/player/track_info/${State.activeChat}`);
+                if(track
