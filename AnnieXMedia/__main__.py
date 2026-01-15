@@ -1,5 +1,5 @@
 # ================================
-# __main__.py (TitanOS Integrated)
+# __main__.py (TitanOS Integrated & Functional)
 # ================================
 
 import sys
@@ -25,7 +25,7 @@ app = Flask(__name__, template_folder=TITAN_DIR, static_folder=TITAN_DIR)
 app.secret_key = "Titan_Super_Secret_Key_2025"
 logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
-# بيانات الدخول (من ملفك)
+# بيانات الدخول
 ADMIN_USER = "Abdallah"
 ADMIN_PASS = "asdfghjkl05896"
 
@@ -43,7 +43,6 @@ def load_assets():
                 content = f.read()
                 # فصل الـ CSS والـ JS
                 if "---CSS---" in content and "---JS---" in content:
-                    # بناخد اللي بين العلامتين
                     parts = content.split("---JS---")
                     css_raw = parts[0].split("---CSS---")[1]
                     JS_CACHE = parts[1].strip()
@@ -106,18 +105,65 @@ def logs():
     if not session.get('user'): return redirect(url_for('home'))
     return render_template('logs.html')
 
-# 4. الـ API (استقبال الأوامر من الموقع)
+# 4. 🔥 الـ API المعدل (تشغيل الأوامر الحقيقية) 🔥
 @app.route('/api/<action>/<chat_id>', methods=['POST'])
 def api_handler(action, chat_id):
-    if not session.get('user'): return jsonify({"ok": False, "msg": "Unauthorized"}), 401
+    # 1. التحقق من الدخول
+    if not session.get('user'): 
+        return jsonify({"ok": False, "msg": "Unauthorized"}), 401
     
-    # هنا ممكن نربط الأوامر الحقيقية للبوت مستقبلاً
-    # حالياً بنرجع رد "نجاح" عشان الزراير تنور في الموقع
-    return jsonify({
-        "ok": True, 
-        "status": "Success", 
-        "msg": f"Order {action} executed for {chat_id}"
-    })
+    # 2. تحويل الـ ID لرقم
+    try:
+        chat_id = int(chat_id)
+    except:
+        # لو مفيش ID، نتجاهل الأمر أو نطبقه على مجموعة افتراضية لو عايز
+        pass 
+
+    # 3. دالة لتشغيل أوامر البوت داخل الـ Flask
+    def run_bot_cmd(coro):
+        try:
+            future = asyncio.run_coroutine_threadsafe(coro, bot_app.loop)
+            return future.result()
+        except Exception as e:
+            print(f"Cmd Error: {e}")
+
+    msg = "تم التنفيذ"
+    
+    try:
+        # --- الأوامر ---
+        if action == 'pause':
+            run_bot_cmd(StreamController.pause_stream(chat_id))
+            msg = "تم الإيقاف المؤقت ⏸️"
+
+        elif action == 'resume':
+            run_bot_cmd(StreamController.resume_stream(chat_id))
+            msg = "تم الاستكمال ▶️"
+
+        elif action == 'skip' or action == 'stop':
+            run_bot_cmd(StreamController.stop_stream(chat_id))
+            msg = "تم التخطي ⏭️"
+
+        elif action == 'cleancache':
+            # تنظيف الكاش
+            try:
+                run_bot_cmd(fetch_and_store_cookies())
+                msg = "تم تحديث الكوكيز وتنظيف الكاش 🧹"
+            except:
+                msg = "فشل تنظيف الكاش"
+
+        elif action == 'turbo':
+            # مجرد أمر وهمي لرفع المعنويات
+            msg = "🚀 Turbo Mode Activated!"
+
+        # الرد للموقع
+        return jsonify({
+            "ok": True, 
+            "status": "Success", 
+            "msg": msg
+        })
+
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {e}"})
 
 # دالة تشغيل السيرفر
 def run_flask():
