@@ -1,6 +1,6 @@
-# ================================
-# __main__.py (TitanOS Integrated & Functional)
-# ================================
+# =========================================================
+# __main__.py (TitanOS Integrated - Realtime Sync Edition)
+# =========================================================
 
 import sys
 import os
@@ -9,58 +9,43 @@ import importlib
 import logging
 from threading import Thread
 from flask import Flask, render_template, request, redirect, url_for, Response, jsonify, session
-from pyrogram import idle
-from pytgcalls.exceptions import NoActiveGroupCall
+from pyrogram import idle, Client
 
 # ------------------------
-# إعدادات السيرفر والمسارات
+# 1. إعدادات السيرفر
 # ------------------------
 BASE_DIR = os.getcwd()
-# محاولة إيجاد فولدر TitanOS سواء في الروت أو جوه AnnieXMedia
 TITAN_DIR = os.path.join(BASE_DIR, 'TitanOS')
 if not os.path.exists(TITAN_DIR):
     TITAN_DIR = os.path.join(BASE_DIR, 'AnnieXMedia', 'TitanOS')
 
 app = Flask(__name__, template_folder=TITAN_DIR, static_folder=TITAN_DIR)
-app.secret_key = "Titan_Super_Secret_Key_2025"
+app.secret_key = "Titan_God_Mode_2025"
 logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
 # بيانات الدخول
 ADMIN_USER = "Abdallah"
 ADMIN_PASS = "asdfghjkl05896"
 
-# متغيرات لتخزين التصميم في الرامات
+# كاش التصميم
 CSS_CACHE = ""
 JS_CACHE = ""
 
-# --- دالة قراءة ملف التصميم (assets_bundle.txt) ---
 def load_assets():
     global CSS_CACHE, JS_CACHE
-    assets_path = os.path.join(TITAN_DIR, 'assets_bundle.txt')
     try:
-        if os.path.exists(assets_path):
-            with open(assets_path, "r", encoding="utf-8") as f:
-                content = f.read()
-                # فصل الـ CSS والـ JS
-                if "---CSS---" in content and "---JS---" in content:
-                    parts = content.split("---JS---")
-                    css_raw = parts[0].split("---CSS---")[1]
-                    JS_CACHE = parts[1].strip()
-                    CSS_CACHE = css_raw.strip()
-            print(f"✅ TitanOS Assets Loaded from: {assets_path}")
-        else:
-            print(f"⚠️ Warning: assets_bundle.txt not found at {assets_path}")
-    except Exception as e:
-        print(f"❌ Assets Error: {e}")
-
-# تحميل التصميم عند بدء التشغيل
+        with open(os.path.join(TITAN_DIR, 'assets_bundle.txt'), "r", encoding="utf-8") as f:
+            content = f.read()
+            if "---CSS---" in content:
+                parts = content.split("---JS---")
+                CSS_CACHE = parts[0].split("---CSS---")[1].strip()
+                JS_CACHE = parts[1].strip()
+    except: pass
 load_assets()
 
 # ------------------------
-# مسارات الموقع (Routes)
+# 2. Flask Routes
 # ------------------------
-
-# 1. تقديم ملفات الستايل والجافاسكريبت
 @app.route('/static/css/style.css')
 def serve_css():
     if not CSS_CACHE: load_assets()
@@ -71,109 +56,116 @@ def serve_js():
     if not JS_CACHE: load_assets()
     return Response(JS_CACHE, mimetype='application/javascript')
 
-# 2. نظام الدخول
 @app.route('/')
 def home():
-    if session.get('user') == ADMIN_USER:
-        return redirect(url_for('dashboard'))
+    if session.get('user') == ADMIN_USER: return redirect(url_for('dashboard'))
     return render_template('login.html')
 
 @app.route('/login', methods=['POST'])
 def login_check():
-    user = request.form.get('username')
-    pw = request.form.get('password')
-    
-    if user == ADMIN_USER and pw == ADMIN_PASS:
-        session['user'] = user
+    if request.form.get('username') == ADMIN_USER and request.form.get('password') == ADMIN_PASS:
+        session['user'] = ADMIN_USER
         return redirect(url_for('dashboard'))
-    else:
-        return render_template('login.html', error="بيانات خاطئة، حاول مرة أخرى!")
+    return render_template('login.html', error="Access Denied")
 
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect(url_for('home'))
-
-# 3. لوحة التحكم
 @app.route('/dashboard')
 def dashboard():
     if not session.get('user'): return redirect(url_for('home'))
     return render_template('dashboard.html')
 
-@app.route('/logs')
-def logs():
-    if not session.get('user'): return redirect(url_for('home'))
-    return render_template('logs.html')
+# ------------------------
+# 🔥 3. الـ API الذكي (The Brain) 🔥
+# ------------------------
 
-# 4. 🔥 الـ API المعدل (تشغيل الأوامر الحقيقية) 🔥
+# أ) كشف الجروبات النشطة
+@app.route('/api/active_calls', methods=['GET'])
+def get_active_calls():
+    if not session.get('user'): return jsonify({"ok": False}), 401
+    
+    active_data = []
+    
+    # دالة لجلب البيانات من داخل البوت (Async -> Sync)
+    def fetch_data():
+        from AnnieXMedia.core.call import StreamController
+        # محاولة الوصول لقائمة المكالمات في pytgcalls
+        try:
+            # معظم السورسات بتخزن المكالمات هنا
+            if hasattr(StreamController, 'call_py'):
+                calls = StreamController.call_py.active_calls
+            else:
+                calls = [] # fallback
+            return calls
+        except:
+            return []
+
+    try:
+        # تشغيل الكود في الـ Loop الأساسي للبوت
+        future = asyncio.run_coroutine_threadsafe(
+            _get_detailed_chats(), 
+            bot_app.loop
+        )
+        active_data = future.result()
+    except Exception as e:
+        print(f"Error fetching calls: {e}")
+
+    return jsonify({"ok": True, "chats": active_data})
+
+# دالة مساعدة تجيب اسم الجروب كمان
+async def _get_detailed_chats():
+    from AnnieXMedia.core.call import StreamController
+    results = []
+    try:
+        # بنحاول نجيب القائمة من Pytgcalls
+        active_calls = StreamController.call_py.active_calls
+        
+        for chat_id in active_calls:
+            try:
+                # بنجيب اسم الجروب من التليجرام
+                chat = await bot_app.get_chat(chat_id)
+                chat_name = chat.title
+            except:
+                chat_name = f"Secret Group {chat_id}"
+            
+            results.append({
+                "id": chat_id,
+                "name": chat_name,
+                "status": "Playing 🔊"
+            })
+    except:
+        # لو فشل، بنرجع قائمة فاضية بدل ما السيستم يقع
+        pass
+    return results
+
+# ب) تنفيذ الأوامر (Play/Pause/Skip)
 @app.route('/api/<action>/<chat_id>', methods=['POST'])
 def api_handler(action, chat_id):
-    # 1. التحقق من الدخول
-    if not session.get('user'): 
-        return jsonify({"ok": False, "msg": "Unauthorized"}), 401
-    
-    # 2. تحويل الـ ID لرقم
+    if not session.get('user'): return jsonify({"ok": False}), 401
+
     try:
         chat_id = int(chat_id)
-    except:
-        # لو مفيش ID، نتجاهل الأمر أو نطبقه على مجموعة افتراضية لو عايز
-        pass 
+        from AnnieXMedia.core.call import StreamController
 
-    # 3. دالة لتشغيل أوامر البوت داخل الـ Flask
-    def run_bot_cmd(coro):
-        try:
-            future = asyncio.run_coroutine_threadsafe(coro, bot_app.loop)
-            return future.result()
-        except Exception as e:
-            print(f"Cmd Error: {e}")
+        async def execute_order():
+            if action == 'pause':
+                await StreamController.pause_stream(chat_id)
+            elif action == 'resume':
+                await StreamController.resume_stream(chat_id)
+            elif action in ['skip', 'stop']:
+                await StreamController.stop_stream(chat_id)
+            elif action == 'turbo':
+                pass # مجرد تأثير بصري
 
-    msg = "تم التنفيذ"
-    
-    try:
-        # --- الأوامر ---
-        if action == 'pause':
-            run_bot_cmd(StreamController.pause_stream(chat_id))
-            msg = "تم الإيقاف المؤقت ⏸️"
-
-        elif action == 'resume':
-            run_bot_cmd(StreamController.resume_stream(chat_id))
-            msg = "تم الاستكمال ▶️"
-
-        elif action == 'skip' or action == 'stop':
-            run_bot_cmd(StreamController.stop_stream(chat_id))
-            msg = "تم التخطي ⏭️"
-
-        elif action == 'cleancache':
-            # تنظيف الكاش
-            try:
-                run_bot_cmd(fetch_and_store_cookies())
-                msg = "تم تحديث الكوكيز وتنظيف الكاش 🧹"
-            except:
-                msg = "فشل تنظيف الكاش"
-
-        elif action == 'turbo':
-            # مجرد أمر وهمي لرفع المعنويات
-            msg = "🚀 Turbo Mode Activated!"
-
-        # الرد للموقع
-        return jsonify({
-            "ok": True, 
-            "status": "Success", 
-            "msg": msg
-        })
+        asyncio.run_coroutine_threadsafe(execute_order(), bot_app.loop).result()
+        return jsonify({"ok": True, "msg": "Command Executed"})
 
     except Exception as e:
-        return jsonify({"ok": False, "msg": f"Error: {e}"})
+        return jsonify({"ok": False, "msg": str(e)})
 
-# دالة تشغيل السيرفر
 def run_flask():
-    try:
-        app.run(host="0.0.0.0", port=8080, use_reloader=False)
-    except Exception as e:
-        print(f"❌ Flask Error: {e}")
+    app.run(host="0.0.0.0", port=8080, use_reloader=False)
 
 # ------------------------
-# كود تشغيل البوت الأساسي
+# 4. تشغيل البوت
 # ------------------------
 sys.path.insert(0, os.getcwd())
 import config
@@ -181,59 +173,32 @@ from AnnieXMedia import LOGGER, app as bot_app, userbot
 from AnnieXMedia.core.call import StreamController
 from AnnieXMedia.misc import sudo
 from AnnieXMedia.plugins import ALL_MODULES
-from AnnieXMedia.utils.database import get_banned_users, get_gbanned
 from AnnieXMedia.utils.cookie_handler import fetch_and_store_cookies
-from config import BANNED_USERS
 
 async def init():
-    # 1. تشغيل الموقع في الخلفية
+    # تشغيل السيرفر
     t = Thread(target=run_flask)
     t.daemon = True
     t.start()
-    LOGGER("TitanOS").info("✅ Dashboard Server Started on Port 8080")
+    LOGGER("TitanOS").info("✅ TitanOS Dashboard is Online on Port 8080")
 
-    # 2. تشغيل البوت
-    if not config.STRING1 and not config.STRING2 and not config.STRING3 and not config.STRING4 and not config.STRING5:
-        LOGGER(__name__).error("Please fill Pyrogram Session...")
+    if not config.STRING1:
+        LOGGER(__name__).error("No Session String!")
         exit()
 
-    try:
-        await fetch_and_store_cookies()
-    except:
-        pass
-
     await sudo()
-    try:
-        users = await get_gbanned()
-        for user_id in users:
-            BANNED_USERS.add(user_id)
-        users = await get_banned_users()
-        for user_id in users:
-            BANNED_USERS.add(user_id)
-    except:
-        pass
+    try: await fetch_and_store_cookies()
+    except: pass
 
     await bot_app.start()
-    LOGGER("AnnieXMedia").info("✅ Bot Client Started")
-
-    for all_module in ALL_MODULES:
-        importlib.import_module("AnnieXMedia.plugins" + all_module)
-    LOGGER("AnnieXMedia.plugins").info("✅ Modules Loaded...")
-
+    for mod in ALL_MODULES: importlib.import_module("AnnieXMedia.plugins" + mod)
+    
     await userbot.start()
     await StreamController.start()
-
-    try:
-        await StreamController.stream_call("http://docs.evostream.com/sample_content/assets/sintel1m720p.mp4")
-    except:
-        pass
-
-    await StreamController.decorators()
-    LOGGER("AnnieXMedia").info("🚀 Annie Music Started Successfully...")
+    await StreamController.decorators() # هام جداً لتفعيل الأوامر
     
+    LOGGER("AnnieXMedia").info("🚀 System Fully Operational")
     await idle()
-    await bot_app.stop()
-    await userbot.stop()
 
 if __name__ == "__main__":
     asyncio.get_event_loop().run_until_complete(init())
