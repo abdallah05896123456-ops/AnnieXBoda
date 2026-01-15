@@ -1,674 +1,492 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#000000">
-    <title>Titan OS | Premium Access</title>
-    
-    <!-- Fonts: Cairo for Arabic, SF Pro Display Alternative -->
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;800&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
-    <!-- Icons -->
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+<meta charset="utf-8" />
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Titan OS • iPhone Login Frame — Welcome</title>
 
-    <style>
-        /* 
-        =====================================================
-           1. تعريف المتغيرات (iOS Space System Variables)
-        =====================================================
-        */
-        :root {
-            /* iOS Colors */
-            --ios-blue: #007AFF;
-            --ios-blue-grad: linear-gradient(135deg, #007AFF, #00C7BE);
-            --ios-dark: #000000;
-            --ios-gray: #1C1C1E;
-            --ios-light: #FFFFFF;
-            --ios-red: #FF3B30;
-            --ios-green: #34C759;
-            
-            /* Glassmorphism */
-            --glass-bg: rgba(30, 30, 35, 0.60);
-            --glass-border: rgba(255, 255, 255, 0.12);
-            --glass-shine: rgba(255, 255, 255, 0.05);
-            
-            /* Shadows & Glows */
-            --shadow-card: 0 40px 80px rgba(0, 0, 0, 0.7);
-            --shadow-input: inset 0 2px 4px rgba(0, 0, 0, 0.3);
-            --neon-glow: 0 0 20px rgba(0, 122, 255, 0.4);
-            
-            /* Text */
-            --text-main: #FFFFFF;
-            --text-muted: #8E8E93;
-            
-            /* Metrics */
-            --radius-xl: 40px;
-            --radius-md: 18px;
-            --anim-speed: 0.4s;
-        }
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
 
-        /* 
-        =====================================================
-           2. التأسيس (Reset & Layout)
-        =====================================================
-        */
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            outline: none;
-            -webkit-tap-highlight-color: transparent;
-            font-family: 'Cairo', -apple-system, sans-serif;
-        }
+<!-- Icons -->
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
-        html, body {
-            height: 100%;
-            width: 100%;
-            overflow: hidden; /* لمنع السكرول */
-        }
+<style>
+/* =========================================================
+   TITAN OS — iPhone Style Login (Full Detailed)
+   - الهدف: مستطيل iPhone-like، ضوء أبيض خافت حوله
+   - يحتوي صورة "Welcome" في الأعلى، واجهة تسجيل دخول متكاملة
+   - RTL متوافق، محسن للموبايل والديستوب
+   ========================================================= */
 
-        body {
-            background-color: var(--ios-dark);
-            color: var(--text-main);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            position: relative;
-        }
+/* ---------- Root variables (design tokens) ---------- */
+:root{
+  --bg-0: #030303;
+  --bg-1: #07070a;
+  --glass: rgba(18,18,20,0.68);
+  --glass-2: rgba(255,255,255,0.03);
+  --border: rgba(255,255,255,0.06);
+  --accent: #0A84FF;
+  --accent-2: #00C7BE;
+  --soft-white: rgba(255,255,255,0.85);
+  --muted: #9b9b9f;
+  --success: #34C759;
+  --danger: #FF3B30;
+  --radius-iphone: 44px;
+  --radius-card: 18px;
+  --shadow-strong: 0 40px 120px rgba(0,0,0,0.75);
+  --shadow-soft: 0 12px 36px rgba(0,0,0,0.6);
+  --glass-blur: 36px;
+  --font-sans: 'Cairo', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+}
 
-        /* 
-        =====================================================
-           3. الخلفية التفاعلية (Particle Canvas)
-        =====================================================
-        */
-        #particle-canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 1;
-            background: radial-gradient(circle at center, #1a1b2e 0%, #000000 90%);
-        }
+/* ---------- reset ---------- */
+*{box-sizing:border-box}
+html,body{height:100%;background:linear-gradient(180deg,#040405 0%, #000000 82%);margin:0;font-family:var(--font-sans);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+body{display:flex;align-items:center;justify-content:center;padding:28px;color:var(--soft-white);overflow:auto}
 
-        /* 
-        =====================================================
-           4. شاشة التحميل (Preloader)
-        =====================================================
-        */
-        #preloader {
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: #000;
-            z-index: 9999;
-            display: flex; flex-direction: column;
-            justify-content: center; align-items: center;
-            transition: opacity 0.8s ease-in-out, visibility 0.8s;
-        }
+/* ---------- background subtle stars / glow ---------- */
+.bg-wrap{position:fixed;inset:0;z-index:0;pointer-events:none}
+.bg-glow{
+  position:absolute;left:50%;top:10%;
+  width:900px;height:600px;transform:translateX(-50%);
+  background: radial-gradient(closest-side, rgba(255,255,255,0.08), rgba(255,255,255,0.00) 40%);
+  filter:blur(60px);opacity:0.08;mix-blend-mode:screen;
+}
 
-        .loader-orbit {
-            width: 60px; height: 60px;
-            border: 2px solid rgba(255,255,255,0.1);
-            border-radius: 50%;
-            position: relative;
-            animation: spin 2s linear infinite;
-        }
+/* ---------- main container (center) ---------- */
+.container{
+  width:100%;max-width:1200px;display:flex;gap:26px;align-items:center;justify-content:center;
+  padding:20px;z-index:5;
+}
 
-        .loader-orbit::after {
-            content: '';
-            position: absolute;
-            top: -5px; left: 50%;
-            width: 10px; height: 10px;
-            background: var(--ios-blue);
-            border-radius: 50%;
-            box-shadow: 0 0 15px var(--ios-blue);
-            transform: translateX(-50%);
-        }
+/* ---------- left: iphone mockup (login) ---------- */
+.iphone-wrap{
+  width:360px; /* typical iPhone width for mockup */
+  min-width:280px;
+  border-radius: calc(var(--radius-iphone) + 6px);
+  padding:18px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  box-shadow: var(--shadow-strong), 0 0 0 1px rgba(255,255,255,0.01) inset;
+  display:flex;flex-direction:column;align-items:center;
+  position:relative;overflow:visible;
+}
 
-        .loader-text {
-            margin-top: 20px;
-            font-size: 0.9rem;
-            letter-spacing: 2px;
-            color: var(--text-muted);
-            opacity: 0.7;
-            animation: pulse 1.5s infinite;
-        }
+/* faint white halo around iphone to mimic iPhone edge glow */
+.iphone-wrap::before{
+  content:"";
+  position:absolute;inset:-14px;border-radius:calc(var(--radius-iphone) + 20px);
+  background: radial-gradient(closest-side, rgba(255,255,255,0.08), rgba(255,255,255,0.00) 40%);
+  filter: blur(18px);opacity:0.55;z-index:-1;
+}
 
-        /* 
-        =====================================================
-           5. حاوية الكارت (3D Wrapper)
-        =====================================================
-        */
-        .scene-3d {
-            perspective: 1200px;
-            z-index: 10;
-            width: 90%;
-            max-width: 440px;
-            display: flex;
-            justify-content: center;
-        }
+/* front screen area (the actual display) */
+.iphone-screen{
+  width:100%;border-radius:var(--radius-iphone);
+  padding:18px;background:linear-gradient(180deg, rgba(8,8,10,0.7), rgba(10,10,12,0.65));
+  border:1px solid rgba(255,255,255,0.03);
+  box-shadow: var(--shadow-soft);
+  display:flex;flex-direction:column;align-items:center;gap:14px;
+  position:relative;overflow:hidden;
+}
 
-        .glass-panel {
-            background: var(--glass-bg);
-            backdrop-filter: blur(50px) saturate(180%);
-            -webkit-backdrop-filter: blur(50px) saturate(180%);
-            border-radius: var(--radius-xl);
-            border: 1px solid var(--glass-border);
-            padding: 50px 40px;
-            width: 100%;
-            box-shadow: var(--shadow-card);
-            transform-style: preserve-3d;
-            transform: rotateX(0) rotateY(0);
-            transition: transform 0.1s ease-out, box-shadow 0.3s ease;
-            position: relative;
-            overflow: hidden;
-            opacity: 0;
-            animation: floatUp 1s cubic-bezier(0.2, 0.8, 0.2, 1) forwards 0.5s;
-        }
+/* notch / camera area (just aesthetic) */
+.notch{
+  width:110px;height:28px;border-radius:14px;background:rgba(0,0,0,0.25);margin-top:6px;box-shadow: inset 0 -1px 0 rgba(255,255,255,0.02);
+  display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:11px;letter-spacing:1px
+}
 
-        /* اللمعة العلوية (Highlight) */
-        .glass-panel::before {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0;
-            height: 1px;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
-        }
+/* welcome image container (big image inside the screen) */
+.welcome-hero{
+  width:86%;max-width:300px;height:160px;border-radius:18px;overflow:hidden;
+  background:linear-gradient(135deg, rgba(10,132,255,0.08), rgba(191,90,242,0.04));
+  border:1px solid rgba(255,255,255,0.03);display:flex;align-items:center;justify-content:center;
+  position:relative;
+  box-shadow:0 12px 40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
+}
 
-        /* اللمعة الخلفية المائلة */
-        .glass-panel::after {
-            content: '';
-            position: absolute;
-            top: -50%; left: -50%;
-            width: 200%; height: 200%;
-            background: linear-gradient(to bottom right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.03) 45%, rgba(255,255,255,0) 50%);
-            transform: rotate(30deg);
-            pointer-events: none;
-        }
+/* the "Welcome" visual: large centered image or illustrated text */
+.welcome-hero img{width:100%;height:100%;object-fit:cover;display:block}
+.welcome-hero .overlay{
+  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  background:linear-gradient(180deg, rgba(0,0,0,0.12), rgba(0,0,0,0.28));
+}
+.welcome-hero h2{font-family:'Rajdhani';font-size:1.35rem;margin:0;color:var(--soft-white);text-shadow:0 6px 24px rgba(0,0,0,0.6)}
+.welcome-hero p{margin:0;color:var(--muted);font-size:0.85rem}
 
-        /* 
-        =====================================================
-           6. المحتوى الداخلي (Inner Content)
-        =====================================================
-        */
-        
-        /* 6.1 صورة اللوجو (Round Space Planet) */
-        .planet-wrapper {
-            width: 120px;
-            height: 120px;
-            margin: 0 auto 25px;
-            position: relative;
-            border-radius: 50%;
-            transform: translateZ(40px); /* يبرز للخارج */
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-        }
+/* card (glass) holding login fields inside iphone screen */
+.login-card{
+  width:92%;background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  border-radius:16px;padding:14px;border:1px solid rgba(255,255,255,0.03);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  display:flex;flex-direction:column;gap:10px;
+}
 
-        .planet-img {
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 2px solid rgba(255,255,255,0.1);
-            position: relative;
-            z-index: 2;
-        }
+/* input styles (iOS feel) */
+.field{position:relative}
+.input{
+  width:100%;padding:14px 18px;border-radius:12px;background:rgba(0,0,0,0.28);border:1px solid rgba(255,255,255,0.04);
+  color:var(--soft-white);font-size:1rem;text-align:left;direction:ltr;
+}
+.input::placeholder{color:rgba(255,255,255,0.22)}
+.input:focus{outline:none;box-shadow:0 8px 30px rgba(10,132,255,0.06);border-color:rgba(10,132,255,0.42)}
 
-        /* الحلقات الدوارة حول الكوكب */
-        .orbit-ring {
-            position: absolute;
-            top: -10px; left: -10px; right: -10px; bottom: -10px;
-            border-radius: 50%;
-            border: 1px solid transparent;
-            border-top-color: var(--ios-blue);
-            border-left-color: rgba(255,255,255,0.2);
-            animation: spin 6s linear infinite;
-            z-index: 1;
-        }
+/* inline icon (right) */
+.icon{
+  position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:1.05rem;pointer-events:none
+}
 
-        .orbit-ring:nth-child(2) {
-            top: -20px; left: -20px; right: -20px; bottom: -20px;
-            border-top-color: transparent;
-            border-bottom-color: #bf5af2; /* Purple */
-            animation: spin 8s linear infinite reverse;
-            opacity: 0.6;
-        }
+/* toggle show/hide (left) */
+.toggle-show{position:absolute;left:12px;top:50%;transform:translateY(-50%);background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:1rem}
 
-        /* 6.2 النصوص */
-        .header-content {
-            text-align: center;
-            margin-bottom: 40px;
-            transform: translateZ(30px);
-        }
+/* buttons */
+.btn{
+  width:100%;padding:12px 14px;border-radius:12px;border:none;background:linear-gradient(90deg,var(--accent),var(--accent-2));
+  color:#fff;font-weight:700;font-size:1rem;cursor:pointer;box-shadow:0 12px 40px rgba(10,132,255,0.18);
+}
+.btn:active{transform:translateY(1px)}
 
-        .header-content h1 {
-            font-size: 2rem;
-            font-weight: 800;
-            background: linear-gradient(to right, #fff, #81b0ff);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 5px;
-            font-family: 'Rajdhani', sans-serif;
-            letter-spacing: 1px;
-        }
+/* secondary small link */
+.small{
+  color:var(--muted);font-size:0.88rem;text-align:center;margin-top:6px
+}
 
-        .header-content p {
-            color: var(--text-muted);
-            font-size: 0.9rem;
-        }
+/* status row (players / id / ping) */
+.status-row{width:100%;display:flex;gap:8px;align-items:center;justify-content:space-between;font-size:0.82rem;color:var(--muted)}
+.status-chip{background:rgba(255,255,255,0.02);padding:6px 10px;border-radius:24px;border:1px solid rgba(255,255,255,0.02)}
 
-        /* 6.3 رسالة الخطأ (Jinja2) */
-        .error-alert {
-            background: rgba(255, 59, 48, 0.1);
-            border: 1px solid rgba(255, 59, 48, 0.3);
-            color: var(--ios-red);
-            padding: 12px;
-            border-radius: 12px;
-            font-size: 0.9rem;
-            margin-bottom: 20px;
-            text-align: center;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            transform: translateZ(25px);
-            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
-        }
+/* ---------- right: detail panel (optional dashboard preview) ---------- */
+.detail-panel{
+  width:520px;max-width:52%;min-width:320px;background:linear-gradient(180deg, rgba(18,18,20,0.6), rgba(12,12,12,0.6));
+  border-radius:18px;padding:22px;border:1px solid rgba(255,255,255,0.03);box-shadow:var(--shadow-soft);display:flex;flex-direction:column;gap:14px;
+}
 
-        /* 6.4 الحقول */
-        .form-group {
-            position: relative;
-            margin-bottom: 20px;
-            transform: translateZ(20px);
-        }
+/* cards within detail panel */
+.row{display:flex;gap:12px}
+.stat{
+  flex:1;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  padding:16px;border-radius:12px;border:1px solid rgba(255,255,255,0.03);
+  display:flex;flex-direction:column;gap:8px;align-items:flex-start;
+}
+.stat h3{margin:0;font-family:'Rajdhani';font-size:1.1rem}
+.stat p{margin:0;color:var(--muted);font-size:0.88rem}
 
-        .ios-input {
-            width: 100%;
-            background: rgba(0, 0, 0, 0.25);
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: var(--radius-md);
-            padding: 18px 20px;
-            padding-right: 50px; /* مسافة للأيقونة */
-            color: #fff;
-            font-size: 1rem;
-            transition: all 0.3s ease;
-            text-align: left; /* المحتوى إنجليزي */
-            direction: ltr;
-        }
+/* big list (groups, active calls) */
+.list{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:12px;border-radius:12px;max-height:240px;overflow:auto}
+.list-item{display:flex;align-items:center;gap:12px;padding:8px;border-radius:10px;margin-bottom:8px;border:1px solid rgba(255,255,255,0.02);cursor:pointer}
+.list-item:hover{background:rgba(255,255,255,0.02)}
 
-        .ios-input::placeholder {
-            color: rgba(255,255,255,0.25);
-            text-align: right;
-        }
+/* small avatar */
+.avatar{width:44px;height:44px;border-radius:10px;overflow:hidden;background:linear-gradient(90deg,var(--accent),#bf5af2)}
+.avatar img{width:100%;height:100%;object-fit:cover}
 
-        .ios-input:focus {
-            background: rgba(0, 0, 0, 0.45);
-            border-color: var(--ios-blue);
-            box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.15);
-            transform: translateY(-2px);
-        }
+/* footer small */
+.detail-footer{font-size:0.85rem;color:var(--muted);text-align:center;padding-top:8px;border-top:1px solid rgba(255,255,255,0.02)}
 
-        .input-icon {
-            position: absolute;
-            right: 20px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: var(--text-muted);
-            font-size: 1.1rem;
-            transition: 0.3s;
-            pointer-events: none;
-        }
+/* responsiveness */
+@media (max-width:1000px){
+  .container{flex-direction:column-reverse;gap:18px;padding:18px}
+  .detail-panel{width:100%;max-width:680px}
+  .iphone-wrap{width:92%;max-width:420px}
+}
 
-        .ios-input:focus + .input-icon {
-            color: var(--ios-blue);
-        }
+/* accessibility focus */
+.input:focus, .btn:focus{outline:2px solid rgba(10,132,255,0.12);outline-offset:3px}
 
-        /* زر العين (Show Password) */
-        .toggle-btn {
-            position: absolute;
-            left: 20px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: var(--text-muted);
-            cursor: pointer;
-            padding: 5px;
-            transition: 0.3s;
-        }
-        .toggle-btn:hover { color: #fff; }
-
-        /* شريط قوة الباسورد */
-        .strength-track {
-            height: 3px;
-            background: rgba(255,255,255,0.1);
-            border-radius: 2px;
-            margin: -10px 10px 25px 10px;
-            overflow: hidden;
-            transform: translateZ(15px);
-        }
-        .strength-fill {
-            height: 100%; width: 0;
-            background: var(--ios-red);
-            transition: width 0.4s ease, background 0.4s ease;
-        }
-
-        /* 6.5 زر الدخول */
-        .btn-ios {
-            width: 100%;
-            padding: 18px;
-            border: none;
-            border-radius: var(--radius-md);
-            background: var(--ios-blue-grad);
-            color: #fff;
-            font-size: 1.1rem;
-            font-weight: 700;
-            cursor: pointer;
-            box-shadow: 0 10px 20px rgba(0, 122, 255, 0.25);
-            transition: all 0.3s ease;
-            position: relative;
-            overflow: hidden;
-            transform: translateZ(30px);
-        }
-
-        .btn-ios:hover {
-            transform: translateZ(35px) translateY(-2px);
-            box-shadow: 0 15px 30px rgba(0, 122, 255, 0.4);
-        }
-
-        .btn-ios:active {
-            transform: translateZ(25px) scale(0.98);
-        }
-
-        /* 6.6 الفوتر */
-        .card-footer {
-            margin-top: 30px;
-            text-align: center;
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            border-top: 1px solid rgba(255,255,255,0.05);
-            padding-top: 20px;
-            transform: translateZ(10px);
-        }
-
-        /* 
-        =====================================================
-           7. الأنيميشن (Keyframes)
-        =====================================================
-        */
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
-        @keyframes floatUp { from { opacity: 0; transform: translateY(50px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
-        @keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-5px); } 40%, 80% { transform: translateX(5px); } }
-        
-        .shake-trigger { animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both; border-color: var(--ios-red) !important; }
-
-        /* 
-        =====================================================
-           8. تحسينات الموبايل (Responsive)
-        =====================================================
-        */
-        @media (max-width: 480px) {
-            .scene-3d { perspective: none; width: 95%; }
-            .glass-panel { 
-                transform: none !important; /* إلغاء الـ 3D للحفاظ على البطارية */
-                padding: 40px 25px;
-                border-radius: 30px;
-            }
-            .header-content h1 { font-size: 1.8rem; }
-        }
-
-    </style>
+/* little animations */
+@keyframes floatIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+.iphone-screen, .detail-panel{animation:floatIn .6s ease both}
+</style>
 </head>
 <body>
 
-    <!-- 1. شاشة التحميل -->
-    <div id="preloader">
-        <div class="loader-orbit"></div>
-        <div class="loader-text">INITIALIZING TITAN OS...</div>
-    </div>
+<!-- background glow and stage -->
+<div class="bg-wrap" aria-hidden="true">
+  <div class="bg-glow"></div>
+</div>
 
-    <!-- 2. الخلفية الشبكية (Network Particles) -->
-    <canvas id="particle-canvas"></canvas>
+<!-- main container -->
+<div class="container" role="main" aria-label="Titan OS Login Area">
 
-    <!-- 3. حاوية الكارت -->
-    <div class="scene-3d" id="tilt-wrapper">
-        <div class="glass-panel">
-            
-            <!-- صورة الكوكب -->
-            <div class="planet-wrapper">
-                <div class="orbit-ring"></div>
-                <div class="orbit-ring"></div>
-                <!-- صورة واقعية للفضاء (Unsplash) -->
-                <img src="https://images.unsplash.com/photo-1614730341194-75c60740a2d3?q=80&w=250&auto=format&fit=crop" alt="Planet" class="planet-img">
-            </div>
+  <!-- Left: iPhone mockup with login -->
+  <div class="iphone-wrap" aria-hidden="false" role="region" aria-label="شاشة الايفون لتسجيل الدخول">
+    <div class="iphone-screen">
 
-            <!-- النصوص -->
-            <div class="header-content">
-                <h1>Titan OS <span style="font-size:0.5em; vertical-align: super; color: var(--ios-blue);">PRO</span></h1>
-                <p>نظام التحكم المركزي المتطور</p>
-            </div>
+      <!-- notch -->
+      <div class="notch" aria-hidden="true">Titan • iOS</div>
 
-            <!-- عرض الخطأ (Python Jinja2) -->
-            {% if error %}
-            <div class="error-alert">
-                <i class="fa-solid fa-triangle-exclamation"></i>
-                <span>{{ error }}</span>
-            </div>
-            {% endif %}
-
-            <!-- الفورم -->
-            <form id="loginForm" action="/login" method="POST" onsubmit="return validateForm(event)">
-                
-                <!-- اسم المستخدم -->
-                <div class="form-group">
-                    <input type="text" name="username" id="username" class="ios-input" placeholder="Admin ID" required autocomplete="off">
-                    <i class="fa-solid fa-user-astronaut input-icon"></i>
-                </div>
-
-                <!-- كلمة المرور -->
-                <div class="form-group">
-                    <input type="password" name="password" id="password" class="ios-input" placeholder="Passcode" required>
-                    <i class="fa-solid fa-fingerprint input-icon"></i>
-                    <!-- زر إظهار الباسورد -->
-                    <i class="fa-solid fa-eye toggle-btn" onclick="togglePass()"></i>
-                </div>
-                
-                <!-- شريط القوة -->
-                <div class="strength-track">
-                    <div class="strength-fill" id="strength-bar"></div>
-                </div>
-
-                <!-- زر الدخول -->
-                <button type="submit" class="btn-ios" id="submit-btn">
-                    تسجيل الدخول
-                </button>
-
-                <!-- الفوتر -->
-                <div class="card-footer">
-                    Secure Connection &bull; Version 4.0.1
-                </div>
-
-            </form>
+      <!-- WELCOME HERO (image + overlay text) -->
+      <div class="welcome-hero" role="img" aria-label="Welcome image">
+        <!-- Example image; you can change the src to any welcome image -->
+        <img src="https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1400&auto=format&fit=crop" alt="Welcome background">
+        <div class="overlay" aria-hidden="false">
+          <h2>Welcome</h2>
+          <p>أهلًا بك في لوحة تحكم Titan OS</p>
         </div>
+      </div>
+
+      <!-- Login inputs container -->
+      <div class="login-card" role="form" aria-labelledby="login-heading">
+
+        <!-- heading inside screen -->
+        <div style="width:100%;text-align:center">
+          <h3 id="login-heading" style="margin:0;font-family:'Rajdhani';font-size:1.05rem">دخول المشرف</h3>
+          <div style="font-size:0.82rem;color:var(--muted);margin-top:6px">أدخل بياناتك للوصول الكامل</div>
+        </div>
+
+        <!-- server-error placeholder (Jinja friendly) -->
+        <!-- Example: Flask render_template('login.html', error='...') will show message here -->
+        <!-- Start server-insert -->
+        <!-- {% if error %} -->
+        <!-- <div style="padding:10px;border-radius:10px;background:rgba(255,59,48,0.06);color:var(--danger);border:1px solid rgba(255,59,48,0.14);font-weight:600">{{ error }}</div> -->
+        <!-- {% endif %} -->
+        <!-- End server-insert -->
+
+        <!-- username -->
+        <div class="field">
+          <input id="username" name="username" class="input" type="text" placeholder="اسم المشرف" aria-label="اسم المشرف" autocomplete="username">
+          <i class="fa-solid fa-user-astronaut icon" aria-hidden="true"></i>
+        </div>
+
+        <!-- password -->
+        <div class="field">
+          <input id="password" name="password" class="input" type="password" placeholder="رمز الدخول" aria-label="رمز الدخول" autocomplete="current-password">
+          <i class="fa-solid fa-key icon" aria-hidden="true"></i>
+          <button type="button" class="toggle-show" aria-label="إظهار كلمة المرور" onclick="togglePassword()">
+            <i id="eye" class="fa-solid fa-eye" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <!-- strength -->
+        <div class="strength-wrap" aria-hidden="true" style="margin-top:6px">
+          <div id="strengthBar" class="strength-fill"></div>
+        </div>
+
+        <!-- actions: submit will post to /login (Flask) -->
+        <form id="hiddenForm" action="/login" method="POST" style="display:none">
+          <!-- CSRF token slot: server may inject here -->
+        </form>
+
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button id="loginBtn" class="btn" aria-label="تسجيل الدخول" onclick="submitLogin()">تسجيل الدخول</button>
+          <div style="display:flex;gap:10px;align-items:center;justify-content:center">
+            <button class="btn" style="background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted);font-weight:600" onclick="fillDemo()">تجريبي</button>
+          </div>
+        </div>
+
+        <div class="small" style="text-align:center;margin-top:4px">اتصال آمن · Titan OS</div>
+
+        <!-- status row -->
+        <div style="width:100%;margin-top:8px">
+          <div class="status-row">
+            <div class="status-chip">Ping: <strong id="pingVal">--</strong> ms</div>
+            <div class="status-chip">Active: <strong id="activeChats">--</strong></div>
+            <div class="status-chip">ID: <strong id="adminId">—</strong></div>
+          </div>
+        </div>
+
+      </div> <!-- login-card end -->
+
+      <!-- bottom small note -->
+      <div style="font-size:0.78rem;color:var(--muted);margin-top:12px">Titan Systems — Secure Control Panel</div>
+
+    </div> <!-- iphone-screen -->
+  </div> <!-- iphone-wrap -->
+
+  <!-- Right: detail panel with preview cards -->
+  <aside class="detail-panel" aria-label="معاينة لوحة التحكم">
+
+    <!-- top row stats -->
+    <div class="row" style="align-items:stretch">
+      <div class="stat">
+        <h3>System</h3>
+        <p>Ram: <strong id="ram">--%</strong></p>
+        <p>CPU: <strong id="cpu">--%</strong></p>
+        <p>Ping (avg): <strong id="ping2">-- ms</strong></p>
+      </div>
+      <div class="stat">
+        <h3>Channels</h3>
+        <p>Active calls: <strong id="callsCount">--</strong></p>
+        <p>Video chats: <strong id="videoCount">--</strong></p>
+        <p>Connected assistants: <strong id="assCount">--</strong></p>
+      </div>
     </div>
 
-    <!-- 
-    =====================================================
-       9. الجافاسكريبت (The Brain)
-    =====================================================
-    -->
-    <script>
-        // --- 1. إخفاء اللودر ---
-        window.addEventListener('load', () => {
-            const loader = document.getElementById('preloader');
-            setTimeout(() => {
-                loader.style.opacity = '0';
-                setTimeout(() => loader.style.visibility = 'hidden', 800);
-            }, 1000);
-        });
+    <!-- groups list -->
+    <div style="margin-top:6px"><strong style="font-family:Rajdhani">المكالمات النشطة</strong></div>
+    <div class="list" id="activeList" role="list" aria-label="قائمة المكالمات النشطة">
+      <!-- JS will populate -->
+      <div style="text-align:center;color:var(--muted);padding:18px">لا توجد بيانات بعد — سيتم تحديث العرض تلقائياً</div>
+    </div>
 
-        // --- 2. نظام الشبكة (Particle Network) ---
-        const canvas = document.getElementById('particle-canvas');
-        const ctx = canvas.getContext('2d');
-        let width, height, particles = [];
+    <!-- preview of file cache -->
+    <div style="margin-top:8px;display:flex;gap:10px;align-items:center;justify-content:space-between">
+      <div style="font-weight:700">الملفات المؤقتة</div>
+      <div style="color:var(--muted)" id="cacheCount">0</div>
+    </div>
+    <div class="list" id="cacheList" style="max-height:120px;overflow:auto">
+      <div style="color:var(--muted);padding:10px">لا توجد ملفات</div>
+    </div>
 
-        function resize() {
-            width = canvas.width = window.innerWidth;
-            height = canvas.height = window.innerHeight;
-        }
-        window.addEventListener('resize', resize);
-        resize();
+    <div class="detail-footer">عرض توضيحي — البيانات محلية (Mock) · Titan OS ©</div>
 
-        class Particle {
-            constructor() {
-                this.x = Math.random() * width;
-                this.y = Math.random() * height;
-                this.vx = (Math.random() - 0.5) * 1.5;
-                this.vy = (Math.random() - 0.5) * 1.5;
-                this.size = Math.random() * 2 + 1;
-                // لون أزرق سماوي خافت
-                this.color = `rgba(0, 190, 255, ${Math.random() * 0.5 + 0.2})`; 
-            }
-            update() {
-                this.x += this.vx; this.y += this.vy;
-                if (this.x < 0 || this.x > width) this.vx *= -1;
-                if (this.y < 0 || this.y > height) this.vy *= -1;
-            }
-            draw() {
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-                ctx.fillStyle = this.color;
-                ctx.fill();
-            }
-        }
+  </aside>
 
-        // تكوين الجزيئات
-        function initParticles() {
-            particles = [];
-            const count = Math.min(window.innerWidth / 15, 80); // عدد مناسب للموبايل
-            for(let i=0; i<count; i++) particles.push(new Particle());
-        }
+</div> <!-- container end -->
 
-        // رسم الخطوط بين النقاط القريبة
-        function drawLines() {
-            for(let i=0; i<particles.length; i++) {
-                for(let j=i+1; j<particles.length; j++) {
-                    const dx = particles[i].x - particles[j].x;
-                    const dy = particles[i].y - particles[j].y;
-                    const dist = Math.sqrt(dx*dx + dy*dy);
-                    
-                    if(dist < 150) {
-                        ctx.beginPath();
-                        ctx.strokeStyle = `rgba(0, 122, 255, ${1 - dist/150})`; // خط أزرق شفاف
-                        ctx.lineWidth = 0.5;
-                        ctx.moveTo(particles[i].x, particles[i].y);
-                        ctx.lineTo(particles[j].x, particles[j].y);
-                        ctx.stroke();
-                    }
-                }
-            }
-        }
+<!-- detailed script: interactions, demo data, accessibility -->
+<script>
+/*
+  Titan OS iPhone Login — Script
+  - Toggle password
+  - Password strength meter
+  - Mock fetching of system stats & active calls
+  - submitLogin posts to /login using a hidden form (to allow server CSRF injection)
+  - Demo-fill and small UX polish
+*/
 
-        function animate() {
-            ctx.clearRect(0, 0, width, height);
-            particles.forEach(p => { p.update(); p.draw(); });
-            drawLines();
-            requestAnimationFrame(animate);
-        }
+/* Utility */
+function qs(sel){ return document.querySelector(sel) }
+function qsa(sel){ return Array.from(document.querySelectorAll(sel)) }
 
-        initParticles();
-        animate();
+/* Elements */
+const passwordEl = qs('#password')
+const eyeEl = qs('#eye')
+const strengthEl = qs('#strengthBar')
+const loginBtn = qs('#loginBtn')
+const usernameEl = qs('#username')
+const hiddenForm = qs('#hiddenForm')
 
-        // تفاعل الماوس مع الشبكة
-        document.addEventListener('mousemove', (e) => {
-            particles.forEach(p => {
-                const dx = e.clientX - p.x;
-                const dy = e.clientY - p.y;
-                const dist = Math.sqrt(dx*dx + dy*dy);
-                if(dist < 150) {
-                    p.vx += dx * 0.0005;
-                    p.vy += dy * 0.0005;
-                }
-            });
-        });
+/* Toggle password visibility */
+function togglePassword(){
+  if(!passwordEl) return
+  if(passwordEl.type === 'password'){
+    passwordEl.type = 'text'
+    eyeEl.className = 'fa-solid fa-eye-slash'
+    eyeEl.style.color = ''
+  } else {
+    passwordEl.type = 'password'
+    eyeEl.className = 'fa-solid fa-eye'
+    eyeEl.style.color = ''
+  }
+}
 
-        // --- 3. تأثير الـ 3D Tilt (للكومبيوتر فقط) ---
-        const wrapper = document.getElementById('tilt-wrapper');
-        const card = document.querySelector('.glass-panel');
+/* Password strength */
+if(passwordEl){
+  passwordEl.addEventListener('input', (e)=>{
+    const val = e.target.value || ''
+    let score = 0
+    if(val.length >= 6) score++
+    if(/[0-9]/.test(val)) score++
+    if(/[A-Z]/.test(val)) score++
+    if(/[^A-Za-z0-9]/.test(val)) score++
+    if(val.length === 0){ strengthEl.style.width = '0%' }
+    else if(score <= 1){ strengthEl.style.width = '24%'; strengthEl.style.background = '#FF3B30' }
+    else if(score === 2){ strengthEl.style.width = '56%'; strengthEl.style.background = '#FF9F0A' }
+    else if(score === 3){ strengthEl.style.width = '86%'; strengthEl.style.background = '#34C759' }
+    else { strengthEl.style.width = '100%'; strengthEl.style.background = 'linear-gradient(90deg,#0A84FF,#00C7BE)' }
+  })
+}
 
-        document.addEventListener('mousemove', (e) => {
-            if (window.innerWidth < 768) return; // تعطيل على الموبايل
-            
-            const xAxis = (window.innerWidth / 2 - e.pageX) / 25;
-            const yAxis = (window.innerHeight / 2 - e.pageY) / 25;
-            
-            card.style.transform = `rotateY(${xAxis}deg) rotateX(${yAxis}deg)`;
-        });
+/* Prevent double submit - use hidden form to allow server CSRF fields injection */
+function submitLogin(){
+  // basic validation
+  const user = usernameEl.value.trim()
+  const pass = passwordEl.value.trim()
+  if(!user || !pass){
+    // small shake animation
+    usernameEl.classList.add('shake'); passwordEl.classList.add('shake')
+    setTimeout(()=>{ usernameEl.classList.remove('shake'); passwordEl.classList.remove('shake') }, 600)
+    return
+  }
 
-        document.addEventListener('mouseleave', () => {
-            card.style.transform = `rotateY(0deg) rotateX(0deg)`;
-        });
+  // disable UI while submitting
+  loginBtn.disabled = true
+  loginBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> جاري الدخول...'
+  loginBtn.style.cursor = 'wait'
 
-        // --- 4. منطق الفورم ---
-        
-        // أ) إظهار الباسورد
-        function togglePass() {
-            const pass = document.getElementById('password');
-            const btn = document.querySelector('.toggle-btn');
-            if(pass.type === 'password') {
-                pass.type = 'text';
-                btn.classList.replace('fa-eye', 'fa-eye-slash');
-                btn.style.color = 'var(--ios-blue)';
-            } else {
-                pass.type = 'password';
-                btn.classList.replace('fa-eye-slash', 'fa-eye');
-                btn.style.color = '';
-            }
-        }
+  // Build a real form post to /login preserving possible CSRF inputs injected by server into #hiddenForm
+  const form = document.createElement('form')
+  form.method = 'POST'
+  form.action = '/login'
+  // copy any existing hidden CSRF fields from hiddenForm (server can inject them)
+  const hidden = hiddenForm.cloneNode(true)
+  // append username/password fields
+  const u = document.createElement('input'); u.type='hidden'; u.name='username'; u.value = user
+  const p = document.createElement('input'); p.type='hidden'; p.name='password'; p.value = pass
+  form.appendChild(u); form.appendChild(p)
+  // append any CSRF inputs
+  Array.from(hidden.querySelectorAll('input')).forEach(i => form.appendChild(i))
+  document.body.appendChild(form)
+  form.submit()
+}
 
-        // ب) قياس القوة
-        const passIn = document.getElementById('password');
-        const bar = document.getElementById('strength-bar');
+/* Demo fill */
+function fillDemo(){
+  usernameEl.value = 'Abdallah'
+  passwordEl.value = 'asdfghjkl05896'
+  passwordEl.dispatchEvent(new Event('input'))
+}
 
-        passIn.addEventListener('keyup', (e) => {
-            const v = e.target.value;
-            let s = 0;
-            if(v.length > 3) s++;
-            if(v.length > 7) s++;
-            if(/[0-9]/.test(v)) s++;
-            if(/[^A-Za-z0-9]/.test(v)) s++;
+/* Mock system stats updater
+   In real deployment, front-end will fetch /api/settings/status and /api/active_calls endpoints.
+   Here we mock some values and demonstrate dynamic UI.
+*/
+function mockUpdate(){
+  // Mock values
+  const ram = Math.floor(Math.random()*30) + 20
+  const cpu = Math.floor(Math.random()*40) + 10
+  const ping = Math.floor(Math.random()*90) + 10
+  const calls = Math.floor(Math.random()*6)
+  const videos = Math.floor(Math.random()*3)
+  const assistants = Math.floor(Math.random()*5) + 1
+  // Update UI
+  qs('#ram').innerText = ram + '%'
+  qs('#cpu').innerText = cpu + '%'
+  qs('#pingVal').innerText = ping
+  qs('#ping2').innerText = ping + ' ms'
+  qs('#activeChats').innerText = calls
+  qs('#callsCount').innerText = calls
+  qs('#videoCount').innerText = videos
+  qs('#assCount').innerText = assistants
+  qs('#adminId').innerText = usernameEl.value || '—'
+  // populate lists
+  const al = qs('#activeList')
+  al.innerHTML = ''
+  for(let i=0;i<calls;i++){
+    const it = document.createElement('div')
+    it.className = 'list-item'
+    it.innerHTML = `<div class="avatar"><img src="https://picsum.photos/seed/call${i}/200/200" alt="avatar"></div><div style="flex:1"><strong>Group ${1000+i}</strong><div style="font-size:0.85rem;color:${getComputedStyle(document.documentElement).getPropertyValue('--muted')};">ID: -100${1000+i}</div></div><div style="font-size:0.82rem;color:var(--muted)">Playing</div>`
+    al.appendChild(it)
+  }
+  const cacheList = qs('#cacheList'); cacheList.innerHTML = ''
+  const cacheCount = Math.floor(Math.random()*6)
+  qs('#cacheCount').innerText = cacheCount
+  if(cacheCount === 0){
+    cacheList.innerHTML = `<div style="color:var(--muted);padding:10px">لا توجد ملفات</div>`
+  } else {
+    for(let i=0;i<cacheCount;i++){
+      const f = document.createElement('div')
+      f.className = 'list-item'
+      f.innerHTML = `<div style="flex:1"><strong>file_${i}.mp4</strong><div style="font-size:0.82rem;color:var(--muted)"> ${(Math.random()*50+1).toFixed(1)} MB</div></div><div style="font-size:0.82rem;color:var(--muted)"> <button style="background:transparent;border:none;color:var(--accent);cursor:pointer" onclick="alert('download mock')">تحميل</button></div>`
+      cacheList.appendChild(f)
+    }
+  }
+}
 
-            if(v.length === 0) bar.style.width = '0%';
-            else if(s < 2) { bar.style.width = '30%'; bar.style.background = '#FF3B30'; }
-            else if(s < 4) { bar.style.width = '60%'; bar.style.background = '#FFD60A'; }
-            else { bar.style.width = '100%'; bar.style.background = '#34C759'; }
-        });
+/* periodic mock updates */
+mockUpdate()
+setInterval(mockUpdate, 4200)
 
-        // ج) التحقق والإرسال
-        function validateForm(e) {
-            const user = document.getElementById('username');
-            const pass = document.getElementById('password');
-            const btn = document.getElementById('submit-btn');
+/* Accessibility: enable form submit via Enter key in inputs */
+qs('#username').addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); submitLogin() } })
+qs('#password').addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); submitLogin() } })
 
-            let valid = true;
-            if(!user.value) { user.classList.add('shake-trigger'); valid = false; }
-            if(!pass.value) { pass.classList.add('shake-trigger'); valid = false; }
+/* small polite hint: focus first field */
+window.addEventListener('load', ()=>{ setTimeout(()=>qs('#username').focus(), 600) })
+</script>
 
-            setTimeout(() => {
-                user.classList.remove('shake-trigger');
-                pass.classList.remove('shake-trigger');
-            }, 500);
-
-            if(!valid) {
-                e.preventDefault();
-                return false;
-            }
-
-            // محاكاة الاتصال بالسيرفر
-            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> جاري الاتصال...';
-            btn.style.opacity = '0.8';
-            return true;
-        }
-
-    </script>
 </body>
 </html>
