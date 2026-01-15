@@ -11,6 +11,9 @@ from sys import argv
 from pyrogram import idle
 from pytgcalls.exceptions import NoActiveGroupCall
 
+# إجبار البوت على استخدام المكتبات المحلية
+sys.path.insert(0, os.getcwd())
+
 # [1] استيراد موديولات البوت الأساسية
 from AnnieXMedia import (
     LOGGER,
@@ -18,33 +21,25 @@ from AnnieXMedia import (
     userbot,
     YouTube,
 )
+from AnnieXMedia.core.call import StreamController
 from AnnieXMedia.misc import sudo
 from AnnieXMedia.utils.database import get_banned_users, get_gbanned
+from AnnieXMedia.utils.cookie_handler import fetch_and_store_cookies
 from config import BANNED_USERS
 import config
 
-# ⚠️ التعديل الذكي لإصلاح خطأ (No module named modules/plugins)
-# ─────────────────────────────────────────────────────────────
-MODULE_TYPE = "modules" # الافتراضي
+# [2] استيراد الإضافات (من مجلد plugins حسب الملف القديم)
 try:
-    # المحاولة الأولى: مجلد modules
-    from AnnieXMedia.modules import ALL_MODULES
-    MODULE_TYPE = "modules"
-except (ImportError, ModuleNotFoundError):
-    try:
-        # المحاولة الثانية: مجلد plugins (المستخدم في سورس AnnieXMusic)
-        from AnnieXMedia.plugins import ALL_MODULES
-        MODULE_TYPE = "plugins"
-    except (ImportError, ModuleNotFoundError):
-        print("❌ Critical Error: Could not find 'modules' or 'plugins' folder inside AnnieXMedia!")
-        ALL_MODULES = []
+    from AnnieXMedia.plugins import ALL_MODULES
+except ImportError:
+    LOGGER("AnnieXMedia").error("Could not find 'plugins' folder! Please check source structure.")
+    exit()
 
-# [2] إعداد وربط TitanOS Web Dashboard
+# [3] إعداد وربط TitanOS Web Dashboard
 # ────────────────────────────────────────────────────────
 WEB_ENABLED = False
 
 def setup_web_dashboard():
-    """تهيئة واستيراد لوحة التحكم من مجلد TitanOS"""
     global WEB_ENABLED
     try:
         current_path = os.getcwd()
@@ -53,7 +48,6 @@ def setup_web_dashboard():
 
         from TitanOS.web_srv import start_server_thread
         return start_server_thread
-
     except ImportError:
         try:
             titan_path = os.path.join(current_path, "TitanOS")
@@ -70,10 +64,10 @@ if start_server_func:
     WEB_ENABLED = True
 
 
-# [3] دالة التشغيل الرئيسية (Main Loop)
+# [4] دالة التشغيل الرئيسية
 # ────────────────────────────────────────────────────────
 async def init():
-    # 1. التحقق من متغيرات المساعد
+    # 1. التحقق من الجلسات
     if (
         not config.STRING1
         and not config.STRING2
@@ -81,10 +75,18 @@ async def init():
         and not config.STRING4
         and not config.STRING5
     ):
-        LOGGER(__name__).error("Assistant client variables not defined, exiting...")
-        return
+        LOGGER(__name__).error("Assistant session variables not defined, exiting...")
+        exit()
 
-    # 2. تحميل قوائم الحظر
+    # 2. تحميل الكوكيز (مهم لليوتيوب)
+    try:
+        await fetch_and_store_cookies()
+        LOGGER("AnnieXMedia").info("YouTube Cookies Loaded Successfully ✅")
+    except Exception as e:
+        LOGGER("AnnieXMedia").warning(f"⚠️ Cookie Error: {e}")
+
+    # 3. إعدادات الحظر والسودو
+    await sudo()
     try:
         users = await get_gbanned()
         for user_id in users:
@@ -94,28 +96,35 @@ async def init():
             BANNED_USERS.add(user_id)
     except:
         pass
-    
-    # 3. تفعيل السودو
-    await sudo()
 
-    # 4. تشغيل عملاء التيليجرام
-    try:
-        await app.start()
-        for user in userbot.clients:
-            await user.start()
-    except Exception as ex:
-        LOGGER(__name__).error(f"Bot failed to start: {ex}")
-        exit()
+    # 4. تشغيل البوت واليوزربوت
+    await app.start()
+    await userbot.start() # تم التعديل ليتوافق مع Userbot Class
 
-    # 5. تحميل الإضافات (ديناميكياً حسب اسم المجلد)
-    LOGGER("AnnieXMedia").info(f"Loading {MODULE_TYPE}...")
+    # 5. تحميل الإضافات
+    LOGGER("AnnieXMedia").info("Loading Plugins...")
     for all_module in ALL_MODULES:
-        # هنا التعديل المهم: استخدام المتغير بدلاً من الكلمة الثابتة
-        importlib.import_module(f"AnnieXMedia.{MODULE_TYPE}." + all_module)
-    LOGGER(f"AnnieXMedia.{MODULE_TYPE}").info("Successfully Imported Modules...")
+        importlib.import_module("AnnieXMedia.plugins." + all_module)
+    LOGGER("AnnieXMedia.plugins").info("Successfully Imported Plugins...")
 
-    # 6. تشغيل لوحة التحكم (TitanOS Web Dashboard)
-    # ────────────────────────────────────────────────────
+    # 6. تشغيل نظام المكالمات (هام جداً للأغاني)
+    # ──────────────────────────────────────────
+    await StreamController.start()
+    try:
+        # محاولة عمل بث تجريبي لضمان دخول المساعد للمجموعة
+        await StreamController.stream_call("http://docs.evostream.com/sample_content/assets/sintel1m720p.mp4")
+    except NoActiveGroupCall:
+        LOGGER("AnnieXMedia").error(
+            "Please turn on the Voice Chat of your Log Group/Channel.\nAnnie Bot Stopped..."
+        )
+        exit()
+    except Exception:
+        pass # تجاهل الأخطاء الأخرى في البث التجريبي
+
+    await StreamController.decorators()
+
+    # 7. تشغيل لوحة تحكم TitanOS
+    # ──────────────────────────────────────────
     if WEB_ENABLED and start_server_func:
         try:
             LOGGER("TitanOS").info("🌐 Initializing Web Kernel...")
@@ -126,29 +135,16 @@ async def init():
         except Exception as web_e:
             LOGGER("TitanOS").error(f"❌ Failed to start Dashboard: {web_e}")
 
-    # 7. إشعار البدء
-    try:
-        await app.send_message(
-            config.LOG_GROUP_ID,
-            f"<b>🔥 Titan OS Bot Started Successfully!</b>\n"
-            f"<b>🖥 Web Dashboard:</b> {'Enabled ✅' if WEB_ENABLED else 'Disabled ❌'}\n"
-            f"<b>📁 Modules Loaded:</b> {len(ALL_MODULES)} from <code>{MODULE_TYPE}</code>"
-        )
-    except:
-        pass 
-
-    LOGGER("AnnieXMedia").info("\x1b[32mBot Started Successfully. Hosting via TitanOS.\x1b[0m")
+    # 8. رسالة البدء
+    LOGGER("AnnieXMedia").info("\x1b[32mAnnie Music Bot & TitanOS Started Successfully.\x1b[0m")
     
+    # وضع الخمول
     await idle()
 
-    # 8. إيقاف التشغيل
-    try:
-        await app.stop()
-        for user in userbot.clients:
-            await user.stop()
-    except:
-        pass
-    LOGGER("AnnieXMedia").info("Stopping Bot Cleaning up...")
+    # 9. الإيقاف
+    await app.stop()
+    await userbot.stop()
+    LOGGER("AnnieXMedia").info("Stopping Annie Music Bot...")
 
 
 if __name__ == "__main__":
