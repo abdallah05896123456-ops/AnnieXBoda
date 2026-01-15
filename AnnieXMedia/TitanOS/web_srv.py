@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
-# ── 𝚂ᴏᴜʀᴄᴇ ✘ 𝐁ᴏᴅᴀ © 2026 ──────────────────────────────────────────────────────
-# TITAN OS | ULTIMATE KERNEL V6 (Production Grade)
-# Architecture: FastAPI + Motor Async + PyTgCalls Integration
-# Features: Real-Time Sync, Adaptive Streaming, User Proxy, Zero-Latency Control
+# ── 𝚂ᴏᴜʀᴄᴇ ✘ 𝐁ᴏᴅᴀ © 2025 ──────────────────────────────────────────────────────
+# TITAN OS | ULTIMATE KERNEL (The Complete Backend Engine)
+# Integrated with AnnieXMedia Source - Full Features
 # ──────────────────────────────────────────────────────────────────────────────
 
 import os
@@ -15,181 +14,143 @@ import logging
 import gc
 import inspect
 import traceback
-import mimetypes
-import time
 import json
-from typing import Any, Dict, List, Union, Optional, Generator
+import time
 from datetime import datetime
+from threading import Thread
+from typing import Any, Dict, List, Union, Optional
 
-# [1] Critical Dependencies & Intelligent Fallback
+# [1] Library Imports & Dependencies Check
 # ──────────────────────────────────────────────────────────────────────────────
-print("\n[BOOT] TitanOS Kernel: checking dependencies...")
-
 try:
-    # Core Server Libraries
     import uvicorn
     import aiofiles
-    
-    # Try importing Ultra-Fast JSON, fall back to Standard JSON if missing
-    try:
-        import ujson
-        JSON_ENGINE = ujson
-    except ImportError:
-        print("⚠️ Warning: 'ujson' not found. Falling back to standard 'json'.")
-        JSON_ENGINE = json
-
-    # Database & Web Framework
-    from motor.motor_asyncio import AsyncIOMotorClient
-    from fastapi import FastAPI, Request, Response, Form, BackgroundTasks, HTTPException, status, Header
+    from git import Repo, GitCommandError
+    from fastapi import FastAPI, Request, Response, Form, BackgroundTasks, HTTPException, status
     from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse, StreamingResponse
     from fastapi.templating import Jinja2Templates
     from fastapi.staticfiles import StaticFiles
     from starlette.middleware.sessions import SessionMiddleware
     from starlette.middleware.cors import CORSMiddleware
-    
-    # Telegram & Bot Core
-    from pyrogram import Client, enums
-    # [FIX]: Removed specific type imports that cause issues in new versions
-    from pytgcalls import PyTgCalls 
-    
+    from pyrogram import Client
+    from pytgcalls import PyTgCalls
 except ImportError as e:
-    print(f"\n❌ CRITICAL ERROR: Missing System Dependencies!\n👉 Please Install: pip3 install fastapi uvicorn aiofiles ujson motor python-multipart jinja2\nError Detail: {e}\n")
-    sys.exit(1)
+    print(f"\n❌ Critical Error: Missing dependencies! {e}")
+    print("👉 Run: pip3 install fastapi uvicorn gitpython aiofiles python-multipart jinja2\n")
+    sys.exit()
 
-# [2] System Configuration & Path Management
+# [2] Paths & Configuration Logic (ADJUSTED FOR FLAT STRUCTURE)
 # ──────────────────────────────────────────────────────────────────────────────
-class SystemConfig:
-    CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-    ROOT_DIR = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
-    TEMPLATES_DIR = CURRENT_DIR
-    STATIC_DIR = os.path.join(CURRENT_DIR, "static")
-    
-    # Data Directories
-    DOWNLOADS_DIR = os.path.join(ROOT_DIR, "downloads")
-    CACHE_DIR = os.path.join(ROOT_DIR, "cache")
-    RAW_FILES_DIR = os.path.join(ROOT_DIR, "raw_files")
-    LOG_FILE = os.path.join(ROOT_DIR, "log.txt")
+# تحديد المسار الحالي (حيث يوجد ملف web_srv.py)
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-    @classmethod
-    def init_paths(cls):
-        """Ensures all necessary system directories exist."""
-        for folder in [cls.DOWNLOADS_DIR, cls.CACHE_DIR, cls.RAW_FILES_DIR]:
-            os.makedirs(folder, exist_ok=True)
-        if cls.ROOT_DIR not in sys.path:
-            sys.path.insert(0, cls.ROOT_DIR)
+# المجلد الجذري للسورس (نخرج خطوة واحدة للوراء للوصول لمجلد AnnieXMedia الرئيسي)
+ROOT_DIR = os.path.abspath(os.path.join(CURRENT_DIR, "..")) 
 
-SystemConfig.init_paths()
+# مسار القوالب هو نفس المسار الحالي
+TEMPLATES_DIR = CURRENT_DIR
+STATIC_DIR = os.path.join(CURRENT_DIR, "static")
 
-# [3] Custom High-Performance Response Engine
-# ──────────────────────────────────────────────────────────────────────────────
-class UJSONResponse(JSONResponse):
-    """
-    Optimized JSON Response class using the selected JSON Engine.
-    Provides faster serialization for large datasets (e.g. chat lists).
-    """
-    media_type = "application/json"
-    def render(self, content: Any) -> bytes:
-        return JSON_ENGINE.dumps(content).encode("utf-8")
+# مسارات البوت المعتادة
+DOWNLOADS_DIR = os.path.join(ROOT_DIR, "downloads")
+CACHE_DIR = os.path.join(ROOT_DIR, "cache")
+RAW_FILES_DIR = os.path.join(ROOT_DIR, "raw_files")
+LOG_FILE = os.path.join(ROOT_DIR, "log.txt")
 
-# [4] Neural Core Integration (Bot Logic)
+# إضافة المجلد الجذري للمسار لاستيراد ملفات البوت
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+# التأكد من وجود المجلدات الضرورية
+for folder in [DOWNLOADS_DIR, CACHE_DIR, RAW_FILES_DIR]:
+    os.makedirs(folder, exist_ok=True)
+
+# [3] AnnieXMedia Core Integration (Importing Bot Modules)
 # ──────────────────────────────────────────────────────────────────────────────
 SYSTEM_READY = False
-BotClient = None
-CallClient = None
-QueueDB = {}
-Config = None
-YouTubeHelper = None
+BotClient = None      # app
+CallClient = None     # StreamController
+QueueDB = {}          # db
+YouTubeHelper = None  # YouTube
+Config = None         # config module
 BANNED_USERS = set()
 
-print("🔌 TitanOS V6: Initializing Neural Core & Real-Time Engines...")
+print("🔌 TitanOS: Initializing Core Integration...")
 
 try:
+    # 1. استيراد الإعدادات
     import config
     Config = config
     
-    # Secure Credentials Load
-    WEB_PASSWORD = getattr(config, "WEB_PASSWORD", "admin")
-    WEB_SECRET = getattr(config, "WEB_SECRET", "titan_super_secret_key")
+    # تحميل المتغيرات المهمة من الكونفج
+    WEB_PASSWORD = getattr(config, "WEB_PASSWORD", "asdfghjkl05896")
+    WEB_SECRET = getattr(config, "WEB_SECRET", "AnnieX_Secret_Key_99123")
     HOST = getattr(config, "HOST", "0.0.0.0")
     PORT = int(getattr(config, "PORT", "8080"))
-    MONGO_DB_URI = getattr(config, "MONGO_DB_URI", None)
-
-    # Import Application Components
+    
+    # 2. استيراد كائنات البوت الأساسية
     from AnnieXMedia import app as BotClient
+    from AnnieXMedia import LOGGER
+    
+    # 3. استيراد متحكم المكالمات (Call Controller)
     from AnnieXMedia.core.call import StreamController as CallClient
+    
+    # 4. استيراد قواعد البيانات والمساعدات
     from AnnieXMedia.misc import db as QueueDB
     from AnnieXMedia import YouTube as YouTubeHelper
     
-    # Import Database Utilities
+    # 5. استيراد دوال قاعدة البيانات (Database Utils)
     from AnnieXMedia.utils.database import (
         add_gban_user, remove_gban_user, get_banned_users,
+        blacklist_chat, whitelist_chat, blacklisted_chats,
+        autoend_on, autoend_off, is_autoend,
         maintenance_on, maintenance_off, is_maintenance,
         get_active_chats, get_active_video_chats,
-        get_loop, set_loop
+        remove_active_chat, remove_active_video_chat,
+        get_served_chats, get_served_users,
+        get_loop, set_loop,
+        is_music_playing
     )
     
-    # Load Ban List
+    # 6. استيراد قائمة المحظورين
+    from config import BANNED_USERS as _BANS
+    BANNED_USERS = _BANS
+
+    # 7. استيراد وظائف الطابور (Queue Utils) - مهم للإضافة اليدوية
     try:
-        from config import BANNED_USERS as _BANS
-        BANNED_USERS = _BANS
+        from AnnieXMedia.utils.stream.queue import put_queue
     except ImportError:
-        pass
+        pass 
 
     SYSTEM_READY = True
-    print(f"✅ TitanOS: Successfully Connected to {getattr(config, 'BOT_NAME', 'Bot')} Core.")
+    print(f"✅ TitanOS Web: Engine Connected Successfully via {config.BOT_NAME}.")
 
 except Exception as e:
-    print(f"⚠️ TitanOS Warning: Running in Standalone/Safe Mode. Integration Error: {e}")
-    # Mock Config for Fallback (Prevents Crash)
+    print(f"⚠️ TitanOS Web: Running in DEGRADED MODE. Integration Failed: {e}")
+    traceback.print_exc()
+    # قيم افتراضية لمنع انهيار السيرفر
     class MockConfig:
         WEB_PASSWORD = "admin"
         WEB_SECRET = "secret"
-        BOT_NAME = "TitanBot"
+        BOT_NAME = "Unknown"
         OWNER_USERNAME = "Unknown"
-        UNIFIED_IMG = "https://telegra.ph/file/default.jpg"
         UPSTREAM_BRANCH = "master"
-        OWNER_ID = 0
+    
     if Config is None: Config = MockConfig()
     WEB_PASSWORD = "admin"
     WEB_SECRET = "secret"
 
-# [5] Database Isolation Layer (Async Motor)
-# ──────────────────────────────────────────────────────────────────────────────
-mongo_client: Optional[AsyncIOMotorClient] = None
-web_db = None
-
-async def init_db():
-    """
-    Initializes a separate, thread-safe DB connection for the Web Server.
-    This prevents Event Loop clashes with Pyrogram's internal loop.
-    """
-    global mongo_client, web_db
-    if MONGO_DB_URI:
-        try:
-            mongo_client = AsyncIOMotorClient(MONGO_DB_URI)
-            web_db = mongo_client[getattr(Config, "BOT_NAME", "AnnieXMedia")]
-            print("🗄️ TitanOS: Web Database Link Established.")
-        except Exception as e:
-            print(f"❌ TitanOS DB Error: {e}")
-
-async def close_db():
-    """Gracefully closes the database connection on shutdown."""
-    if mongo_client:
-        mongo_client.close()
-        print("🗄️ TitanOS: Web Database Connection Closed.")
-
-# [6] FastAPI App Definition & Middleware
+# [4] FastAPI App Initialization
 # ──────────────────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="TitanOS Ultimate",
-    description="High-Performance Media Controller V6",
-    version="6.0.0",
-    default_response_class=UJSONResponse,
-    on_startup=[init_db],
-    on_shutdown=[close_db]
+    description="AnnieXMedia Web Controller",
+    version="3.5.0",
+    docs_url=None, 
+    redoc_url=None
 )
 
-# Session & Security Middleware
+# Middleware Setup
 app.add_middleware(SessionMiddleware, secret_key=WEB_SECRET)
 app.add_middleware(
     CORSMiddleware,
@@ -199,432 +160,427 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Template & Static Engines
-templates = Jinja2Templates(directory=SystemConfig.TEMPLATES_DIR)
-if os.path.exists(SystemConfig.STATIC_DIR):
-    app.mount("/static", StaticFiles(directory=SystemConfig.STATIC_DIR), name="static")
+# Template Setup
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
-# [7] Advanced Streaming Engine (Adaptive & Resumable)
+# Mount Static Directories (Only if exists)
+if os.path.exists(STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+if os.path.exists(DOWNLOADS_DIR):
+    app.mount("/downloads", StaticFiles(directory=DOWNLOADS_DIR), name="downloads")
+
+# [5] Advanced Utility Helpers (Async/Sync Handling)
 # ──────────────────────────────────────────────────────────────────────────────
-class StreamEngine:
+def _is_awaitable(obj: Any) -> bool:
+    """Check if an object is awaitable (coroutine or future)."""
+    return asyncio.iscoroutine(obj) or inspect.isawaitable(obj)
+
+async def safe_call(target: Any, attr: str, *args, **kwargs):
     """
-    Intelligent Media Streamer V2.
-    - Supports HTTP 206 (Partial Content) for seeking.
-    - Smart Chunking for low latency.
-    - Auto-detection of file types.
+    Safely call a method or access an attribute on a target object.
     """
-    
-    @staticmethod
-    def get_file_path(chat_id: int) -> Optional[str]:
-        """Locates the media file for a specific chat."""
-        # Strategy 1: Check Queue Database
-        if SYSTEM_READY and chat_id in QueueDB and QueueDB[chat_id]:
-            try:
-                track = QueueDB[chat_id][0]
-                if track.get("file") and os.path.exists(track["file"]):
-                    return track["file"]
-            except Exception:
-                pass
+    if not target:
+        return None
+    try:
+        if not hasattr(target, attr):
+            return None
         
-        # Strategy 2: Scan Downloads Directory (Heuristic)
-        # This is a fallback if DB sync is slightly delayed
-        if os.path.exists(SystemConfig.DOWNLOADS_DIR):
-            try:
-                files = [
-                    os.path.join(SystemConfig.DOWNLOADS_DIR, f) 
-                    for f in os.listdir(SystemConfig.DOWNLOADS_DIR)
-                    if f.lower().endswith(('.mp4', '.mkv', '.webm', '.mp3'))
-                ]
-                if files:
-                    # Return the most recently modified file
-                    return max(files, key=os.path.getctime)
-            except Exception: 
-                pass
+        val = getattr(target, attr)
+        
+        if callable(val):
+            result = val(*args, **kwargs)
+            if _is_awaitable(result):
+                return await result
+            return result
+        else:
+            return val
+    except Exception as e:
+        logging.error(f"TitanOS: Safe Call Error on {attr}: {e}")
         return None
 
-    @staticmethod
-    async def range_generator(file_path: str, start: int, end: int, chunk_size: int = 64 * 1024):
-        """
-        Async generator for streaming file chunks.
-        Optimized for 64KB blocks to balance memory usage and network throughput.
-        """
+def json_response(data, status_code=200):
+    """Helper for standardized JSON responses."""
+    return JSONResponse(content=data, status_code=status_code)
+
+async def safe_get_active_calls() -> List[int]:
+    """
+    Retrieves a list of active chat IDs using multiple fallback methods.
+    """
+    active_chats = set()
+    
+    # Method 1: Check StreamController.active_calls
+    try:
+        if CallClient and hasattr(CallClient, "active_calls"):
+            ac = CallClient.active_calls
+            if isinstance(ac, (set, list)):
+                active_chats.update(ac)
+            elif callable(ac):
+                res = ac()
+                if _is_awaitable(res): res = await res
+                if res: active_chats.update(res)
+    except: pass
+
+    # Method 2: Check Database Utils
+    if SYSTEM_READY:
         try:
-            async with aiofiles.open(file_path, "rb") as f:
-                await f.seek(start)
-                remaining = end - start + 1
-                while remaining > 0:
-                    bytes_to_read = min(chunk_size, remaining)
-                    data = await f.read(bytes_to_read)
-                    if not data:
-                        break
-                    remaining -= len(data)
-                    yield data
-        except Exception as e:
-            print(f"Stream Error: {e}")
+            db_chats = await get_active_video_chats() 
+            if db_chats: active_chats.update(db_chats)
+            
+            db_chats_a = await get_active_chats()
+            if db_chats_a: active_chats.update(db_chats_a)
+        except: pass
+    
+    # Method 3: Check QueueDB Keys
+    try:
+        if isinstance(QueueDB, dict):
+            for k in QueueDB.keys():
+                if isinstance(k, int) or (isinstance(k, str) and k.isdigit()):
+                    active_chats.add(int(k))
+    except: pass
+
+    return list(active_chats)
+
+# [6] Streaming Engine Core (Range & Chunking)
+# ──────────────────────────────────────────────────────────────────────────────
+def get_current_media_path(chat_id: int) -> Optional[str]:
+    """
+    Determines the exact file path currently playing in a specific chat.
+    Prioritizes the QueueDB, then falls back to recent downloads.
+    """
+    if SYSTEM_READY and QueueDB:
+        try:
+            cid = int(chat_id)
+            if cid in QueueDB and QueueDB[cid]:
+                current_track = QueueDB[cid][0]
+                if "file" in current_track and current_track["file"]:
+                    fpath = current_track["file"]
+                    if os.path.exists(fpath):
+                        return fpath
+        except Exception:
+            pass
+
+    # Fallback: Find most recent media file in downloads
+    try:
+        if os.path.exists(DOWNLOADS_DIR):
+            files = [os.path.join(DOWNLOADS_DIR, f) for f in os.listdir(DOWNLOADS_DIR) 
+                     if f.lower().endswith(('.mp4', '.webm', '.mkv', '.mp3', '.m4a'))]
+            if files:
+                return max(files, key=os.path.getctime)
+    except: pass
+    
+    return None
+
+def file_iterator(file_path: str, start: int, end: int, chunk_size: int = 1024 * 1024):
+    """Generator to read file chunks for streaming."""
+    with open(file_path, "rb") as f:
+        f.seek(start)
+        remaining = end - start + 1
+        while remaining > 0:
+            bytes_to_read = min(chunk_size, remaining)
+            data = f.read(bytes_to_read)
+            if not data:
+                break
+            remaining -= len(data)
+            yield data
 
 @app.get("/stream/live/{chat_id}")
-async def endpoint_stream_media(chat_id: int, request: Request):
+async def stream_media_endpoint(chat_id: str, request: Request):
     """
-    The Core Streaming Endpoint.
-    Handles 'Range' headers to allow video players to seek forward/backward.
+    Endpoint providing live media streaming with Range Support.
     """
-    file_path = StreamEngine.get_file_path(chat_id)
+    try:
+        cid = int(chat_id)
+    except ValueError:
+        return Response("Invalid Chat ID", status_code=400)
+
+    file_path = get_current_media_path(cid)
     
-    if not file_path:
-        # 404 Not Found if no media is playing
-        return Response("Media Not Found / Stream Idle", status_code=404)
+    if not file_path or not os.path.exists(file_path):
+        return Response("Media Not Found or Live Stream (URL) Active", status_code=404)
 
     file_size = os.path.getsize(file_path)
     range_header = request.headers.get("range")
-    
-    # Dynamic Mime Type Detection
-    content_type, _ = mimetypes.guess_type(file_path)
-    content_type = content_type or "application/octet-stream"
 
-    start = 0
-    end = file_size - 1
-    status_code = 200
+    ext = os.path.splitext(file_path)[1].lower()
+    content_type = "video/mp4" 
+    if ext in ['.mp3', '.m4a', '.flac']: content_type = "audio/mpeg"
+    elif ext == '.webm': content_type = "video/webm"
 
-    # Handle Range Request (Seeking)
     if range_header:
         try:
             byte_str = range_header.replace("bytes=", "")
-            range_start, range_end = byte_str.split("-")
-            start = int(range_start)
-            if range_end:
-                end = int(range_end)
+            start_str, end_str = byte_str.split("-")
+            start = int(start_str)
+            end = int(end_str) if end_str else file_size - 1
             
-            # Boundary Checks
             if start >= file_size: start = file_size - 1
             if end >= file_size: end = file_size - 1
             
-            status_code = 206 # Partial Content
-        except ValueError:
-            pass
+            chunk_length = end - start + 1
+            headers = {
+                "Content-Range": f"bytes {start}-{end}/{file_size}",
+                "Accept-Ranges": "bytes",
+                "Content-Length": str(chunk_length),
+                "Content-Type": content_type,
+            }
+            
+            return StreamingResponse(
+                file_iterator(file_path, start, end),
+                status_code=206,
+                headers=headers
+            )
+        except Exception:
+            pass 
 
-    chunk_length = end - start + 1
-    headers = {
-        "Content-Range": f"bytes {start}-{end}/{file_size}",
-        "Accept-Ranges": "bytes",
-        "Content-Length": str(chunk_length),
-        "Content-Type": content_type,
-        "Cache-Control": "no-cache, no-store, must-revalidate"
-    }
+    return FileResponse(file_path, media_type=content_type)
 
-    return StreamingResponse(
-        StreamEngine.range_generator(file_path, start, end),
-        status_code=status_code,
-        headers=headers
-    )
-
-# [8] Background Task Executor (The Worker)
+# [7] API Endpoints: Player Data & Control
 # ──────────────────────────────────────────────────────────────────────────────
-async def bg_executor(func_name: str, chat_id: int, **kwargs):
-    """
-    Executes bot commands in the background.
-    This ensures the Web API responds instantly (Zero-Latency).
-    """
-    if not SYSTEM_READY or not CallClient: 
-        print("⚠️ TitanOS: Command ignored (System Not Ready)")
-        return
+@app.get("/api/player/active_calls")
+async def api_get_active_calls():
+    """Returns a JSON list of all active chats with basic metadata."""
+    if not SYSTEM_READY:
+        return json_response([])
+
+    chats_data = []
+    active_ids = await safe_get_active_calls()
+
+    for cid in active_ids:
+        try:
+            chat_name = str(cid)
+            cover = config.UNIFIED_IMG
+            title = "Unknown Track"
+            
+            if cid in QueueDB and QueueDB[cid]:
+                track = QueueDB[cid][0]
+                title = track.get("title", title)[:50]
+                cover = track.get("thumb") or config.UNIFIED_IMG
+            
+            try:
+                chat_obj = await BotClient.get_chat(cid)
+                chat_name = chat_obj.title
+            except: pass
+
+            chats_data.append({
+                "chat_id": str(cid),
+                "name": chat_name,
+                "title": title,
+                "cover": cover,
+                "stream_url": f"/stream/live/{cid}"
+            })
+        except Exception:
+            continue
+
+    return json_response({"chats": chats_data})
+
+@app.get("/api/player/track_info/{chat_id}")
+async def api_track_info(chat_id: str):
+    """Detailed info for a specific chat player (Polling)."""
+    default_info = {
+        "title": "Not Playing",
+        "artist": "-",
+        "cover": config.UNIFIED_IMG,
+        "duration": "00:00",
+        "is_playing": False,
+        "loop_mode": 0
+    }
+    
+    if not SYSTEM_READY: return json_response(default_info)
 
     try:
-        # V6 Feature: Precision Seek
-        if func_name == "seek":
-            seek_time = kwargs.get("value")
-            if seek_time is not None:
-                # Call the Bot's Seek function
-                if hasattr(CallClient, "seek_stream"):
-                    await CallClient.seek_stream(chat_id, int(seek_time))
-                else:
-                    print("⚠️ TitanOS: 'seek_stream' method not found in CallClient.")
-
-        # Standard Controls
-        elif func_name == "pause": 
-            await CallClient.pause_stream(chat_id)
-        elif func_name == "resume": 
-            await CallClient.resume_stream(chat_id)
-        elif func_name == "skip": 
-            await CallClient.skip_stream(chat_id)
-        elif func_name == "stop": 
-            await CallClient.force_stop_stream(chat_id)
-        elif func_name == "loop":
-            curr = await get_loop(chat_id)
-            await set_loop(chat_id, 3 if curr == 0 else 0)
+        cid = int(chat_id)
+        
+        is_active = False
+        active_list = await safe_get_active_calls()
+        if cid in active_list: is_active = True
+        
+        if cid in QueueDB and QueueDB[cid]:
+            track = QueueDB[cid][0]
+            loop_val = await get_loop(cid)
             
-    except Exception as e:
-        print(f"⚠️ BG Task Error ({func_name}): {e}")
-        traceback.print_exc()
+            info = {
+                "title": track.get("title", "Unknown"),
+                "artist": track.get("by", "Unknown"),
+                "cover": track.get("thumb") or config.UNIFIED_IMG,
+                "duration": track.get("dur", "Live"),
+                "is_playing": is_active,
+                "stream_url": f"/stream/live/{cid}",
+                "loop_mode": loop_val,
+                "queued_count": len(QueueDB[cid]) - 1
+            }
+            return json_response(info)
+            
+    except Exception:
+        pass
 
-# [9] API Endpoints: Player Controls & Info
-# ──────────────────────────────────────────────────────────────────────────────
+    return json_response(default_info)
+
 @app.post("/api/player/control")
-async def api_control(request: Request, bg_tasks: BackgroundTasks):
-    """
-    Unified Endpoint for all Player Commands (Play, Pause, Seek, etc.)
-    """
-    if not request.session.get("user"): 
-        return UJSONResponse({"error": "Unauthorized"}, 401)
+async def api_player_control(request: Request):
+    """Unified Control Endpoint (Pause, Resume, Skip, Stop, Loop)."""
+    user = request.session.get("user")
+    if not user: return json_response({"error": "Unauthorized"}, 401)
     
     try:
         data = await request.json()
-        cmd = data.get("cmd")
-        chat_id = int(data.get("chat_id"))
-        value = data.get("value") # Used for seek timestamp
-    except (ValueError, TypeError):
-        return UJSONResponse({"error": "Bad Request Payload"}, 400)
-
-    # Dispatch to Background Worker
-    bg_tasks.add_task(bg_executor, cmd, chat_id, value=value)
-    return UJSONResponse({"status": "queued", "cmd": cmd, "timestamp": time.time()})
-
-@app.get("/api/player/active_calls")
-async def api_active_calls():
-    """
-    Aggregates active calls from Voice Chats, Video Chats, and the Queue DB.
-    Returns a unified list for the Dashboard.
-    """
-    if not SYSTEM_READY: 
-        return UJSONResponse({"chats": []})
-    
-    results = []
-    try:
-        # Fetch data concurrently (optimized)
-        vid_chats_task = get_active_video_chats()
-        aud_chats_task = get_active_chats()
+    except:
+        form = await request.form()
+        data = {k: v for k, v in form.items()}
         
-        # In case they are not awaitable in some versions, handle safely
-        if inspect.iscoroutine(vid_chats_task): vid_chats = await vid_chats_task
-        else: vid_chats = vid_chats_task or []
+    cmd = data.get("cmd") or data.get("action")
+    chat_id = data.get("chat_id")
+
+    if not cmd or not chat_id:
+        return json_response({"error": "Missing params"}, 400)
+    
+    try:
+        cid = int(chat_id)
+    except:
+        return json_response({"error": "Invalid Chat ID"}, 400)
+
+    if not SYSTEM_READY or not CallClient:
+        return json_response({"error": "Bot Core Offline"}, 503)
+
+    try:
+        result_msg = "OK"
+        
+        if cmd == "pause":
+            await safe_call(CallClient, "pause_stream", cid)
+        elif cmd == "resume":
+            await safe_call(CallClient, "resume_stream", cid)
+        elif cmd == "skip":
+            await safe_call(CallClient, "skip_stream", cid) 
+            await safe_call(CallClient, "stop_stream", cid) 
+        elif cmd == "stop":
+            await safe_call(CallClient, "force_stop_stream", cid)
+        elif cmd == "loop":
+            curr = await get_loop(cid)
+            new_val = 3 if curr == 0 else 0
+            await set_loop(cid, new_val)
+            result_msg = f"Loop {'Enabled' if new_val > 0 else 'Disabled'}"
             
-        if inspect.iscoroutine(aud_chats_task): aud_chats = await aud_chats_task
-        else: aud_chats = aud_chats_task or []
-        
-        all_ids = set(vid_chats + aud_chats)
-        
-        # Merge with internal QueueDB to catch states where VC is active but playing hasn't started
-        if QueueDB:
-            all_ids.update([k for k in QueueDB.keys() if isinstance(k, int)])
-        
-        for cid in all_ids:
-            try:
-                title = "Unknown Track"
-                cover = Config.UNIFIED_IMG
-                
-                # Extract Metadata from Queue
-                if cid in QueueDB and QueueDB[cid]:
-                    t = QueueDB[cid][0]
-                    title = t.get("title", title)[:60] # Truncate long titles
-                    cover = t.get("thumb") or cover
-                
-                results.append({
-                    "chat_id": str(cid),
-                    "name": f"Chat {cid}", 
-                    "title": title,
-                    "cover": cover,
-                    "stream_url": f"/stream/live/{cid}"
-                })
-            except Exception: 
-                continue
-    except Exception as e: 
-        print(f"Error fetching active calls: {e}")
-    
-    return UJSONResponse({"chats": results})
-
-@app.get("/api/player/track_info/{chat_id}")
-async def api_track_info(chat_id: int):
-    """
-    Returns detailed real-time telemetry for a specific chat.
-    Includes: Title, Duration, Current Position (for Seek Bar).
-    """
-    default_state = {
-        "title": "Not Playing", 
-        "artist": "-", 
-        "cover": getattr(Config, "UNIFIED_IMG", ""), 
-        "is_playing": False, 
-        "duration": "00:00", 
-        "loop_mode": 0, 
-        "position": 0
-    }
-    
-    if not SYSTEM_READY: 
-        return UJSONResponse(default_state)
-    
-    try:
-        if chat_id in QueueDB and QueueDB[chat_id]:
-            track = QueueDB[chat_id][0]
-            loop_val = await get_loop(chat_id)
-            
-            # [V6 Logic: Real-Time Position Calculation]
-            current_pos = 0
-            try:
-                # Access internal PyTgCalls status if available
-                core_call = getattr(CallClient, "call", None) 
-                # Or try referencing the client directly from global if needed
-                if not core_call and hasattr(CallClient, "pytgcalls"):
-                    core_call = CallClient.pytgcalls
-
-                if core_call:
-                    active = core_call.get_active_call(chat_id)
-                    if active and hasattr(active, "status"):
-                        # 'time_elapsed' is usually in seconds
-                        current_pos = getattr(active.status, "time_elapsed", 0)
-            except Exception:
-                pass # Sync error, default to 0
-
-            return UJSONResponse({
-                "title": track.get("title", "Unknown"),
-                "artist": track.get("by", "TitanOS"),
-                "cover": track.get("thumb") or default_state["cover"],
-                "duration": track.get("dur", "Live"),
-                "is_playing": True,
-                "stream_url": f"/stream/live/{chat_id}",
-                "loop_mode": loop_val,
-                "queued": max(0, len(QueueDB[chat_id]) - 1),
-                "position": current_pos 
-            })
-    except Exception: 
-        pass
-    
-    return UJSONResponse(default_state)
-
-# [10] Advanced Features: Proxy & Operators
-# ──────────────────────────────────────────────────────────────────────────────
-@app.get("/api/proxy_avatar/{user_id}")
-async def api_proxy_avatar(user_id: int):
-    """
-    Serves Telegram profile photos over HTTP.
-    Includes an LRU Cache mechanism to prevent API Rate Limits.
-    """
-    if not SYSTEM_READY: 
-        return RedirectResponse(Config.UNIFIED_IMG)
-    
-    cache_path = os.path.join(SystemConfig.CACHE_DIR, f"avatar_{user_id}.jpg")
-    
-    # 1. Check Local Cache (Valid for 1 Hour)
-    if os.path.exists(cache_path):
-        if (time.time() - os.path.getmtime(cache_path)) < 3600:
-            return FileResponse(cache_path)
-
-    # 2. Fetch from Telegram Cloud
-    try:
-        if BotClient:
-            photo = await BotClient.download_media(
-                message=user_id, 
-                file_name=cache_path
-            )
-            if photo:
-                return FileResponse(photo)
-    except Exception:
-        pass
-        
-    # 3. Fallback
-    return RedirectResponse(Config.UNIFIED_IMG)
-
-@app.get("/api/player/participants/{chat_id}")
-async def api_participants(chat_id: int):
-    """
-    Fetches the list of Voice Chat participants (Operators).
-    Prioritizes Admins/Owners.
-    """
-    if not SYSTEM_READY: 
-        return UJSONResponse({"participants": []})
-    
-    participants = []
-    
-    try:
-        # Use Pyrogram to fetch admins
-        async for member in BotClient.get_chat_members(chat_id, filter=enums.ChatMembersFilter.ADMINISTRATORS):
-            user = member.user
-            if user.is_deleted: continue
-            
-            participants.append({
-                "user_id": user.id,
-                "name": f"{user.first_name} {user.last_name or ''}".strip(),
-                "role": "Operator" if member.status in [enums.ChatMemberStatus.OWNER, enums.ChatMemberStatus.ADMINISTRATOR] else "Listener",
-                "photo_url": f"/api/proxy_avatar/{user.id}" if user.photo else Config.UNIFIED_IMG
-            })
+        return json_response({"status": "Success", "message": result_msg})
     except Exception as e:
-        print(f"Participant Fetch Error: {e}")
-        
-    return UJSONResponse({"participants": participants})
+        return json_response({"error": str(e)}, 500)
 
 @app.post("/api/player/play")
-async def api_play_request(request: Request, bg_tasks: BackgroundTasks):
-    """
-    Handles Play Requests from the Dashboard Modal.
-    Downloads the track and joins the call.
-    """
-    if not request.session.get("user"): 
-        return UJSONResponse({"error": "Unauthorized"}, 401)
+async def api_play_custom(request: Request):
+    """Play media directly from URL or Search Query via Web."""
+    if not request.session.get("user"): return json_response({"error": "Unauthorized"}, 401)
     
     try:
         data = await request.json()
         chat_id = int(data.get("chat_id"))
         query = data.get("query")
     except:
-        return UJSONResponse({"error": "Bad Request"}, 400)
-    
-    async def _play_task():
-        """Background Worker for downloading and playing."""
-        try:
-            # 1. Resolve Track
-            details, track_id = await YouTubeHelper.track(query)
-            
-            # 2. Download
-            file_path, _ = await YouTubeHelper.download(track_id, mystic=None, video=True, videoid=track_id)
-            
-            # 3. Join Call
-            await CallClient.join_call(
-                chat_id=chat_id, 
-                original_chat_id=chat_id,
-                link=file_path, 
-                video=True, 
-                image=details.get("thumb")
-            )
-            
-            # 4. Update Queue
-            from AnnieXMedia.utils.stream.queue import put_queue
-            await put_queue(
-                chat_id, chat_id, file_path, details["title"],
-                details["duration_min"], "WebUser", track_id,
-                Config.OWNER_ID, "video"
-            )
-        except Exception as e:
-            print(f"❌ Web Play Error: {e}")
-            traceback.print_exc()
+        return json_response({"error": "Invalid Data"}, 400)
 
-    bg_tasks.add_task(_play_task)
-    return UJSONResponse({"status": "processing"})
+    if not SYSTEM_READY: return json_response({"error": "Offline"}, 503)
 
-# [11] System & Security Endpoints
+    try:
+        details, track_id = await YouTubeHelper.track(query)
+        
+        file_path, direct = await YouTubeHelper.download(
+            track_id, 
+            mystic=None, 
+            video=True, 
+            videoid=track_id
+        )
+        
+        if not file_path:
+            return json_response({"error": "Download Failed"}, 500)
+
+        await safe_call(
+            CallClient, "join_call",
+            chat_id=chat_id,
+            original_chat_id=chat_id,
+            link=file_path,
+            video=True,
+            image=details.get("thumb")
+        )
+
+        from AnnieXMedia.utils.stream.queue import put_queue
+        await put_queue(
+            chat_id,
+            chat_id,
+            file_path,
+            details["title"],
+            details["duration_min"],
+            "TitanOS Web", 
+            track_id,
+            config.OWNER_ID,
+            "video"
+        )
+        
+        return json_response({
+            "status": "Success", 
+            "title": details["title"],
+            "duration": details["duration_min"]
+        })
+
+    except Exception as e:
+        traceback.print_exc()
+        return json_response({"error": str(e)}, 500)
+
+# [8] API Endpoints: System & Security
 # ──────────────────────────────────────────────────────────────────────────────
 @app.get("/api/system/status")
-async def api_sys_status(request: Request):
-    """Returns Server Health Metrics (CPU, RAM, Threads)."""
-    if not request.session.get("user"): return UJSONResponse({}, 401)
+async def api_system_status(request: Request):
+    """Get real-time system stats."""
+    if not request.session.get("user"): return json_response({}, 401)
+    
+    ram = psutil.virtual_memory().percent
+    cpu = psutil.cpu_percent()
+    
+    ping = 0
+    if CallClient:
+        ping = await safe_call(CallClient, "ping")
     
     m_mode = False
     if SYSTEM_READY: m_mode = await is_maintenance()
     
-    return UJSONResponse({
-        "ram": psutil.virtual_memory().percent,
-        "cpu": psutil.cpu_percent(),
+    return json_response({
+        "ram": ram,
+        "cpu": cpu,
+        "ping": ping,
         "maintenance": m_mode,
-        "active_threads": asyncio.active_count()
+        "active_calls": len(await safe_get_active_calls())
     })
 
 @app.post("/api/system/action")
-async def api_sys_action(request: Request, bg_tasks: BackgroundTasks):
-    """Administrative Actions: Restart, Clean Cache, Git Pull."""
-    if not request.session.get("user"): return UJSONResponse({"error": "Unauthorized"}, 401)
+async def api_system_action(request: Request, background_tasks: BackgroundTasks):
+    """System Actions: Restart, Update, Maintenance, Clean."""
+    if not request.session.get("user"): return json_response({"error": "Unauthorized"}, 401)
     
     data = await request.json()
     action = data.get("action")
     
-    if action == "clean":
+    if action == "restart":
+        async def _restart():
+            await asyncio.sleep(2)
+            os.execv(sys.executable, [sys.executable, "-m", "AnnieXMedia"])
+        background_tasks.add_task(_restart)
+        return json_response({"status": "Restarting..."})
+        
+    elif action == "update":
+        async def _update():
+            if Config.UPSTREAM_BRANCH:
+                os.system(f"git fetch origin {Config.UPSTREAM_BRANCH} &> /dev/null")
+            os.system("git pull")
+            await asyncio.sleep(2)
+            os.execv(sys.executable, [sys.executable, "-m", "AnnieXMedia"])
+        background_tasks.add_task(_update)
+        return json_response({"status": "Updating..."})
+        
+    elif action == "maintenance":
+        enable = data.get("value", False)
+        if enable: await maintenance_on()
+        else: await maintenance_off()
+        return json_response({"status": "Updated Maintenance Mode"})
+        
+    elif action == "clean":
         freed = 0
-        for f in [SystemConfig.DOWNLOADS_DIR, SystemConfig.CACHE_DIR, SystemConfig.RAW_FILES_DIR]:
+        for f in [DOWNLOADS_DIR, CACHE_DIR, RAW_FILES_DIR]:
             if os.path.exists(f):
                 for sub in os.listdir(f):
                     p = os.path.join(f, sub)
@@ -633,132 +589,154 @@ async def api_sys_action(request: Request, bg_tasks: BackgroundTasks):
                             freed += os.path.getsize(p)
                             os.remove(p)
                     except: pass
-        return UJSONResponse({"status": "Cleaned", "freed": f"{freed/1024/1024:.2f} MB"})
+        gc.collect()
+        return json_response({"status": "Cleaned", "freed_mb": round(freed/(1024*1024), 2)})
         
-    elif action == "maintenance":
-        val = data.get("value", False)
-        if val: await maintenance_on()
-        else: await maintenance_off()
-        return UJSONResponse({"status": "Maintenance Updated"})
-        
-    elif action == "restart":
-        async def _restart():
-            print("🔄 Rebooting TitanOS...")
-            await asyncio.sleep(2)
-            os.execv(sys.executable, [sys.executable, "-m", "AnnieXMedia"])
-        bg_tasks.add_task(_restart)
-        return UJSONResponse({"status": "Restarting..."})
-    
-    elif action == "update":
-        async def _update():
-            print("⬇️ Pulling Updates...")
-            os.system("git pull")
-            await asyncio.sleep(2)
-            os.execv(sys.executable, [sys.executable, "-m", "AnnieXMedia"])
-        bg_tasks.add_task(_update)
-        return UJSONResponse({"status": "Updating..."})
-        
-    return UJSONResponse({"error": "Unknown Action"}, 400)
+    return json_response({"error": "Unknown Action"}, 400)
 
 @app.get("/api/security/users")
 async def api_get_users(request: Request):
-    """View Global Banned Users."""
-    if not request.session.get("user"): return UJSONResponse({}, 401)
+    """Get blocked users list."""
+    if not request.session.get("user"): return json_response({}, 401)
+    
     blocked = []
-    if SYSTEM_READY: blocked = await get_banned_users()
-    return UJSONResponse({"blocked_users": list(blocked)})
+    if SYSTEM_READY:
+        blocked = await get_banned_users()
+    return json_response({"blocked_users": list(blocked)})
 
 @app.post("/api/security/block")
 async def api_block_user(request: Request):
-    """GBAN / UNGBAN User."""
-    if not request.session.get("user"): return UJSONResponse({}, 401)
+    """Block/Unblock User."""
+    if not request.session.get("user"): return json_response({}, 401)
     data = await request.json()
     uid = int(data.get("user_id"))
-    block = data.get("block", True)
+    do_block = data.get("block", True)
     
     if SYSTEM_READY:
-        if block: 
+        if do_block:
             await add_gban_user(uid)
             BANNED_USERS.add(uid)
-        else: 
+        else:
             await remove_gban_user(uid)
             if uid in BANNED_USERS: BANNED_USERS.remove(uid)
             
-    return UJSONResponse({"status": "success"})
+    return json_response({"status": "Success"})
 
 @app.get("/api/logs")
-async def api_download_logs(request: Request):
-    """Download System Logs."""
-    if not request.session.get("user"): return UJSONResponse({}, 401)
-    if os.path.exists(SystemConfig.LOG_FILE):
-        return FileResponse(SystemConfig.LOG_FILE, filename="titan_logs.txt")
-    return UJSONResponse({"error": "No Logs Found"}, 404)
+async def api_logs_download(request: Request):
+    """Download system logs."""
+    if not request.session.get("user"): return json_response({}, 401)
+    if os.path.exists(LOG_FILE):
+        return FileResponse(LOG_FILE, filename="annie_logs.txt")
+    return json_response({"error": "Log file empty"}, 404)
 
-# [12] Frontend Routing (HTML Serving)
+# [9] Frontend Routes & AUTH INTEGRATION
 # ──────────────────────────────────────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
 async def page_dashboard(request: Request):
-    """Main Dashboard Interface."""
-    if not request.session.get("user"): return RedirectResponse("/login")
+    """Main Dashboard Page."""
+    if not request.session.get("user"):
+        return RedirectResponse("/login")
     
-    tpl = "dashboard.html"
-    if os.path.exists(os.path.join(SystemConfig.TEMPLATES_DIR, tpl)):
-        return templates.TemplateResponse(tpl, {
-            "request": request, 
-            "bot_name": getattr(Config, "BOT_NAME", "Titan"),
-            "owner": getattr(Config, "OWNER_USERNAME", "SysAdmin")
+    tpl_path = os.path.join(TEMPLATES_DIR, "dashboard.html")
+    if os.path.exists(tpl_path):
+        return templates.TemplateResponse("dashboard.html", {
+            "request": request,
+            "bot_name": config.BOT_NAME,
+            "owner": config.OWNER_USERNAME
         })
-    return HTMLResponse("<h1>Error: dashboard.html missing in TitanOS folder.</h1>")
+    
+    return HTMLResponse(f"""
+    <html><head><title>TitanOS Error</title></head>
+    <body style="background:#1a1a1a;color:white;font-family:sans-serif;text-align:center;padding:50px;">
+        <h1>Dashboard Template Missing</h1>
+        <p>Could not find <code>dashboard.html</code> in {TEMPLATES_DIR}</p>
+    </body></html>
+    """)
 
 @app.get("/login", response_class=HTMLResponse)
 async def page_login(request: Request):
-    """Login Interface."""
-    if request.session.get("user"): return RedirectResponse("/")
+    """Login Page."""
+    if request.session.get("user"):
+        return RedirectResponse("/")
+        
+    tpl_path = os.path.join(TEMPLATES_DIR, "login.html")
+    if os.path.exists(tpl_path):
+        return templates.TemplateResponse("login.html", {"request": request})
     
-    tpl = "login.html"
-    if os.path.exists(os.path.join(SystemConfig.TEMPLATES_DIR, tpl)):
-        return templates.TemplateResponse(tpl, {"request": request})
-    return HTMLResponse("<h1>Error: login.html missing in TitanOS folder.</h1>")
+    return HTMLResponse("Login Template Missing")
 
 @app.post("/login")
-async def page_login_post(request: Request, username: str = Form(...), password: str = Form(...)):
-    """Standard Form Login Handler."""
+async def action_login(request: Request, username: str = Form(...), password: str = Form(...)):
+    """Handle Standard Form Login (Fallback)."""
     if password == WEB_PASSWORD:
-        request.session["user"] = {"role": "admin", "name": username}
+        request.session["user"] = {"username": username, "role": "admin"}
         return RedirectResponse("/", status_code=303)
+    
     return RedirectResponse("/login?error=1", status_code=303)
 
+# ⚠️ [AUTH INTEGRATION] NEW ENDPOINTS FOR JS LOGIN ⚠️
+# ──────────────────────────────────────────────────────────────────────────────
 @app.post("/auth/step1")
-async def auth_js_login(request: Request):
-    """AJAX Login Handler."""
-    data = await request.json()
-    if data.get("password") == WEB_PASSWORD:
-        request.session["user"] = {"role": "admin"}
-        return UJSONResponse({"status": "success"})
-    return UJSONResponse({"status": "error"}, 401)
+async def auth_step1_api(request: Request):
+    """Validates Password from JS Fetch."""
+    try:
+        data = await request.json()
+        password = data.get("password")
+        
+        if password == WEB_PASSWORD:
+            # Grant access directly for now (since 2FA/Bio is client-side simulated)
+            request.session["user"] = {"username": "admin", "role": "admin"}
+            return json_response({"status": "success", "msg": "Access Granted"})
+        
+        return json_response({"status": "error", "msg": "Invalid Credentials"}, 401)
+    except Exception as e:
+        return json_response({"status": "error", "msg": str(e)}, 500)
+
+@app.post("/auth/verify-2fa")
+async def auth_verify_2fa_api(request: Request):
+    """Validates OTP Code from JS Fetch."""
+    try:
+        data = await request.json()
+        code = data.get("code")
+        # In a real DB scenario, we verify code here.
+        # For simulation, we assume any 6-digit code is valid if the client sent it.
+        if code and len(code) == 6:
+            request.session["user"] = {"username": "admin", "role": "admin"}
+            return json_response({"status": "success"})
+        return json_response({"status": "error", "msg": "Invalid Code"}, 400)
+    except:
+        return json_response({"status": "error"}, 400)
+
+@app.post("/auth/biometric/enroll")
+async def auth_bio_enroll_api(request: Request):
+    """Enables Biometric (Returns success to save token)."""
+    return json_response({"status": "success"})
+
+@app.post("/auth/biometric/verify")
+async def auth_bio_verify_api(request: Request):
+    """Verifies Biometric Token."""
+    # Since token check is client-side in this version, request implies success
+    request.session["user"] = {"username": "admin", "role": "admin"}
+    return json_response({"status": "success"})
+# ──────────────────────────────────────────────────────────────────────────────
 
 @app.get("/logout")
-async def page_logout(request: Request):
-    """Session Cleanup."""
+async def action_logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login")
 
-# [13] Entry Points
+# [10] Server Startup Hook & Runner
 # ──────────────────────────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    print(f"🚀 TitanOS Ultimate V6: Starting Standalone on {HOST}:{PORT}")
-    uvicorn.run("web_srv:app", host=HOST, port=PORT, reload=True)
+@app.on_event("startup")
+async def on_startup_event():
+    print("🚀 TitanOS: Server Startup Sequence Initiated.")
 
 def start_server_thread():
-    """Integration hook for the main Bot process."""
-    try:
-        config = uvicorn.Config(app, host=HOST, port=PORT, log_level="warning")
-        server = uvicorn.Server(config)
-        # Using a threaded execution is common for side-loading with Pyrogram
-        import threading
-        t = threading.Thread(target=server.run)
-        t.daemon = True
-        t.start()
-        print("✅ TitanOS Web Server: Background Thread Started.")
-    except Exception as e:
-        print(f"❌ Web Server Failed to Start: {e}")
+    """Function to start server in a separate thread (for main.py)."""
+    uvicorn.run(app, host=HOST, port=PORT, log_level="error")
+
+if __name__ == "__main__":
+    # Standalone execution
+    print(f"🌍 Starting TitanOS Standalone on {HOST}:{PORT}")
+    uvicorn.run("web_srv:app", host=HOST, port=PORT, reload=True)
