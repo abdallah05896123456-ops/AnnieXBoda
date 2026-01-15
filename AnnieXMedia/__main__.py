@@ -12,13 +12,12 @@ from pyrogram import idle
 from pytgcalls.exceptions import NoActiveGroupCall
 
 # [1] استيراد موديولات البوت الأساسية
-# تأكد أن هذه المسارات صحيحة في سورس Annie الخاص بك
+# تم إزالة LOADED_MODULES لأنها غير موجودة في السورس الخاص بك
 from AnnieXMedia import (
     LOGGER,
     app,
     userbot,
     YouTube,
-    LOADED_MODULES,
 )
 from AnnieXMedia.misc import sudo
 from AnnieXMedia.modules import ALL_MODULES
@@ -54,7 +53,8 @@ def setup_web_dashboard():
                 from web_srv import start_server_thread
                 return start_server_thread
         except Exception as e:
-            print(f"⚠️ Dashboard Warning: Could not load TitanOS/web_srv.py: {e}")
+            # لن نطبع خطأ كبير هنا حتى لا نملأ التيرمينال، فقط تحذير بسيط
+            pass
     
     return None
 
@@ -122,7 +122,7 @@ async def init():
         except Exception as web_e:
             LOGGER("TitanOS").error(f"❌ Failed to start Dashboard: {web_e}")
     else:
-        LOGGER("TitanOS").warning("⚠️ Dashboard Disabled: TitanOS/web_srv.py not found.")
+        LOGGER("TitanOS").warning("⚠️ Dashboard Disabled: TitanOS folder or dependencies missing.")
 
     # 7. إشعار البدء لمجموعة السجل
     try:
