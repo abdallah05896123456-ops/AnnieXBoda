@@ -1,492 +1,396 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<meta charset="utf-8" />
-<meta http-equiv="X-UA-Compatible" content="IE=edge" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>Titan OS • iPhone Login Frame — Welcome</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Titan OS • Biometric Security</title>
+    
+    <!-- Security Metas -->
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="theme-color" content="#000000">
 
-<!-- Fonts -->
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+    <!-- iOS Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&family=SF+Pro+Display:wght@300;500;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
-<!-- Icons -->
-<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* =========================================
+           1. CORE SYSTEM (iOS 17 DARK MODE)
+           ========================================= */
+        :root {
+            --bg-deep: #000000;
+            --glass-material: rgba(22, 22, 24, 0.75);
+            --glass-border: rgba(255, 255, 255, 0.12);
+            --ios-blue: #0A84FF;
+            --ios-green: #30D158;
+            --ios-red: #FF453A;
+            --text-primary: #FFFFFF;
+            --text-secondary: rgba(235, 235, 245, 0.6);
+            --blur: 50px;
+            --radius: 38px;
+            --input-bg: rgba(255, 255, 255, 0.1);
+        }
 
-<style>
-/* =========================================================
-   TITAN OS — iPhone Style Login (Full Detailed)
-   - الهدف: مستطيل iPhone-like، ضوء أبيض خافت حوله
-   - يحتوي صورة "Welcome" في الأعلى، واجهة تسجيل دخول متكاملة
-   - RTL متوافق، محسن للموبايل والديستوب
-   ========================================================= */
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; outline: none; user-select: none; }
+        
+        body {
+            margin: 0; padding: 0; height: 100vh;
+            background: var(--bg-deep);
+            color: var(--text-primary);
+            font-family: -apple-system, "SF Pro Display", "Cairo", sans-serif;
+            display: flex; align-items: center; justify-content: center;
+            overflow: hidden; perspective: 1000px;
+        }
 
-/* ---------- Root variables (design tokens) ---------- */
-:root{
-  --bg-0: #030303;
-  --bg-1: #07070a;
-  --glass: rgba(18,18,20,0.68);
-  --glass-2: rgba(255,255,255,0.03);
-  --border: rgba(255,255,255,0.06);
-  --accent: #0A84FF;
-  --accent-2: #00C7BE;
-  --soft-white: rgba(255,255,255,0.85);
-  --muted: #9b9b9f;
-  --success: #34C759;
-  --danger: #FF3B30;
-  --radius-iphone: 44px;
-  --radius-card: 18px;
-  --shadow-strong: 0 40px 120px rgba(0,0,0,0.75);
-  --shadow-soft: 0 12px 36px rgba(0,0,0,0.6);
-  --glass-blur: 36px;
-  --font-sans: 'Cairo', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-}
+        /* Starfield Background */
+        #star-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; }
 
-/* ---------- reset ---------- */
-*{box-sizing:border-box}
-html,body{height:100%;background:linear-gradient(180deg,#040405 0%, #000000 82%);margin:0;font-family:var(--font-sans);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
-body{display:flex;align-items:center;justify-content:center;padding:28px;color:var(--soft-white);overflow:auto}
+        /* =========================================
+           2. THE BLACK GLASS CARD
+           ========================================= */
+        .login-container {
+            width: 100%; max-width: 380px; padding: 40px 30px;
+            background: var(--glass-material);
+            backdrop-filter: blur(var(--blur)); -webkit-backdrop-filter: blur(var(--blur));
+            border-radius: var(--radius);
+            border: 1px solid var(--glass-border);
+            box-shadow: 0 40px 100px rgba(0,0,0,0.9), inset 0 0 0 1px rgba(255,255,255,0.05);
+            text-align: center;
+            transform-style: preserve-3d;
+            transition: transform 0.1s ease-out;
+            position: relative;
+            z-index: 10;
+        }
 
-/* ---------- background subtle stars / glow ---------- */
-.bg-wrap{position:fixed;inset:0;z-index:0;pointer-events:none}
-.bg-glow{
-  position:absolute;left:50%;top:10%;
-  width:900px;height:600px;transform:translateX(-50%);
-  background: radial-gradient(closest-side, rgba(255,255,255,0.08), rgba(255,255,255,0.00) 40%);
-  filter:blur(60px);opacity:0.08;mix-blend-mode:screen;
-}
+        /* Branding */
+        .lock-icon {
+            font-size: 3rem; margin-bottom: 15px;
+            background: linear-gradient(135deg, #fff 20%, #666 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 15px rgba(255,255,255,0.2));
+            animation: pulseLock 3s infinite;
+        }
+        @keyframes pulseLock { 0%,100%{opacity:0.8} 50%{opacity:1; text-shadow:0 0 20px rgba(255,255,255,0.4)} }
 
-/* ---------- main container (center) ---------- */
-.container{
-  width:100%;max-width:1200px;display:flex;gap:26px;align-items:center;justify-content:center;
-  padding:20px;z-index:5;
-}
+        .title { font-size: 1.6rem; font-weight: 700; margin-bottom: 5px; letter-spacing: -0.5px; }
+        .subtitle { font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 30px; font-weight: 400; }
 
-/* ---------- left: iphone mockup (login) ---------- */
-.iphone-wrap{
-  width:360px; /* typical iPhone width for mockup */
-  min-width:280px;
-  border-radius: calc(var(--radius-iphone) + 6px);
-  padding:18px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
-  box-shadow: var(--shadow-strong), 0 0 0 1px rgba(255,255,255,0.01) inset;
-  display:flex;flex-direction:column;align-items:center;
-  position:relative;overflow:visible;
-}
+        /* =========================================
+           3. INPUTS & FORMS
+           ========================================= */
+        .input-wrapper { position: relative; margin-bottom: 16px; width: 100%; }
+        
+        .ios-input {
+            width: 100%; padding: 18px 20px; padding-right: 50px;
+            background: var(--input-bg); border: 1px solid transparent;
+            border-radius: 18px; color: #fff; font-size: 1.05rem;
+            transition: 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+        .ios-input:focus {
+            background: rgba(255,255,255,0.15); border-color: var(--ios-blue);
+            transform: scale(1.02); box-shadow: 0 10px 30px rgba(10, 132, 255, 0.15);
+        }
+        .input-icon {
+            position: absolute; right: 20px; top: 50%; transform: translateY(-50%);
+            color: rgba(255,255,255,0.4); pointer-events: none;
+        }
 
-/* faint white halo around iphone to mimic iPhone edge glow */
-.iphone-wrap::before{
-  content:"";
-  position:absolute;inset:-14px;border-radius:calc(var(--radius-iphone) + 20px);
-  background: radial-gradient(closest-side, rgba(255,255,255,0.08), rgba(255,255,255,0.00) 40%);
-  filter: blur(18px);opacity:0.55;z-index:-1;
-}
+        /* Buttons */
+        .btn {
+            width: 100%; padding: 18px; border-radius: 18px; border: none;
+            font-size: 1.1rem; font-weight: 700; cursor: pointer;
+            transition: 0.2s; margin-top: 10px;
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+        }
+        .btn-primary {
+            background: #fff; color: #000;
+            box-shadow: 0 5px 20px rgba(255,255,255,0.15);
+        }
+        .btn-primary:active { transform: scale(0.96); }
 
-/* front screen area (the actual display) */
-.iphone-screen{
-  width:100%;border-radius:var(--radius-iphone);
-  padding:18px;background:linear-gradient(180deg, rgba(8,8,10,0.7), rgba(10,10,12,0.65));
-  border:1px solid rgba(255,255,255,0.03);
-  box-shadow: var(--shadow-soft);
-  display:flex;flex-direction:column;align-items:center;gap:14px;
-  position:relative;overflow:hidden;
-}
+        /* Biometric Button */
+        .btn-bio {
+            background: rgba(10, 132, 255, 0.15); color: var(--ios-blue);
+            border: 1px solid rgba(10, 132, 255, 0.3);
+            margin-top: 15px; display: none; /* Hidden by default */
+        }
+        .btn-bio:hover { background: rgba(10, 132, 255, 0.25); }
+        .finger-anim {
+            width: 24px; height: 24px; border: 2px solid var(--ios-blue);
+            border-radius: 50%; animation: ripple 1.5s infinite;
+        }
+        @keyframes ripple { 0%{transform:scale(0.8);opacity:1} 100%{transform:scale(1.5);opacity:0} }
 
-/* notch / camera area (just aesthetic) */
-.notch{
-  width:110px;height:28px;border-radius:14px;background:rgba(0,0,0,0.25);margin-top:6px;box-shadow: inset 0 -1px 0 rgba(255,255,255,0.02);
-  display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:11px;letter-spacing:1px
-}
+        /* Helpers */
+        .hidden { display: none !important; }
+        .shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
+        @keyframes shake { 10%,90%{transform:translate3d(-1px,0,0)} 20%,80%{transform:translate3d(2px,0,0)} 30%,50%,70%{transform:translate3d(-4px,0,0)} 40%,60%{transform:translate3d(4px,0,0)} }
 
-/* welcome image container (big image inside the screen) */
-.welcome-hero{
-  width:86%;max-width:300px;height:160px;border-radius:18px;overflow:hidden;
-  background:linear-gradient(135deg, rgba(10,132,255,0.08), rgba(191,90,242,0.04));
-  border:1px solid rgba(255,255,255,0.03);display:flex;align-items:center;justify-content:center;
-  position:relative;
-  box-shadow:0 12px 40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
-}
+        /* Notification */
+        .toast {
+            position: fixed; top: 30px; left: 50%; transform: translateX(-50%);
+            background: rgba(30,30,30,0.9); backdrop-filter: blur(10px);
+            padding: 12px 24px; border-radius: 30px; border: 1px solid rgba(255,255,255,0.1);
+            display: flex; align-items: center; gap: 10px; z-index: 100;
+            opacity: 0; pointer-events: none; transition: 0.3s;
+        }
+        .toast.show { opacity: 1; top: 40px; }
 
-/* the "Welcome" visual: large centered image or illustrated text */
-.welcome-hero img{width:100%;height:100%;object-fit:cover;display:block}
-.welcome-hero .overlay{
-  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
-  background:linear-gradient(180deg, rgba(0,0,0,0.12), rgba(0,0,0,0.28));
-}
-.welcome-hero h2{font-family:'Rajdhani';font-size:1.35rem;margin:0;color:var(--soft-white);text-shadow:0 6px 24px rgba(0,0,0,0.6)}
-.welcome-hero p{margin:0;color:var(--muted);font-size:0.85rem}
+        /* Recovery Modal */
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.9);
+            display: none; align-items: center; justify-content: center; z-index: 200;
+            backdrop-filter: blur(20px);
+        }
+        .modal-box {
+            width: 85%; max-width: 320px; background: #1C1C1E;
+            padding: 30px; border-radius: 26px; text-align: center;
+        }
+        .bio-icon-large { font-size: 4rem; color: var(--ios-blue); margin-bottom: 20px; }
 
-/* card (glass) holding login fields inside iphone screen */
-.login-card{
-  width:92%;background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
-  border-radius:16px;padding:14px;border:1px solid rgba(255,255,255,0.03);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  display:flex;flex-direction:column;gap:10px;
-}
-
-/* input styles (iOS feel) */
-.field{position:relative}
-.input{
-  width:100%;padding:14px 18px;border-radius:12px;background:rgba(0,0,0,0.28);border:1px solid rgba(255,255,255,0.04);
-  color:var(--soft-white);font-size:1rem;text-align:left;direction:ltr;
-}
-.input::placeholder{color:rgba(255,255,255,0.22)}
-.input:focus{outline:none;box-shadow:0 8px 30px rgba(10,132,255,0.06);border-color:rgba(10,132,255,0.42)}
-
-/* inline icon (right) */
-.icon{
-  position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:1.05rem;pointer-events:none
-}
-
-/* toggle show/hide (left) */
-.toggle-show{position:absolute;left:12px;top:50%;transform:translateY(-50%);background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:1rem}
-
-/* buttons */
-.btn{
-  width:100%;padding:12px 14px;border-radius:12px;border:none;background:linear-gradient(90deg,var(--accent),var(--accent-2));
-  color:#fff;font-weight:700;font-size:1rem;cursor:pointer;box-shadow:0 12px 40px rgba(10,132,255,0.18);
-}
-.btn:active{transform:translateY(1px)}
-
-/* secondary small link */
-.small{
-  color:var(--muted);font-size:0.88rem;text-align:center;margin-top:6px
-}
-
-/* status row (players / id / ping) */
-.status-row{width:100%;display:flex;gap:8px;align-items:center;justify-content:space-between;font-size:0.82rem;color:var(--muted)}
-.status-chip{background:rgba(255,255,255,0.02);padding:6px 10px;border-radius:24px;border:1px solid rgba(255,255,255,0.02)}
-
-/* ---------- right: detail panel (optional dashboard preview) ---------- */
-.detail-panel{
-  width:520px;max-width:52%;min-width:320px;background:linear-gradient(180deg, rgba(18,18,20,0.6), rgba(12,12,12,0.6));
-  border-radius:18px;padding:22px;border:1px solid rgba(255,255,255,0.03);box-shadow:var(--shadow-soft);display:flex;flex-direction:column;gap:14px;
-}
-
-/* cards within detail panel */
-.row{display:flex;gap:12px}
-.stat{
-  flex:1;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
-  padding:16px;border-radius:12px;border:1px solid rgba(255,255,255,0.03);
-  display:flex;flex-direction:column;gap:8px;align-items:flex-start;
-}
-.stat h3{margin:0;font-family:'Rajdhani';font-size:1.1rem}
-.stat p{margin:0;color:var(--muted);font-size:0.88rem}
-
-/* big list (groups, active calls) */
-.list{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:12px;border-radius:12px;max-height:240px;overflow:auto}
-.list-item{display:flex;align-items:center;gap:12px;padding:8px;border-radius:10px;margin-bottom:8px;border:1px solid rgba(255,255,255,0.02);cursor:pointer}
-.list-item:hover{background:rgba(255,255,255,0.02)}
-
-/* small avatar */
-.avatar{width:44px;height:44px;border-radius:10px;overflow:hidden;background:linear-gradient(90deg,var(--accent),#bf5af2)}
-.avatar img{width:100%;height:100%;object-fit:cover}
-
-/* footer small */
-.detail-footer{font-size:0.85rem;color:var(--muted);text-align:center;padding-top:8px;border-top:1px solid rgba(255,255,255,0.02)}
-
-/* responsiveness */
-@media (max-width:1000px){
-  .container{flex-direction:column-reverse;gap:18px;padding:18px}
-  .detail-panel{width:100%;max-width:680px}
-  .iphone-wrap{width:92%;max-width:420px}
-}
-
-/* accessibility focus */
-.input:focus, .btn:focus{outline:2px solid rgba(10,132,255,0.12);outline-offset:3px}
-
-/* little animations */
-@keyframes floatIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-.iphone-screen, .detail-panel{animation:floatIn .6s ease both}
-</style>
+    </style>
 </head>
 <body>
 
-<!-- background glow and stage -->
-<div class="bg-wrap" aria-hidden="true">
-  <div class="bg-glow"></div>
-</div>
+    <!-- Stars Background -->
+    <canvas id="star-canvas"></canvas>
 
-<!-- main container -->
-<div class="container" role="main" aria-label="Titan OS Login Area">
-
-  <!-- Left: iPhone mockup with login -->
-  <div class="iphone-wrap" aria-hidden="false" role="region" aria-label="شاشة الايفون لتسجيل الدخول">
-    <div class="iphone-screen">
-
-      <!-- notch -->
-      <div class="notch" aria-hidden="true">Titan • iOS</div>
-
-      <!-- WELCOME HERO (image + overlay text) -->
-      <div class="welcome-hero" role="img" aria-label="Welcome image">
-        <!-- Example image; you can change the src to any welcome image -->
-        <img src="https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1400&auto=format&fit=crop" alt="Welcome background">
-        <div class="overlay" aria-hidden="false">
-          <h2>Welcome</h2>
-          <p>أهلًا بك في لوحة تحكم Titan OS</p>
-        </div>
-      </div>
-
-      <!-- Login inputs container -->
-      <div class="login-card" role="form" aria-labelledby="login-heading">
-
-        <!-- heading inside screen -->
-        <div style="width:100%;text-align:center">
-          <h3 id="login-heading" style="margin:0;font-family:'Rajdhani';font-size:1.05rem">دخول المشرف</h3>
-          <div style="font-size:0.82rem;color:var(--muted);margin-top:6px">أدخل بياناتك للوصول الكامل</div>
-        </div>
-
-        <!-- server-error placeholder (Jinja friendly) -->
-        <!-- Example: Flask render_template('login.html', error='...') will show message here -->
-        <!-- Start server-insert -->
-        <!-- {% if error %} -->
-        <!-- <div style="padding:10px;border-radius:10px;background:rgba(255,59,48,0.06);color:var(--danger);border:1px solid rgba(255,59,48,0.14);font-weight:600">{{ error }}</div> -->
-        <!-- {% endif %} -->
-        <!-- End server-insert -->
-
-        <!-- username -->
-        <div class="field">
-          <input id="username" name="username" class="input" type="text" placeholder="اسم المشرف" aria-label="اسم المشرف" autocomplete="username">
-          <i class="fa-solid fa-user-astronaut icon" aria-hidden="true"></i>
-        </div>
-
-        <!-- password -->
-        <div class="field">
-          <input id="password" name="password" class="input" type="password" placeholder="رمز الدخول" aria-label="رمز الدخول" autocomplete="current-password">
-          <i class="fa-solid fa-key icon" aria-hidden="true"></i>
-          <button type="button" class="toggle-show" aria-label="إظهار كلمة المرور" onclick="togglePassword()">
-            <i id="eye" class="fa-solid fa-eye" aria-hidden="true"></i>
-          </button>
-        </div>
-
-        <!-- strength -->
-        <div class="strength-wrap" aria-hidden="true" style="margin-top:6px">
-          <div id="strengthBar" class="strength-fill"></div>
-        </div>
-
-        <!-- actions: submit will post to /login (Flask) -->
-        <form id="hiddenForm" action="/login" method="POST" style="display:none">
-          <!-- CSRF token slot: server may inject here -->
-        </form>
-
-        <div style="display:flex;flex-direction:column;gap:10px">
-          <button id="loginBtn" class="btn" aria-label="تسجيل الدخول" onclick="submitLogin()">تسجيل الدخول</button>
-          <div style="display:flex;gap:10px;align-items:center;justify-content:center">
-            <button class="btn" style="background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted);font-weight:600" onclick="fillDemo()">تجريبي</button>
-          </div>
-        </div>
-
-        <div class="small" style="text-align:center;margin-top:4px">اتصال آمن · Titan OS</div>
-
-        <!-- status row -->
-        <div style="width:100%;margin-top:8px">
-          <div class="status-row">
-            <div class="status-chip">Ping: <strong id="pingVal">--</strong> ms</div>
-            <div class="status-chip">Active: <strong id="activeChats">--</strong></div>
-            <div class="status-chip">ID: <strong id="adminId">—</strong></div>
-          </div>
-        </div>
-
-      </div> <!-- login-card end -->
-
-      <!-- bottom small note -->
-      <div style="font-size:0.78rem;color:var(--muted);margin-top:12px">Titan Systems — Secure Control Panel</div>
-
-    </div> <!-- iphone-screen -->
-  </div> <!-- iphone-wrap -->
-
-  <!-- Right: detail panel with preview cards -->
-  <aside class="detail-panel" aria-label="معاينة لوحة التحكم">
-
-    <!-- top row stats -->
-    <div class="row" style="align-items:stretch">
-      <div class="stat">
-        <h3>System</h3>
-        <p>Ram: <strong id="ram">--%</strong></p>
-        <p>CPU: <strong id="cpu">--%</strong></p>
-        <p>Ping (avg): <strong id="ping2">-- ms</strong></p>
-      </div>
-      <div class="stat">
-        <h3>Channels</h3>
-        <p>Active calls: <strong id="callsCount">--</strong></p>
-        <p>Video chats: <strong id="videoCount">--</strong></p>
-        <p>Connected assistants: <strong id="assCount">--</strong></p>
-      </div>
+    <!-- Toast Notification -->
+    <div class="toast" id="toast">
+        <i class="fa-solid fa-circle-check" style="color:var(--ios-green)"></i>
+        <span id="toast-msg">تمت العملية بنجاح</span>
     </div>
 
-    <!-- groups list -->
-    <div style="margin-top:6px"><strong style="font-family:Rajdhani">المكالمات النشطة</strong></div>
-    <div class="list" id="activeList" role="list" aria-label="قائمة المكالمات النشطة">
-      <!-- JS will populate -->
-      <div style="text-align:center;color:var(--muted);padding:18px">لا توجد بيانات بعد — سيتم تحديث العرض تلقائياً</div>
+    <!-- Login Card -->
+    <div class="login-container" id="card">
+        
+        <div class="lock-icon"><i class="fa-brands fa-apple"></i></div>
+        <h1 class="title">Titan Security</h1>
+        <p class="subtitle" id="sub-text">المصادقة الأمنية مطلوبة</p>
+
+        <!-- PASSWORD FORM (Default) -->
+        <div id="password-form">
+            <div class="input-wrapper">
+                <input type="text" id="username" class="ios-input" placeholder="اسم المستخدم" autocomplete="off">
+                <i class="fa-solid fa-user-astronaut input-icon"></i>
+            </div>
+            <div class="input-wrapper">
+                <input type="password" id="password" class="ios-input" placeholder="كلمة المرور">
+                <i class="fa-solid fa-key input-icon"></i>
+            </div>
+            <button class="btn btn-primary" onclick="attemptLogin()">
+                دخول آمن
+            </button>
+        </div>
+
+        <!-- BIOMETRIC BUTTON (Shown if registered) -->
+        <button class="btn btn-bio" id="bio-login-btn" onclick="verifyBiometric()">
+            <i class="fa-solid fa-fingerprint"></i> دخول بالبصمة
+        </button>
+
+        <div style="margin-top:20px; font-size:0.85rem; color:var(--text-secondary); cursor:pointer" onclick="alert('اتصل بالمشرف للحصول على كود الاستعادة')">
+            هل نسيت كلمة المرور؟
+        </div>
+
     </div>
 
-    <!-- preview of file cache -->
-    <div style="margin-top:8px;display:flex;gap:10px;align-items:center;justify-content:space-between">
-      <div style="font-weight:700">الملفات المؤقتة</div>
-      <div style="color:var(--muted)" id="cacheCount">0</div>
+    <!-- Biometric Setup Modal -->
+    <div class="modal-overlay" id="bio-modal">
+        <div class="modal-box">
+            <i class="fa-solid fa-fingerprint bio-icon-large"></i>
+            <h2 style="font-size:1.4rem; margin-bottom:10px">تفعيل البصمة؟</h2>
+            <p style="color:#aaa; font-size:0.9rem; margin-bottom:25px">
+                يمكنك استخدام FaceID أو TouchID للدخول في المرة القادمة دون كتابة كلمة المرور.
+            </p>
+            <button class="btn btn-primary" style="background:var(--ios-blue); color:#fff; margin-bottom:10px" onclick="registerBiometric()">
+                تفعيل الآن
+            </button>
+            <button class="btn" style="background:transparent; color:#888" onclick="skipBiometric()">
+                ليس الآن
+            </button>
+        </div>
     </div>
-    <div class="list" id="cacheList" style="max-height:120px;overflow:auto">
-      <div style="color:var(--muted);padding:10px">لا توجد ملفات</div>
-    </div>
 
-    <div class="detail-footer">عرض توضيحي — البيانات محلية (Mock) · Titan OS ©</div>
+    <script>
+        /* 
+           ==============================================================
+           TITAN SECURITY CORE V5.0
+           FEATURES: WEBAUTHN SIMULATION, 3D PARALLAX, LOCAL STORAGE MOCK
+           ==============================================================
+        */
 
-  </aside>
+        // 1. STAR ENGINE
+        const canvas = document.getElementById('star-canvas');
+        const ctx = canvas.getContext('2d');
+        let width = window.innerWidth, height = window.innerHeight;
+        canvas.width = width; canvas.height = height;
+        
+        const stars = Array(150).fill().map(() => ({
+            x: Math.random() * width, y: Math.random() * height,
+            r: Math.random() * 1.5, s: Math.random() * 0.5
+        }));
 
-</div> <!-- container end -->
+        function drawStars() {
+            ctx.clearRect(0,0,width,height);
+            ctx.fillStyle = "#FFF";
+            stars.forEach(st => {
+                ctx.beginPath(); ctx.arc(st.x, st.y, st.r, 0, Math.PI*2); ctx.fill();
+                st.y -= st.s; if(st.y < 0) st.y = height;
+            });
+            requestAnimationFrame(drawStars);
+        }
+        drawStars();
 
-<!-- detailed script: interactions, demo data, accessibility -->
-<script>
-/*
-  Titan OS iPhone Login — Script
-  - Toggle password
-  - Password strength meter
-  - Mock fetching of system stats & active calls
-  - submitLogin posts to /login using a hidden form (to allow server CSRF injection)
-  - Demo-fill and small UX polish
-*/
+        // 2. 3D TILT EFFECT
+        document.addEventListener('mousemove', (e) => {
+            const card = document.getElementById('card');
+            const x = (window.innerWidth / 2 - e.pageX) / 25;
+            const y = (window.innerHeight / 2 - e.pageY) / 25;
+            card.style.transform = `rotateY(${x}deg) rotateX(${y}deg)`;
+        });
 
-/* Utility */
-function qs(sel){ return document.querySelector(sel) }
-function qsa(sel){ return Array.from(document.querySelectorAll(sel)) }
+        // 3. SECURITY LOGIC & BIOMETRICS
+        
+        // Check if user already registered fingerprint
+        const hasBio = localStorage.getItem('titan_bio_registered') === 'true';
 
-/* Elements */
-const passwordEl = qs('#password')
-const eyeEl = qs('#eye')
-const strengthEl = qs('#strengthBar')
-const loginBtn = qs('#loginBtn')
-const usernameEl = qs('#username')
-const hiddenForm = qs('#hiddenForm')
+        window.onload = () => {
+            if(hasBio) {
+                // If registered, show Biometric Button immediately
+                // document.getElementById('password-form').classList.add('hidden'); // Optional: hide pass form
+                document.getElementById('bio-login-btn').style.display = 'flex';
+                document.getElementById('sub-text').innerText = "تم التعرف على الجهاز";
+                // Auto prompt
+                // verifyBiometric(); // Uncomment to auto-trigger on load
+            }
+        };
 
-/* Toggle password visibility */
-function togglePassword(){
-  if(!passwordEl) return
-  if(passwordEl.type === 'password'){
-    passwordEl.type = 'text'
-    eyeEl.className = 'fa-solid fa-eye-slash'
-    eyeEl.style.color = ''
-  } else {
-    passwordEl.type = 'password'
-    eyeEl.className = 'fa-solid fa-eye'
-    eyeEl.style.color = ''
-  }
-}
+        function showToast(msg, type='success') {
+            const t = document.getElementById('toast');
+            const icon = t.querySelector('i');
+            icon.className = type==='error' ? "fa-solid fa-triangle-exclamation" : "fa-solid fa-circle-check";
+            icon.style.color = type==='error' ? "var(--ios-red)" : "var(--ios-green)";
+            document.getElementById('toast-msg').innerText = msg;
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
 
-/* Password strength */
-if(passwordEl){
-  passwordEl.addEventListener('input', (e)=>{
-    const val = e.target.value || ''
-    let score = 0
-    if(val.length >= 6) score++
-    if(/[0-9]/.test(val)) score++
-    if(/[A-Z]/.test(val)) score++
-    if(/[^A-Za-z0-9]/.test(val)) score++
-    if(val.length === 0){ strengthEl.style.width = '0%' }
-    else if(score <= 1){ strengthEl.style.width = '24%'; strengthEl.style.background = '#FF3B30' }
-    else if(score === 2){ strengthEl.style.width = '56%'; strengthEl.style.background = '#FF9F0A' }
-    else if(score === 3){ strengthEl.style.width = '86%'; strengthEl.style.background = '#34C759' }
-    else { strengthEl.style.width = '100%'; strengthEl.style.background = 'linear-gradient(90deg,#0A84FF,#00C7BE)' }
-  })
-}
+        function shakeCard() {
+            const c = document.getElementById('card');
+            c.classList.remove('shake');
+            void c.offsetWidth; // trigger reflow
+            c.classList.add('shake');
+            // Vibrate phone
+            if(navigator.vibrate) navigator.vibrate([100, 50, 100]);
+        }
 
-/* Prevent double submit - use hidden form to allow server CSRF fields injection */
-function submitLogin(){
-  // basic validation
-  const user = usernameEl.value.trim()
-  const pass = passwordEl.value.trim()
-  if(!user || !pass){
-    // small shake animation
-    usernameEl.classList.add('shake'); passwordEl.classList.add('shake')
-    setTimeout(()=>{ usernameEl.classList.remove('shake'); passwordEl.classList.remove('shake') }, 600)
-    return
-  }
+        // --- LOGIN FLOW ---
 
-  // disable UI while submitting
-  loginBtn.disabled = true
-  loginBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> جاري الدخول...'
-  loginBtn.style.cursor = 'wait'
+        function attemptLogin() {
+            const user = document.getElementById('username').value;
+            const pass = document.getElementById('password').value;
 
-  // Build a real form post to /login preserving possible CSRF inputs injected by server into #hiddenForm
-  const form = document.createElement('form')
-  form.method = 'POST'
-  form.action = '/login'
-  // copy any existing hidden CSRF fields from hiddenForm (server can inject them)
-  const hidden = hiddenForm.cloneNode(true)
-  // append username/password fields
-  const u = document.createElement('input'); u.type='hidden'; u.name='username'; u.value = user
-  const p = document.createElement('input'); p.type='hidden'; p.name='password'; p.value = pass
-  form.appendChild(u); form.appendChild(p)
-  // append any CSRF inputs
-  Array.from(hidden.querySelectorAll('input')).forEach(i => form.appendChild(i))
-  document.body.appendChild(form)
-  form.submit()
-}
+            // MOCK VALIDATION (Replace with Server Request)
+            if(user.toLowerCase() === 'admin' && pass === 'admin123') { // Example Creds
+                if(!hasBio) {
+                    // First time? Ask for Biometric
+                    document.getElementById('bio-modal').style.display = 'flex';
+                } else {
+                    // Already has bio but used password? Login success
+                    loginSuccess();
+                }
+            } else {
+                shakeCard();
+                showToast("بيانات الدخول خاطئة", "error");
+            }
+        }
 
-/* Demo fill */
-function fillDemo(){
-  usernameEl.value = 'Abdallah'
-  passwordEl.value = 'asdfghjkl05896'
-  passwordEl.dispatchEvent(new Event('input'))
-}
+        function loginSuccess() {
+            showToast("تم الدخول بنجاح");
+            setTimeout(() => {
+                // Redirect to Dashboard
+                window.location.href = '/dashboard'; 
+            }, 1000);
+        }
 
-/* Mock system stats updater
-   In real deployment, front-end will fetch /api/settings/status and /api/active_calls endpoints.
-   Here we mock some values and demonstrate dynamic UI.
-*/
-function mockUpdate(){
-  // Mock values
-  const ram = Math.floor(Math.random()*30) + 20
-  const cpu = Math.floor(Math.random()*40) + 10
-  const ping = Math.floor(Math.random()*90) + 10
-  const calls = Math.floor(Math.random()*6)
-  const videos = Math.floor(Math.random()*3)
-  const assistants = Math.floor(Math.random()*5) + 1
-  // Update UI
-  qs('#ram').innerText = ram + '%'
-  qs('#cpu').innerText = cpu + '%'
-  qs('#pingVal').innerText = ping
-  qs('#ping2').innerText = ping + ' ms'
-  qs('#activeChats').innerText = calls
-  qs('#callsCount').innerText = calls
-  qs('#videoCount').innerText = videos
-  qs('#assCount').innerText = assistants
-  qs('#adminId').innerText = usernameEl.value || '—'
-  // populate lists
-  const al = qs('#activeList')
-  al.innerHTML = ''
-  for(let i=0;i<calls;i++){
-    const it = document.createElement('div')
-    it.className = 'list-item'
-    it.innerHTML = `<div class="avatar"><img src="https://picsum.photos/seed/call${i}/200/200" alt="avatar"></div><div style="flex:1"><strong>Group ${1000+i}</strong><div style="font-size:0.85rem;color:${getComputedStyle(document.documentElement).getPropertyValue('--muted')};">ID: -100${1000+i}</div></div><div style="font-size:0.82rem;color:var(--muted)">Playing</div>`
-    al.appendChild(it)
-  }
-  const cacheList = qs('#cacheList'); cacheList.innerHTML = ''
-  const cacheCount = Math.floor(Math.random()*6)
-  qs('#cacheCount').innerText = cacheCount
-  if(cacheCount === 0){
-    cacheList.innerHTML = `<div style="color:var(--muted);padding:10px">لا توجد ملفات</div>`
-  } else {
-    for(let i=0;i<cacheCount;i++){
-      const f = document.createElement('div')
-      f.className = 'list-item'
-      f.innerHTML = `<div style="flex:1"><strong>file_${i}.mp4</strong><div style="font-size:0.82rem;color:var(--muted)"> ${(Math.random()*50+1).toFixed(1)} MB</div></div><div style="font-size:0.82rem;color:var(--muted)"> <button style="background:transparent;border:none;color:var(--accent);cursor:pointer" onclick="alert('download mock')">تحميل</button></div>`
-      cacheList.appendChild(f)
-    }
-  }
-}
+        // --- WEBAUTHN IMPLEMENTATION (Real Browser API) ---
 
-/* periodic mock updates */
-mockUpdate()
-setInterval(mockUpdate, 4200)
+        // 1. REGISTER NEW FINGERPRINT
+        async function registerBiometric() {
+            if (!window.PublicKeyCredential) {
+                alert("جهازك لا يدعم البصمة أو المتصفح قديم.");
+                skipBiometric();
+                return;
+            }
 
-/* Accessibility: enable form submit via Enter key in inputs */
-qs('#username').addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); submitLogin() } })
-qs('#password').addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); submitLogin() } })
+            try {
+                // Challenge generation (Normally from server)
+                const challenge = new Uint8Array(32);
+                window.crypto.getRandomValues(challenge);
 
-/* small polite hint: focus first field */
-window.addEventListener('load', ()=>{ setTimeout(()=>qs('#username').focus(), 600) })
-</script>
+                const publicKey = {
+                    challenge: challenge,
+                    rp: { name: "Titan OS Security" },
+                    user: {
+                        id: Uint8Array.from("USER_ID_12345", c => c.charCodeAt(0)),
+                        name: "admin@titan.os",
+                        displayName: "Titan Admin"
+                    },
+                    pubKeyCredParams: [{ alg: -7, type: "public-key" }],
+                    authenticatorSelection: { authenticatorAttachment: "platform" },
+                    timeout: 60000,
+                    attestation: "direct"
+                };
 
+                showToast("ضع إصبعك على المستشعر...", "info");
+                
+                // THE REAL CALL
+                const credential = await navigator.credentials.create({ publicKey });
+                
+                // If success:
+                localStorage.setItem('titan_bio_registered', 'true');
+                document.getElementById('bio-modal').style.display = 'none';
+                showToast("تم تفعيل البصمة بنجاح!");
+                setTimeout(loginSuccess, 1000);
+
+            } catch (e) {
+                console.error(e);
+                showToast("فشل تسجيل البصمة", "error");
+            }
+        }
+
+        // 2. VERIFY FINGERPRINT (LOGIN)
+        async function verifyBiometric() {
+            try {
+                const challenge = new Uint8Array(32);
+                window.crypto.getRandomValues(challenge);
+
+                const publicKey = {
+                    challenge: challenge,
+                    timeout: 60000,
+                    userVerification: "required"
+                };
+
+                showToast("جاري التحقق من البصمة...", "info");
+
+                // THE REAL CALL
+                const assertion = await navigator.credentials.get({ publicKey });
+
+                // If success (Browser returns object)
+                loginSuccess();
+
+            } catch (e) {
+                console.error(e);
+                shakeCard();
+                showToast("لم تتطابق البصمة", "error");
+            }
+        }
+
+        function skipBiometric() {
+            document.getElementById('bio-modal').style.display = 'none';
+            loginSuccess();
+        }
+
+    </script>
 </body>
 </html>
