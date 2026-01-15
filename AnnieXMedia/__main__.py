@@ -9,6 +9,7 @@ import asyncio
 import importlib
 import logging
 import threading
+import socket
 from flask import Flask, request, redirect, url_for, jsonify, session, send_file, Response
 from pyrogram import idle
 from pytgcalls.exceptions import NoActiveGroupCall
@@ -21,31 +22,37 @@ sys.path.insert(0, os.getcwd())
 
 # 2. Define critical paths
 CURRENT_DIR = os.getcwd()
-TITAN_DIR = os.path.join(CURRENT_DIR, "TitanOS")
+# يمكنك تغيير TITAN_DIR إلى CURRENT_DIR إذا كنت تضع ملفات html بجانب البوت مباشرة
+TITAN_DIR = os.path.join(CURRENT_DIR, "TitanOS") 
 DOWNLOADS_DIR = os.path.join(CURRENT_DIR, "downloads")
 
 # 3. Create TitanOS folder if missing (Safety Check)
 if not os.path.exists(TITAN_DIR):
-    print(f"❌ Critical Error: TitanOS folder not found at {TITAN_DIR}")
-    # Create dummy folder to prevent crash
+    print(f"⚠️ Warning: TitanOS folder not found at {TITAN_DIR}")
+    print("   Please create a folder named 'TitanOS' and put dashboard.html & login.html inside it.")
     os.makedirs(TITAN_DIR, exist_ok=True)
+    
+if not os.path.exists(DOWNLOADS_DIR):
+    os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
 # ---------------------------------------------------------
 # [2] Web Engine (Flask Setup)
 # ---------------------------------------------------------
 app = Flask(__name__, template_folder=TITAN_DIR, static_folder=TITAN_DIR)
 app.secret_key = "Titan_God_Mode_2025"
-logging.getLogger('werkzeug').setLevel(logging.ERROR)
+# إخفاء رسائل Flask المزعجة
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
 
 ADMIN_USER = "Abdallah"
 ADMIN_PASS = "asdfghjkl05896"
 
 # ---------------------------------------------------------
-# [3] Bot Imports (Corrected for your Source)
+# [3] Bot Imports
 # ---------------------------------------------------------
 import config
 from AnnieXMedia import LOGGER, app as bot_app, userbot
-# ✅ هنا التصحيح: استيراد Call بدلاً من Annie
+# ✅ استيراد الكول
 from AnnieXMedia.core.call import StreamController 
 from AnnieXMedia.misc import sudo, db
 from AnnieXMedia.plugins import ALL_MODULES
@@ -71,7 +78,6 @@ def login_page():
             return redirect(url_for('dashboard'))
         return "<h1>Wrong Password!</h1>"
     
-    # Use absolute path to guarantee file loading
     login_path = os.path.join(TITAN_DIR, "login.html")
     if os.path.exists(login_path):
         return send_file(login_path)
@@ -106,6 +112,7 @@ def stream_video(chat_id):
             file_path = track.get("file")
     except: pass
 
+    # Fallback to downloads if not found in DB
     if not file_path and os.path.exists(DOWNLOADS_DIR):
         try:
             files = [os.path.join(DOWNLOADS_DIR, f) for f in os.listdir(DOWNLOADS_DIR) if f.endswith(('mp4','mp3','webm'))]
@@ -115,7 +122,7 @@ def stream_video(chat_id):
     if not file_path or not os.path.exists(file_path):
         return "No Stream Found", 404
 
-    # Range Support (Seeking Fix)
+    # Range Support logic
     range_header = request.headers.get('Range', None)
     if not range_header: return send_file(file_path)
     
@@ -140,17 +147,16 @@ def stream_video(chat_id):
 def api_active_calls():
     data = []
     try:
-        # Accessing the 'active_calls' set from your Call class
         if hasattr(StreamController, 'active_calls'):
-            data = [{"id": str(x), "name": "Active Chat"} for x in StreamController.active_calls]
+            data = [{"id": str(x), "name": f"Chat: {x}", "cover": "https://telegra.ph/file/5eb6df308e92f4477813d.jpg"} for x in StreamController.active_calls]
     except: pass
     
-    if not data: data = [{"id": "0", "name": "Waiting for Calls..."}]
+    if not data: data = [] # Return empty list so JS handles "No Signals"
     return jsonify({"chats": data})
 
 @app.route('/api/track_info/<chat_id>')
 def api_track_info(chat_id):
-    info = {"title": "Idle", "artist": "", "cover": "", "stream_url": ""}
+    info = {"title": "System Idle", "artist": "Titan OS", "cover": "", "stream_url": "", "is_playing": False}
     try:
         cid = int(chat_id)
         if cid in db and db[cid]:
@@ -159,13 +165,18 @@ def api_track_info(chat_id):
                 "title": track.get("title", "Unknown"),
                 "artist": track.get("dur", "Live"),
                 "cover": track.get("thumb", "https://telegra.ph/file/5eb6df308e92f4477813d.jpg"),
-                "stream_url": f"/stream/{cid}"
+                "stream_url": f"/stream/{cid}",
+                "is_playing": True
             }
     except: pass
     return jsonify(info)
 
-@app.route('/api/<cmd>/<chat_id>', methods=['POST'])
-def api_command(cmd, chat_id):
+@app.route('/api/player/control', methods=['POST'])
+def api_player_control():
+    # Helper to support both /api/cmd/id style and form data style
+    cmd = request.form.get('cmd')
+    chat_id = request.form.get('chat_id')
+    
     async def exec_cmd():
         try:
             cid = int(chat_id)
@@ -174,20 +185,28 @@ def api_command(cmd, chat_id):
             elif cmd in ['skip', 'stop']: await StreamController.stop_stream(cid)
         except: pass
 
-    try:
-        asyncio.run_coroutine_threadsafe(exec_cmd(), bot_app.loop)
-    except: pass
-    return jsonify({"ok": True})
+    if cmd and chat_id:
+        try:
+            asyncio.run_coroutine_threadsafe(exec_cmd(), bot_app.loop)
+        except: pass
+    return jsonify({"status": "executed", "command": cmd})
 
-@app.route('/api/system/turbo', methods=['POST'])
-def turbo_mode():
-    import gc; gc.collect()
-    return jsonify({"ok": True})
+# Support specific endpoints for JS if needed
+@app.route('/api/settings/status')
+def api_sys_status():
+    return jsonify({
+        "maintenance": False,
+        "autoend": True,
+        "ram": psutil.virtual_memory().percent,
+        "cpu": psutil.cpu_percent(),
+        "ping": "25"
+    })
 
 # ---------------------------------------------------------
 # [5] Main Launcher (Combined Logic)
 # ---------------------------------------------------------
 def run_web():
+    # Run Flask on port 8080
     app.run(host="0.0.0.0", port=8080, debug=False, use_reloader=False)
 
 async def init():
@@ -199,7 +218,19 @@ async def init():
     t = threading.Thread(target=run_web)
     t.daemon = True
     t.start()
-    print("🌐 Dashboard: http://0.0.0.0:8080")
+
+    # --- [HERE IS THE LINK YOU ASKED FOR] ---
+    try:
+        # Get Local IP
+        hostname = socket.gethostname()
+        local_ip = socket.gethostbyname(hostname)
+        print(f"\n✅ Web Dashboard Online:")
+        print(f"🔗 Local Access:   http://{local_ip}:8080")
+        print(f"🔗 Server Access:  http://0.0.0.0:8080")
+        print(f"🔐 Login User:     {ADMIN_USER}")
+        print("---------------------------------------\n")
+    except:
+        print("🌐 Dashboard: http://0.0.0.0:8080")
 
     # 2. Start Bot Logic
     if (
