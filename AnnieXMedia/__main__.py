@@ -1,5 +1,7 @@
+# -*- coding: utf-8 -*-
 # =========================================================
-# __main__.py (TitanOS Integrated - Realtime Sync Edition)
+# TITAN OS | MAIN KERNEL
+# Integrates Telegram Bot + Web Dashboard + Video Streaming
 # =========================================================
 
 import sys
@@ -8,197 +10,240 @@ import asyncio
 import importlib
 import logging
 from threading import Thread
-from flask import Flask, render_template, request, redirect, url_for, Response, jsonify, session
-from pyrogram import idle, Client
+from flask import Flask, render_template, request, redirect, url_for, jsonify, session, send_file, Response
+from pyrogram import idle
 
-# ------------------------
-# 1. إعدادات السيرفر
-# ------------------------
-BASE_DIR = os.getcwd()
-TITAN_DIR = os.path.join(BASE_DIR, 'TitanOS')
-if not os.path.exists(TITAN_DIR):
-    TITAN_DIR = os.path.join(BASE_DIR, 'AnnieXMedia', 'TitanOS')
-
-app = Flask(__name__, template_folder=TITAN_DIR, static_folder=TITAN_DIR)
+# ---------------------------------------------------------
+# 1. إعدادات السيرفر والمسارات
+# ---------------------------------------------------------
+# جعل مجلد القوالب هو المجلد الحالي لقراءة dashboard.html
+app = Flask(__name__, template_folder=".", static_folder=".")
 app.secret_key = "Titan_God_Mode_2025"
-logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
-# بيانات الدخول
+# إخفاء لوجات فلاسك المزعجة
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
+
+# بيانات دخول لوحة التحكم
 ADMIN_USER = "Abdallah"
 ADMIN_PASS = "asdfghjkl05896"
 
-# كاش التصميم
-CSS_CACHE = ""
-JS_CACHE = ""
+# ---------------------------------------------------------
+# 2. استيراد مكاتب البوت (AnnieXMedia)
+# ---------------------------------------------------------
+try:
+    sys.path.insert(0, os.getcwd())
+    import config
+    from AnnieXMedia import LOGGER, app as bot_app, userbot
+    from AnnieXMedia.core.call import StreamController
+    from AnnieXMedia.misc import sudo, db
+    from AnnieXMedia.plugins import ALL_MODULES
+    from AnnieXMedia.utils.cookie_handler import fetch_and_store_cookies
+except ImportError:
+    print("CRITICAL: AnnieXMedia modules not found. Ensure you are in the root directory.")
+    sys.exit(1)
 
-def load_assets():
-    global CSS_CACHE, JS_CACHE
-    try:
-        with open(os.path.join(TITAN_DIR, 'assets_bundle.txt'), "r", encoding="utf-8") as f:
-            content = f.read()
-            if "---CSS---" in content:
-                parts = content.split("---JS---")
-                CSS_CACHE = parts[0].split("---CSS---")[1].strip()
-                JS_CACHE = parts[1].strip()
-    except: pass
-load_assets()
-
-# ------------------------
-# 2. Flask Routes
-# ------------------------
-@app.route('/static/css/style.css')
-def serve_css():
-    if not CSS_CACHE: load_assets()
-    return Response(CSS_CACHE, mimetype='text/css')
-
-@app.route('/static/js/app.js')
-def serve_js():
-    if not JS_CACHE: load_assets()
-    return Response(JS_CACHE, mimetype='application/javascript')
+# ---------------------------------------------------------
+# 3. مسارات الموقع (Web Routes)
+# ---------------------------------------------------------
 
 @app.route('/')
 def home():
-    if session.get('user') == ADMIN_USER: return redirect(url_for('dashboard'))
+    if session.get('user') == ADMIN_USER:
+        return redirect(url_for('dashboard'))
     return render_template('login.html')
 
-@app.route('/login', methods=['POST'])
-def login_check():
-    if request.form.get('username') == ADMIN_USER and request.form.get('password') == ADMIN_PASS:
-        session['user'] = ADMIN_USER
-        return redirect(url_for('dashboard'))
-    return render_template('login.html', error="Access Denied")
+@app.route('/login', methods=['GET', 'POST'])
+def login_page():
+    if request.method == 'POST':
+        if request.form.get('username') == ADMIN_USER and request.form.get('password') == ADMIN_PASS:
+            session['user'] = ADMIN_USER
+            return redirect(url_for('dashboard'))
+        return "<h1>Wrong Password!</h1>"
+    
+    # صفحة تسجيل دخول بسيطة جداً مدمجة
+    return """
+    <body style="background:#000; color:#fff; display:flex; justify-content:center; align-items:center; height:100vh; font-family:sans-serif;">
+        <form method="post" style="text-align:center;">
+            <h2 style="color:#0A84FF;">TITAN OS LOGIN</h2>
+            <input type="text" name="username" placeholder="Username" style="padding:10px; border-radius:10px; border:none; display:block; margin:10px auto;">
+            <input type="password" name="password" placeholder="Password" style="padding:10px; border-radius:10px; border:none; display:block; margin:10px auto;">
+            <button style="padding:10px 20px; background:#0A84FF; color:#fff; border:none; border-radius:10px; cursor:pointer;">ACCESS</button>
+        </form>
+    </body>
+    """
 
 @app.route('/dashboard')
 def dashboard():
-    if not session.get('user'): return redirect(url_for('home'))
-    return render_template('dashboard.html')
+    if not session.get('user'): return redirect(url_for('login_page'))
+    # يقرأ ملف dashboard.html الموجود بجانب الملف
+    if os.path.exists("dashboard.html"):
+        return send_file("dashboard.html")
+    return "<h1>Error: dashboard.html not found!</h1>"
 
-# ------------------------
-# 🔥 3. الـ API الذكي (The Brain) 🔥
-# ------------------------
+@app.route('/logs')
+def view_logs():
+    if not session.get('user'): return "Access Denied"
+    log_file = "log.txt" # تأكد من اسم ملف اللوج
+    if os.path.exists(log_file):
+        return send_file(log_file, mimetype="text/plain")
+    return "No logs found."
 
-# أ) كشف الجروبات النشطة
-@app.route('/api/active_calls', methods=['GET'])
-def get_active_calls():
-    if not session.get('user'): return jsonify({"ok": False}), 401
+# ---------------------------------------------------------
+# 4. مسار تشغيل الفيديو (Video Stream Bridge)
+# ---------------------------------------------------------
+@app.route('/stream/<int:chat_id>')
+def stream_video(chat_id):
+    if not session.get('user'): return "Access Denied", 403
+    
+    # البحث عن مسار الملف في قاعدة البيانات
+    if chat_id in db and db[chat_id]:
+        track = db[chat_id][0]
+        file_path = track.get("file")
+        if file_path and os.path.exists(file_path):
+            return send_file(file_path)
+    
+    return "No active stream found", 404
+
+# ---------------------------------------------------------
+# 5. الـ API (المحرك الذكي)
+# ---------------------------------------------------------
+
+# أ) جلب الجروبات النشطة
+@app.route('/api/active_calls')
+def api_active_calls():
+    if not session.get('user'): return jsonify({"error": "Auth required"}), 401
     
     active_data = []
     
-    # دالة لجلب البيانات من داخل البوت (Async -> Sync)
-    def fetch_data():
-        from AnnieXMedia.core.call import StreamController
-        # محاولة الوصول لقائمة المكالمات في pytgcalls
+    async def get_chats_async():
+        results = []
         try:
-            # معظم السورسات بتخزن المكالمات هنا
-            if hasattr(StreamController, 'call_py'):
-                calls = StreamController.call_py.active_calls
-            else:
-                calls = [] # fallback
-            return calls
-        except:
-            return []
-
-    try:
-        # تشغيل الكود في الـ Loop الأساسي للبوت
-        future = asyncio.run_coroutine_threadsafe(
-            _get_detailed_chats(), 
-            bot_app.loop
-        )
-        active_data = future.result()
-    except Exception as e:
-        print(f"Error fetching calls: {e}")
-
-    return jsonify({"ok": True, "chats": active_data})
-
-# دالة مساعدة تجيب اسم الجروب كمان
-async def _get_detailed_chats():
-    from AnnieXMedia.core.call import StreamController
-    results = []
-    try:
-        # بنحاول نجيب القائمة من Pytgcalls
-        active_calls = StreamController.call_py.active_calls
-        
-        for chat_id in active_calls:
-            try:
-                # بنجيب اسم الجروب من التليجرام
-                chat = await bot_app.get_chat(chat_id)
-                chat_name = chat.title
-            except:
-                chat_name = f"Secret Group {chat_id}"
+            # الحصول على قائمة الـ IDs من StreamController
+            # (تختلف التسمية حسب نسخة السورس، نجرب الأكثر شيوعاً)
+            call_ids = []
+            if hasattr(StreamController, 'active_calls'):
+                call_ids = list(StreamController.active_calls)
+            elif hasattr(StreamController, 'call_py'):
+                call_ids = StreamController.call_py.active_calls
             
-            results.append({
-                "id": chat_id,
-                "name": chat_name,
-                "status": "Playing 🔊"
-            })
-    except:
-        # لو فشل، بنرجع قائمة فاضية بدل ما السيستم يقع
-        pass
-    return results
+            for chat_id in call_ids:
+                chat_name = f"Chat {chat_id}"
+                try:
+                    chat = await bot_app.get_chat(chat_id)
+                    chat_name = chat.title
+                except: pass
+                
+                results.append({"id": chat_id, "name": chat_name})
+        except Exception as e:
+            print(f"Error scanning chats: {e}")
+        return results
 
-# ب) تنفيذ الأوامر (Play/Pause/Skip)
-@app.route('/api/<action>/<chat_id>', methods=['POST'])
-def api_handler(action, chat_id):
+    try:
+        future = asyncio.run_coroutine_threadsafe(get_chats_async(), bot_app.loop)
+        active_data = future.result()
+    except: pass
+
+    return jsonify({"chats": active_data})
+
+# ب) معلومات التراك (للواجهة)
+@app.route('/api/track_info/<int:chat_id>')
+def api_track_info(chat_id):
+    if not session.get('user'): return jsonify({}), 401
+    
+    info = {"title": "Idle", "artist": "", "cover": "", "stream_url": ""}
+    
+    if chat_id in db and db[chat_id]:
+        track = db[chat_id][0]
+        vidid = track.get("vidid")
+        cover_url = f"https://img.youtube.com/vi/{vidid}/hqdefault.jpg" if vidid else "https://telegra.ph/file/6298d377ad3eb46711644.jpg"
+        
+        info = {
+            "title": track.get("title", "Unknown"),
+            "artist": track.get("by", "Unknown"),
+            "cover": cover_url,
+            "stream_url": f"/stream/{chat_id}"
+        }
+    return jsonify(info)
+
+# ج) التحكم (Play/Pause/Skip/Turbo)
+@app.route('/api/<cmd>/<chat_id>', methods=['POST'])
+@app.route('/api/system/<cmd>', methods=['POST']) # للتيربو والكاش
+def api_command(cmd, chat_id=None):
     if not session.get('user'): return jsonify({"ok": False}), 401
 
+    async def execute_bot_command():
+        try:
+            # أوامر النظام
+            if cmd == 'turbo':
+                import gc
+                gc.collect()
+                return True
+            if cmd == 'cleancache':
+                os.system("rm -rf downloads/ cache/")
+                return True
+            
+            # أوامر التشغيل
+            cid = int(chat_id)
+            if cmd == 'pause':
+                await StreamController.pause_stream(cid)
+            elif cmd == 'resume':
+                await StreamController.resume_stream(cid)
+            elif cmd in ['skip', 'stop']:
+                await StreamController.stop_stream(cid)
+            elif cmd == 'seek_back':
+                # منطق الـ Seek يعتمد على السورس، سنقوم بإعادة التشغيل كمثال
+                pass 
+                
+        except Exception as e:
+            print(f"Cmd Error: {e}")
+
     try:
-        chat_id = int(chat_id)
-        from AnnieXMedia.core.call import StreamController
+        asyncio.run_coroutine_threadsafe(execute_bot_command(), bot_app.loop).result()
+        return jsonify({"ok": True})
+    except:
+        return jsonify({"ok": False})
 
-        async def execute_order():
-            if action == 'pause':
-                await StreamController.pause_stream(chat_id)
-            elif action == 'resume':
-                await StreamController.resume_stream(chat_id)
-            elif action in ['skip', 'stop']:
-                await StreamController.stop_stream(chat_id)
-            elif action == 'turbo':
-                pass # مجرد تأثير بصري
+# ---------------------------------------------------------
+# 6. التشغيل (Boot Sequence)
+# ---------------------------------------------------------
+def run_flask_server():
+    # تشغيل السيرفر على بورت 8080
+    app.run(host="0.0.0.0", port=8080, use_reloader=False, threaded=True)
 
-        asyncio.run_coroutine_threadsafe(execute_order(), bot_app.loop).result()
-        return jsonify({"ok": True, "msg": "Command Executed"})
+async def main_init():
+    # 1. تشغيل الويب في Thread منفصل
+    server_thread = Thread(target=run_flask_server)
+    server_thread.daemon = True
+    server_thread.start()
+    
+    LOGGER("TitanOS").info("✅ DASHBOARD STARTED: http://Your-IP:8080")
 
-    except Exception as e:
-        return jsonify({"ok": False, "msg": str(e)})
-
-def run_flask():
-    app.run(host="0.0.0.0", port=8080, use_reloader=False)
-
-# ------------------------
-# 4. تشغيل البوت
-# ------------------------
-sys.path.insert(0, os.getcwd())
-import config
-from AnnieXMedia import LOGGER, app as bot_app, userbot
-from AnnieXMedia.core.call import StreamController
-from AnnieXMedia.misc import sudo
-from AnnieXMedia.plugins import ALL_MODULES
-from AnnieXMedia.utils.cookie_handler import fetch_and_store_cookies
-
-async def init():
-    # تشغيل السيرفر
-    t = Thread(target=run_flask)
-    t.daemon = True
-    t.start()
-    LOGGER("TitanOS").info("✅ TitanOS Dashboard is Online on Port 8080")
-
+    # 2. تشغيل البوت
     if not config.STRING1:
-        LOGGER(__name__).error("No Session String!")
-        exit()
+        LOGGER(__name__).error("No Session String found!")
+        return
 
     await sudo()
     try: await fetch_and_store_cookies()
     except: pass
 
     await bot_app.start()
-    for mod in ALL_MODULES: importlib.import_module("AnnieXMedia.plugins" + mod)
-    
+    for all_module in ALL_MODULES:
+        importlib.import_module("AnnieXMedia.plugins" + all_module)
+
     await userbot.start()
     await StreamController.start()
-    await StreamController.decorators() # هام جداً لتفعيل الأوامر
     
-    LOGGER("AnnieXMedia").info("🚀 System Fully Operational")
+    # 3. تفعيل الديكوريتورز (مهم لعمل الأوامر)
+    try:
+        await StreamController.decorators()
+    except: pass
+
+    LOGGER("AnnieXMedia").info("🔥 TITAN OS FULLY OPERATIONAL 🔥")
     await idle()
 
 if __name__ == "__main__":
-    asyncio.get_event_loop().run_until_complete(init())
+    # إنشاء الـ Loop وتشغيل كل شيء
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main_init())
