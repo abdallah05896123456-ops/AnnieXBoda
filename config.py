@@ -42,11 +42,16 @@ TG_AUDIO_FILESIZE_LIMIT = int(getenv("TG_AUDIO_FILESIZE_LIMIT", "157286400"))
 TG_VIDEO_FILESIZE_LIMIT = int(getenv("TG_VIDEO_FILESIZE_LIMIT", "1288490189"))
 PLAYLIST_FETCH_LIMIT = int(getenv("PLAYLIST_FETCH_LIMIT", "30"))
 
-# ── External APIs ──────────────────────────────────────────────────────────────
+# ── External APIs (تم التعديل هنا لربط السيرفر الجديد) ─────────────────────────
 COOKIE_URL = getenv("COOKIE_URL")
-API_URL = getenv("API_URL")
-VIDEO_API_URL = getenv("VIDEO_API_URL")
-API_KEY = getenv("API_KEY")
+
+# ✅ تم وضع رابط سيرفرك الجديد (Hyperion) مباشرة
+API_URL = "https://hyperionengine.fly.dev"
+VIDEO_API_URL = "https://hyperionengine.fly.dev"
+
+# ✅ كلمة سر وهمية (السيرفر هيقبلها عادي)
+API_KEY = "Titan123"
+
 DEEP_API = getenv("DEEP_API")
 
 # ── Hosting / deployment ───────────────────────────────────────────────────────
