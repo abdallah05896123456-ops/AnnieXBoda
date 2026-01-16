@@ -4,7 +4,8 @@ from typing import List, Union, Optional
 
 import aiohttp
 from bs4 import BeautifulSoup
-from youtubesearchpython.aio import VideosSearch
+# التعديل هنا: استخدام __future__ بدل aio
+from youtubesearchpython.__future__ import VideosSearch
 
 
 class AppleAPI:
