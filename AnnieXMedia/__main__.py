@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 # AnnieXMedia Main Runner | Titan OS Integration
+# The Immortal Edition - Cookies & Anti-Crash Integrated
 # ────────────────────────────────────────────────────────
 
 import asyncio
@@ -24,7 +25,10 @@ from AnnieXMedia import (
 from AnnieXMedia.core.call import StreamController
 from AnnieXMedia.misc import sudo
 from AnnieXMedia.utils.database import get_banned_users, get_gbanned
-from AnnieXMedia.utils.cookie_handler import fetch_and_store_cookies
+
+# ✅ التعديل هنا: استدعاء ملف الكوكيز الجديد
+from AnnieXMedia.core.cookies import save_cookies
+
 from config import BANNED_USERS
 import config
 
@@ -36,21 +40,15 @@ except ImportError:
     exit()
 
 # [3] تجهيز ربط موقعك الخاص (TitanOS)
-# ────────────────────────────────────────────────────────
-# هذا الجزء يبحث عن ملف web_srv.py داخل مجلد TitanOS لتشغيل تصميمك
 CUSTOM_WEB_RUNNER = None
 try:
-    # محاولة استيراد دالة التشغيل من ملفاتك
     from AnnieXMedia.TitanOS.web_srv import start_server_thread
     CUSTOM_WEB_RUNNER = start_server_thread
     LOGGER("TitanOS").info("✅ Custom Dashboard File Found (web_srv.py).")
 except ImportError as e:
-    LOGGER("TitanOS").warning(f"⚠️ Custom Dashboard not found or error importing: {e}")
-    # إذا لم يجد الملف، لن يقوم بتشغيل الموقع ولن يوقف البوت
-
+    LOGGER("TitanOS").warning(f"⚠️ Custom Dashboard not found: {e}")
 
 # [4] دالة التشغيل الرئيسية
-# ────────────────────────────────────────────────────────
 async def init():
     # 1. التحقق من الجلسات
     if (
@@ -63,12 +61,11 @@ async def init():
         LOGGER(__name__).error("Assistant session variables not defined, exiting...")
         exit()
 
-    # 2. تحميل الكوكيز
+    # 2. ✅ تحميل الكوكيز (النظام الجديد)
     try:
-        await fetch_and_store_cookies()
-        LOGGER("AnnieXMedia").info("YouTube Cookies Loaded Successfully ✅")
+        await save_cookies()
     except Exception as e:
-        LOGGER("AnnieXMedia").warning(f"⚠️ Cookie Error: {e}")
+        LOGGER("AnnieXMedia").warning(f"⚠️ Cookie Loader Error: {e}")
 
     # 3. إعدادات الحظر والسودو
     await sudo()
@@ -90,7 +87,6 @@ async def init():
     LOGGER("AnnieXMedia").info("Loading Plugins...")
     for all_module in ALL_MODULES:
         try:
-            # دمج الاسم مباشرة لأن الملف بيرجع الاسم بنقطة (.admins)
             importlib.import_module("AnnieXMedia.plugins" + all_module)
         except Exception as e:
             LOGGER("AnnieXMedia").error(f"Failed to load plugin {all_module}: {e}")
@@ -100,6 +96,7 @@ async def init():
     # 6. تشغيل نظام المكالمات
     await StreamController.start()
     try:
+        # رابط تيست خفيف عشان ميعطلش التشغيل
         await StreamController.stream_call("http://docs.evostream.com/sample_content/assets/sintel1m720p.mp4")
     except NoActiveGroupCall:
         LOGGER("AnnieXMedia").error("Please turn on the Voice Chat of your Log Group.\nAnnie Bot Stopped...")
@@ -109,12 +106,10 @@ async def init():
 
     await StreamController.decorators()
 
-    # 7. تشغيل سيرفر الويب الخاص بتصميمك (TitanOS)
-    # ──────────────────────────────────────────
+    # 7. تشغيل TitanOS Dashboard
     if CUSTOM_WEB_RUNNER:
         try:
             LOGGER("TitanOS").info("🌐 Initializing Your Custom Dashboard...")
-            # تشغيل السيرفر في Thread منفصل عشان ميعطلش البوت
             server_thread = threading.Thread(target=CUSTOM_WEB_RUNNER, daemon=True)
             server_thread.start()
             port = getattr(config, "PORT", 8080)
