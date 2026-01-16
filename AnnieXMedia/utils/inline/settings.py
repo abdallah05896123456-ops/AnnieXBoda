@@ -1,14 +1,13 @@
 # Authored By Certified Coders © 2025
 from typing import Union
-
 from pyrogram.types import InlineKeyboardButton
-from config import DEFAULT_QUALITY   # 🔗 ربط الجودة من الكونفنج
-
 
 # =============================================================================
 # ⚙️ MAIN SETTINGS MENU
 # =============================================================================
-def setting_markup(_):
+def setting_markup(_, quality: str = "High"): 
+    # quality: بياخد القيمة الحالية عشان يعرضها في الزرار من بره
+    
     buttons = [
         [
             InlineKeyboardButton(text=_["ST_B_1"], callback_data="AUTH_SETTINGS"),
@@ -18,8 +17,9 @@ def setting_markup(_):
             InlineKeyboardButton(text=_["ST_B_2"], callback_data="PLAYBACK_SETTINGS"),
         ],
         [
+            # هنا الزرار هيعرض الجودة الحالية (LOW, MEDIUM, HIGH)
             InlineKeyboardButton(
-                text=f"🎚 جودة التشغيل ({DEFAULT_QUALITY.upper()})",
+                text=f"🎚 جودة التشغيل : {quality.upper()}",
                 callback_data="QUALITY_SETTINGS",
             ),
         ],
@@ -34,16 +34,21 @@ def setting_markup(_):
 
 
 # =============================================================================
-# 🎚 QUALITY SETTINGS
+# 🎚 QUALITY SETTINGS (بالعلامات ✅)
 # =============================================================================
-def quality_settings_markup(_):
+def quality_settings_markup(_, current_quality: str):
+    # بنحدد مكان العلامة حسب الجودة المتسجلة
+    low_btn = f"{'✅ ' if current_quality.lower() == 'low' else ''}🎧 Low (Data Saver)"
+    med_btn = f"{'✅ ' if current_quality.lower() == 'medium' else ''}🎼 Medium (Standard)"
+    high_btn = f"{'✅ ' if current_quality.lower() == 'high' else ''}🎵 High (Best)"
+
     buttons = [
         [
-            InlineKeyboardButton(text="🎧 Low", callback_data="QUALITY_LOW"),
-            InlineKeyboardButton(text="🎼 Medium", callback_data="QUALITY_MEDIUM"),
+            InlineKeyboardButton(text=low_btn, callback_data="SET_QUALITY_low"),
+            InlineKeyboardButton(text=med_btn, callback_data="SET_QUALITY_medium"),
         ],
         [
-            InlineKeyboardButton(text="🎵 High", callback_data="QUALITY_HIGH"),
+            InlineKeyboardButton(text=high_btn, callback_data="SET_QUALITY_high"),
         ],
         [
             InlineKeyboardButton(
