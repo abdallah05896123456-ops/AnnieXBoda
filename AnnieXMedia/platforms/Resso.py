@@ -4,7 +4,8 @@ from typing import Union
 
 import aiohttp
 from bs4 import BeautifulSoup
-from youtubesearchpython.aio import VideosSearch
+# التعديل تم هنا
+from youtubesearchpython.__future__ import VideosSearch
 
 
 class RessoAPI:
@@ -27,6 +28,11 @@ class RessoAPI:
                     return False
                 html = await response.text()
         soup = BeautifulSoup(html, "html.parser")
+        
+        # تعريف متغيرات مبدئية لتجنب الأخطاء
+        title = None
+        des = None
+
         for tag in soup.find_all("meta"):
             if tag.get("property", None) == "og:title":
                 title = tag.get("content", None)
@@ -36,15 +42,24 @@ class RessoAPI:
                     des = des.split("·")[0]
                 except:
                     pass
-        if des == "":
-            return
+        
+        # التأكد من وجود البيانات قبل البحث
+        if not title:
+            return None
+
         results = VideosSearch(title, limit=1)
-        for result in (await results.next())["result"]:
+        search_result = await results.next()
+        
+        if not search_result.get("result"):
+            return None
+
+        for result in search_result["result"]:
             title = result["title"]
             ytlink = result["link"]
             vidid = result["id"]
             duration_min = result["duration"]
             thumbnail = result["thumbnails"][0]["url"].split("?")[0]
+            
         track_details = {
             "title": title,
             "link": ytlink,
