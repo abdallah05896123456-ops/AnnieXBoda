@@ -1,4 +1,6 @@
 # Authored By Certified Coders © 2025
+# Hyperion Engine Integrated + Failover System
+
 import asyncio
 import contextlib
 import json
@@ -7,6 +9,7 @@ import re
 import time
 from typing import Dict, List, Optional, Tuple, Union
 
+import requests
 import yt_dlp
 from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
@@ -14,8 +17,6 @@ from youtubesearchpython.aio import VideosSearch, Playlist
 
 from AnnieXMedia.utils.cookie_handler import COOKIE_PATH
 from AnnieXMedia.utils.database import is_on_off
-# لم نعد بحاجة لهذا المستورد البطيء
-# from AnnieXMedia.utils.downloader import yt_dlp_download
 from AnnieXMedia.utils.errors import capture_internal_err
 from AnnieXMedia.utils.formatters import time_to_seconds
 from AnnieXMedia.utils.tuning import YTDLP_TIMEOUT, YOUTUBE_META_MAX, YOUTUBE_META_TTL
@@ -30,6 +31,8 @@ _formats_lock = asyncio.Lock()
 
 # === Constants ===
 YOUTUBE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
+# ⚡ رابط السيرفر الخاص بك (الأولوية الأولى)
+HYPERION_API_URL = "https://hyperionengine.fly.dev"
 
 
 # === Helpers ===
@@ -367,7 +370,9 @@ class YouTubeAPI:
             r.get("id", ""),
         )
 
-    # 🔥🔥🔥 الدالة الجديدة المعدلة لسرعة صاروخية (نفس منطق Alexa) 🔥🔥🔥
+    # 🔥🔥🔥 الدالة الذكية (Hybrid Download) 🔥🔥🔥
+    # 1. Hyperion API (Priority)
+    # 2. Local Failover (Backup)
     @capture_internal_err
     async def download(
         self,
@@ -377,64 +382,126 @@ class YouTubeAPI:
         video: Union[bool, str, None] = None,
         videoid: Union[str, bool, None] = None,
     ) -> Union[Tuple[str, Optional[bool]], Tuple[None, None]]:
+        
         link = self._prepare_link(link, videoid)
         loop = asyncio.get_running_loop()
 
-        # دالة تحميل الصوت (مسرعة جداً)
+        # ==========================
+        # 🚀 المرحلة 1: محاولة الـ API (Hyperion)
+        # ==========================
+        try:
+            print(f"⚡ [Hyperion] Trying Cloud Engine for: {link}")
+            payload = {
+                "url": link,
+                "type": "video" if video else "audio",
+                "requester": "AnnieX_Bot"
+            }
+            
+            # Timeout سريع (5 ثواني) للاتصال عشان لو السيرفر واقع ميعطلش البوت
+            response = requests.post(f"{HYPERION_API_URL}/api/v1/download", data=payload, timeout=5)
+            
+            if response.status_code == 200:
+                data = response.json()
+                job_id = data.get("job_id")
+                
+                if job_id:
+                    print(f"⏳ [Hyperion] Job Started: {job_id}")
+                    # انتظار النتيجة (Polling) بحد أقصى 45 ثانية
+                    # لو طول عن كدة يبقى Local أسرع
+                    for _ in range(30): 
+                        try:
+                            status_res = requests.get(f"{HYPERION_API_URL}/api/v1/status/{job_id}", timeout=3)
+                            status_data = status_res.json()
+                            state = status_data.get("status")
+                            
+                            if state == "completed":
+                                final_url = status_data.get("download_url")
+                                print(f"🚀 [Hyperion] Success! Using Stream URL.")
+                                # False تعني: ده رابط مباشر مش ملف محلي
+                                return final_url, False
+                                
+                            elif state == "failed":
+                                print("❌ [Hyperion] Job Failed. Switching to Local...")
+                                break # اخرج وروح للخطوة اللي بعدها
+                                
+                        except:
+                            pass
+                        await asyncio.sleep(1.5)
+                else:
+                    print("❌ [Hyperion] No Job ID.")
+            else:
+                print(f"⚠️ [Hyperion] Server responded: {response.status_code}")
+                
+        except Exception as e:
+            print(f"⚠️ [Hyperion] Connection Skipped: {e}")
+
+        # ==========================
+        # 🛡️ المرحلة 2: التحميل المحلي (Failover)
+        # ==========================
+        print("🔄 [System] Switching to Local Download (Failover Mode)...")
+
         def audio_dl():
             opts = {
-                "format": "bestaudio[ext=m4a]/bestaudio/best", # السر هنا: m4a لا يحتاج تحويل
+                # إعدادات معدلة لتجنب خطأ Empty File
+                "format": "bestaudio[ext=m4a]/bestaudio/best",
                 "outtmpl": "downloads/%(id)s.%(ext)s",
                 "geo_bypass": True,
                 "nocheckcertificate": True,
                 "quiet": True,
                 "no_warnings": True,
+                "ignoreerrors": True, # تجاهل الأخطاء الطفيفة
+                "prefer_ffmpeg": True,
             }
             if cf := _cookiefile_path():
                 opts["cookiefile"] = cf
 
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(link, download=False)
-                xyz = os.path.join("downloads", f"{info['id']}.{info['ext']}")
-                if os.path.exists(xyz):
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(link, download=False)
+                    xyz = os.path.join("downloads", f"{info['id']}.{info['ext']}")
+                    if os.path.exists(xyz):
+                        return xyz
+                    ydl.download([link])
                     return xyz
-                ydl.download([link])
-                return xyz
+            except Exception as e:
+                print(f"❌ [Local] Audio DL Error: {e}")
+                return None
 
-        # دالة تحميل الفيديو
         def video_dl():
             opts = {
-                "format": "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]",
+                "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
                 "outtmpl": "downloads/%(id)s.%(ext)s",
                 "geo_bypass": True,
                 "nocheckcertificate": True,
                 "quiet": True,
                 "no_warnings": True,
+                "ignoreerrors": True,
             }
             if cf := _cookiefile_path():
                 opts["cookiefile"] = cf
 
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(link, download=False)
-                xyz = os.path.join("downloads", f"{info['id']}.{info['ext']}")
-                if os.path.exists(xyz):
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(link, download=False)
+                    xyz = os.path.join("downloads", f"{info['id']}.{info['ext']}")
+                    if os.path.exists(xyz):
+                        return xyz
+                    ydl.download([link])
                     return xyz
-                ydl.download([link])
-                return xyz
+            except Exception as e:
+                print(f"❌ [Local] Video DL Error: {e}")
+                return None
 
-        # منطق التشغيل
+        # تنفيذ التحميل المحلي
         if video:
             if await self.is_live(link):
-                # البث المباشر: نعيد الرابط فقط
                 status, stream_url = await self.video(link)
                 if status == 1:
                     return stream_url, None
                 return None, None
             
-            # تحميل الفيديو كملف (أكثر استقراراً)
             downloaded_file = await loop.run_in_executor(None, video_dl)
             return (downloaded_file, True) if downloaded_file else (None, None)
 
-        # تحميل الصوت كملف
         downloaded_file = await loop.run_in_executor(None, audio_dl)
         return (downloaded_file, True) if downloaded_file else (None, None)
