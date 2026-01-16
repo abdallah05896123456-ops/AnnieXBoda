@@ -26,8 +26,9 @@ from AnnieXMedia.core.call import StreamController
 from AnnieXMedia.misc import sudo
 from AnnieXMedia.utils.database import get_banned_users, get_gbanned
 
-# ✅ التعديل هنا: استدعاء ملف الكوكيز الجديد
-from AnnieXMedia.core.cookies import save_cookies
+# ✅ التعديل هنا: استدعاء ملف الكوكيز من utils وتسميته save_cookies
+# عشان يشتغل مع باقي الكود تحت من غير تغيير
+from AnnieXMedia.utils.cookie_handler import fetch_and_store_cookies as save_cookies
 
 from config import BANNED_USERS
 import config
@@ -61,7 +62,7 @@ async def init():
         LOGGER(__name__).error("Assistant session variables not defined, exiting...")
         exit()
 
-    # 2. ✅ تحميل الكوكيز (النظام الجديد)
+    # 2. ✅ تحميل الكوكيز (الآن يقرأ من المكان الصحيح)
     try:
         await save_cookies()
     except Exception as e:
