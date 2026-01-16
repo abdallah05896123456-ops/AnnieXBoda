@@ -6,8 +6,8 @@ import aiofiles
 import aiohttp
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 
-# ✅ استرجاع مكتبة aio
-from youtubesearchpython.aio import VideosSearch
+# ✅ التعديل هنا: استخدام __future__ بدل aio
+from youtubesearchpython.__future__ import VideosSearch
 
 from config import YOUTUBE_IMG_URL
 from AnnieXMedia.core.dir import CACHE_DIR 
