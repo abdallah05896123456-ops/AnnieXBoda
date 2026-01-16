@@ -1,4 +1,6 @@
 # Authored By Certified Coders © 2025
+# THE IMMORTAL EDITION: Alexa Speed + AnonX Stability + Titan Error Handling
+
 import asyncio
 import os
 from datetime import datetime, timedelta
@@ -46,83 +48,29 @@ from AnnieXMedia.utils.errors import capture_internal_err
 autoend = {}
 counter = {}
 
-# ---------------- Quality Presets ----------------
-# You can override these in config.py by setting:
-#   QUALITY_PRESETS = {...}
-#   DEFAULT_QUALITY = "high"
-DEFAULT_QUALITY = getattr(config, "DEFAULT_QUALITY", "high")
-QUALITY_PRESETS = getattr(
-    config,
-    "QUALITY_PRESETS",
-    {
-        # audio-only presets (bitrate, samplerate)
-        "low": {"audio_bitrate": "48k", "audio_samplerate": "22050", "video_bitrate": "300k"},
-        "medium": {"audio_bitrate": "96k", "audio_samplerate": "44100", "video_bitrate": "600k"},
-        "high": {"audio_bitrate": "160k", "audio_samplerate": "48000", "video_bitrate": "1200k"},
-        "best": {"audio_bitrate": "320k", "audio_samplerate": "48000", "video_bitrate": "2500k"},
-        "audio": {"audio_bitrate": "128k", "audio_samplerate": "44100", "video_bitrate": "800k"},
-    },
-)
-
-
-def _resolve_quality_ffmpeg_params(quality: Optional[str], video: bool = False) -> Optional[str]:
-    """
-    Resolve quality name to ffmpeg parameter string.
-    Returns a string to be appended to ffmpeg_parameters, e.g. "-b:a 160k -ar 48000"
-    """
-    # 🔥 تعديل: قراءة الجودة من متغير النظام الديناميكي (SYSTEM_QUALITY)
-    sys_q = getattr(config, "SYSTEM_QUALITY", DEFAULT_QUALITY)
-    q = (quality or sys_q).lower()
-    
-    preset = QUALITY_PRESETS.get(q, QUALITY_PRESETS.get(DEFAULT_QUALITY, {}))
-    ab = preset.get("audio_bitrate")
-    ar = preset.get("audio_samplerate")
-    vb = preset.get("video_bitrate")
-    parts = []
-    if ab:
-        parts.append(f"-b:a {ab}")
-    if ar:
-        parts.append(f"-ar {ar}")
-    if video and vb:
-        parts.append(f"-b:v {vb}")
-        # تحسين إضافي للفيديو لتقليل التقطيع
-        parts.append("-preset veryfast")
-    if parts:
-        return " ".join(parts)
-    return None
-
-
-# --- Helper Function for Streams (Optimized for TitanOS) ---
-def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None, quality: Optional[str] = None) -> MediaStream:
-    """
-    Returns a MediaStream configured according to requested quality.
-    - path: local path or direct URL (e.g., stream URL)
-    - video: True if video stream
-    - ffmpeg_params: explicit ffmpeg params (takes precedence)
-    - quality: quality key (low, medium, high, best, audio)
-    """
-    # Resolve quality-based ffmpeg params if not provided explicitly
-    q_params = ffmpeg_params if ffmpeg_params else _resolve_quality_ffmpeg_params(quality, video=video)
-
-    # Use consistent audio/video parameter enums for compatibility; ffmpeg_params controls bitrate/resolution
+# === 1. helper function for Crystal Clear Audio (From Alexa) ===
+def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
+    if not path:
+        # حماية ضد الـ NoneType Crash
+        raise ValueError("Media Path cannot be None")
+        
     if video:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.STUDIO,
-            video_parameters=VideoQuality.HD_720p,
+            audio_parameters=AudioQuality.STUDIO, # أعلى جودة صوت
+            video_parameters=VideoQuality.HD_720p, # جودة فيديو ممتازة
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.REQUIRED,
-            ffmpeg_parameters=q_params,
+            ffmpeg_parameters=ffmpeg_params,
         )
     else:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.STUDIO,
+            audio_parameters=AudioQuality.STUDIO, # أعلى جودة صوت
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.IGNORE,
-            ffmpeg_parameters=q_params,
+            ffmpeg_parameters=ffmpeg_params,
         )
-
 
 async def _clear_(chat_id: int) -> None:
     popped = db.pop(chat_id, None)
@@ -133,10 +81,10 @@ async def _clear_(chat_id: int) -> None:
     await remove_active_chat(chat_id)
     await set_loop(chat_id, 0)
 
-
 class Call:
     def __init__(self):
-        # 🔥 TitanOS Update: Cache maintained at 100 for stability
+        # === 2. Clients Setup with Cache Duration (From Alexa/AnonX for Stability) ===
+        # Cache duration 100 prevents stuttering (التقطيع)
         self.userbot1 = Client(
             "AnnieXAssis1", config.API_ID, config.API_HASH, session_string=config.STRING1
         ) if config.STRING1 else None
@@ -163,8 +111,6 @@ class Call:
         self.five = PyTgCalls(self.userbot5, cache_duration=100) if self.userbot5 else None
 
         self.active_calls: set[int] = set()
-        # 🔥 TitanOS: Turbo Variable added for Web Control
-        self.turbo_mode = {}
 
     @capture_internal_err
     async def pause_stream(self, chat_id: int) -> None:
@@ -174,11 +120,10 @@ class Call:
     @capture_internal_err
     async def resume_stream(self, chat_id: int) -> None:
         assistant = await group_assistant(self, chat_id)
-        # 🔥 TitanOS Fix: Force Resume (If resume fails, unmute)
         try:
             await assistant.resume(chat_id)
         except:
-            await assistant.unmute(chat_id)
+            pass
 
     @capture_internal_err
     async def mute_stream(self, chat_id: int) -> None:
@@ -225,12 +170,11 @@ class Call:
             self.active_calls.discard(chat_id)
 
     @capture_internal_err
-    async def skip_stream(self, chat_id: int, link: str, video: Union[bool, str] = None, image: Union[bool, str] = None, quality: Optional[str] = None) -> None:
+    async def skip_stream(self, chat_id: int, link: str, video: Union[bool, str] = None, image: Union[bool, str] = None) -> None:
         assistant = await group_assistant(self, chat_id)
-        # 🔥 ALEXA OPTIMIZATION: Using GroupCallConfig
+        # Using GroupCallConfig for stability (From Alexa)
         ksk = GroupCallConfig(auto_start=False)
-        q = quality or DEFAULT_QUALITY
-        stream = dynamic_media_stream(path=link, video=bool(video), quality=q)
+        stream = dynamic_media_stream(path=link, video=bool(video))
         await assistant.play(chat_id, stream, config=ksk)
 
     @capture_internal_err
@@ -240,20 +184,15 @@ class Call:
         return [p.user_id for p in participants if not p.is_muted]
 
     @capture_internal_err
-    async def seek_stream(self, chat_id: int, file_path: str, to_seek: str, duration: str, mode: str, quality: Optional[str] = None) -> None:
+    async def seek_stream(self, chat_id: int, file_path: str, to_seek: str, duration: str, mode: str) -> None:
         assistant = await group_assistant(self, chat_id)
         ffmpeg_params = f"-ss {to_seek} -to {duration}"
-        # Merge with quality params (quality has lower precedence than explicit ffmpeg_params)
-        q_params = _resolve_quality_ffmpeg_params(quality, video=(mode == "video"))
-        if q_params:
-            ffmpeg_params = f"{ffmpeg_params} {q_params}"
         is_video = mode == "video"
-        stream = dynamic_media_stream(path=file_path, video=is_video, ffmpeg_params=ffmpeg_params, quality=quality)
+        stream = dynamic_media_stream(path=file_path, video=is_video, ffmpeg_params=ffmpeg_params)
         await assistant.play(chat_id, stream)
 
     @capture_internal_err
-    async def speedup_stream(self, chat_id: int, file_path: str, speed: float, playing: list, quality: Optional[str] = None) -> None:
-        # Code kept from Annie for compatibility
+    async def speedup_stream(self, chat_id: int, file_path: str, speed: float, playing: list) -> None:
         if not isinstance(playing, list) or not playing or not isinstance(playing[0], dict):
             raise AssistantErr("Invalid stream info for speedup.")
 
@@ -278,11 +217,7 @@ class Call:
         duration_min = seconds_to_min(dur)
         is_video = playing[0]["streamtype"] == "video"
         ffmpeg_params = f"-ss {played} -to {duration_min}"
-        # merge quality params if provided
-        q_params = _resolve_quality_ffmpeg_params(quality, video=is_video)
-        if q_params:
-            ffmpeg_params = f"{ffmpeg_params} {q_params}"
-        stream = dynamic_media_stream(path=out, video=is_video, ffmpeg_params=ffmpeg_params, quality=quality)
+        stream = dynamic_media_stream(path=out, video=is_video, ffmpeg_params=ffmpeg_params)
 
         if chat_id in db and db[chat_id] and db[chat_id][0].get("file") == file_path:
             await assistant.play(chat_id, stream)
@@ -299,19 +234,6 @@ class Call:
             raise AssistantErr("Stream mismatch during speedup.")
 
     @capture_internal_err
-    async def stream_call(self, link: str, quality: Optional[str] = None) -> None:
-        assistant = await group_assistant(self, config.LOGGER_ID)
-        try:
-            stream = dynamic_media_stream(path=link, quality=quality)
-            await assistant.play(config.LOGGER_ID, stream)
-            await asyncio.sleep(8)
-        finally:
-            try:
-                await assistant.leave_call(config.LOGGER_ID)
-            except:
-                pass
-
-    @capture_internal_err
     async def join_call(
         self,
         chat_id: int,
@@ -319,16 +241,24 @@ class Call:
         link: str,
         video: Union[bool, str] = None,
         image: Union[bool, str] = None,
-        quality: Optional[str] = None,
     ) -> None:
         assistant = await group_assistant(self, chat_id)
         lang = await get_lang(chat_id)
         _ = get_string(lang)
-        q = quality or DEFAULT_QUALITY
-        stream = dynamic_media_stream(path=link, video=bool(video), quality=q)
 
-        # 🔥 ALEXA OPTIMIZATION: Config added here
+        # === 3. Anti-Crash Check (The Fix) ===
+        if not link:
+            raise AssistantErr(_["call_11"]) # No Audio Source
+
+        stream = dynamic_media_stream(path=link, video=bool(video))
         ksk = GroupCallConfig(auto_start=False)
+
+        # === 4. Ghost Call Prevention (From AnonX) ===
+        try:
+            await assistant.leave_call(chat_id)
+            await asyncio.sleep(0.5)
+        except:
+            pass
 
         try:
             await assistant.play(chat_id, stream, config=ksk)
@@ -341,12 +271,12 @@ class Call:
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
         except Exception as e:
-            # Retry logic
+            # Fallback Retry
             try:
-                await asyncio.sleep(1)
-                await assistant.play(chat_id, stream, config=ksk)
+                 await asyncio.sleep(1)
+                 await assistant.play(chat_id, stream, config=ksk)
             except:
-                raise AssistantErr(f"ᴜɴᴀʙʟᴇ ᴛᴏ ᴊᴏɪɴ ᴛʜᴇ ɢʀᴏᴜᴘ ᴄᴀʟʟ.\nRᴇᴀsᴏɴ: {e}")
+                 raise AssistantErr(f"ᴜɴᴀʙʟᴇ ᴛᴏ ᴊᴏɪɴ ᴛʜᴇ ɢʀᴏᴜᴘ ᴄᴀʟʟ.\nRᴇᴀsᴏɴ: {e}")
 
         self.active_calls.add(chat_id)
         await add_active_chat(chat_id)
@@ -365,7 +295,6 @@ class Call:
 
     @capture_internal_err
     async def play(self, client, chat_id: int) -> None:
-        # 🔥 Refactored to match Alexa's `change_stream` logic but with Annie's vars
         check = db.get(chat_id)
         popped = None
         loop = await get_loop(chat_id)
@@ -375,20 +304,17 @@ class Call:
             else:
                 loop = loop - 1
                 await set_loop(chat_id, loop)
-
-            # Using auto_clean from Alexa's logic context (if config allows)
             await auto_clean(popped)
-
             if not check:
-                await _clear_(chat_id)
-                if chat_id in self.active_calls:
-                    try:
-                        await client.leave_call(chat_id)
-                    except Exception:
-                        pass
-                    finally:
-                        self.active_calls.discard(chat_id)
-                return
+                    await _clear_(chat_id)
+                    if chat_id in self.active_calls:
+                        try:
+                            await client.leave_call(chat_id)
+                        except Exception:
+                            pass
+                        finally:
+                            self.active_calls.discard(chat_id)
+                    return
         except:
             try:
                 await _clear_(chat_id)
@@ -397,11 +323,6 @@ class Call:
                 return
         else:
             queued = check[0]["file"]
-            
-            # 🔥 تعديل: قراءة الجودة من النظام إذا لم تكن محددة في الطابور
-            sys_q = getattr(config, "SYSTEM_QUALITY", DEFAULT_QUALITY)
-            quality = check[0].get("quality", sys_q)
-            
             language = await get_lang(chat_id)
             _ = get_string(language)
             title = (check[0]["title"]).title()
@@ -420,15 +341,12 @@ class Call:
 
             video = True if str(streamtype) == "video" else False
 
-            # 🔥 ALEXA OPTIMIZATION: Pre-calculate stream to save time
-            # Note: We use the dynamic helper to keep code clean, but it uses Alexa's params inside
-
             if "live_" in queued:
                 n, link = await YouTube.video(videoid, True)
                 if n == 0:
                     return await app.send_message(original_chat_id, text=_["call_6"])
-                stream = dynamic_media_stream(path=link, video=video, quality=quality)
 
+                stream = dynamic_media_stream(path=link, video=video)
                 try:
                     await client.play(chat_id, stream)
                 except Exception:
@@ -457,13 +375,19 @@ class Call:
                         videoid,
                         mystic,
                         videoid=True,
-                        video=video,
+                        video=True if str(streamtype) == "video" else False,
                     )
                 except:
                     return await mystic.edit_text(_["call_6"], disable_web_page_preview=True)
+                
+                # === 5. The Critical FIX for NoneType Crash ===
+                if not file_path:
+                    await mystic.edit_text("<b>❌ فشل التحميل، جاري تخطي المقطع...</b>")
+                    # Recursive call to skip logic logic effectively
+                    return await self.play(client, chat_id)
+                # ===============================================
 
-                # if direct (stream URL) returned, pass quality; if local file, ffmpeg params will still apply
-                stream = dynamic_media_stream(path=file_path, video=video, quality=quality)
+                stream = dynamic_media_stream(path=file_path, video=video)
                 try:
                     await client.play(chat_id, stream)
                 except:
@@ -487,7 +411,7 @@ class Call:
                 db[chat_id][0]["markup"] = "stream"
 
             elif "index_" in queued:
-                stream = dynamic_media_stream(path=videoid, video=video, quality=quality)
+                stream = dynamic_media_stream(path=videoid, video=video)
                 try:
                     await client.play(chat_id, stream)
                 except:
@@ -504,7 +428,7 @@ class Call:
                 db[chat_id][0]["markup"] = "tg"
 
             else:
-                stream = dynamic_media_stream(path=queued, video=video, quality=quality)
+                stream = dynamic_media_stream(path=queued, video=video)
                 try:
                     await client.play(chat_id, stream)
                 except:
@@ -556,6 +480,7 @@ class Call:
                             reply_markup=InlineKeyboardMarkup(button),
                         )
                     except FloodWait as e:
+                        LOGGER(__name__).warning(f"FloodWait: Sleeping for {e.value}")
                         await asyncio.sleep(e.value)
                         run = await app.send_photo(
                             chat_id=original_chat_id,
@@ -599,6 +524,7 @@ class Call:
             pings.append(self.five.ping)
         return str(round(sum(pings) / len(pings), 3)) if pings else "0.0"
 
+    # === 6. Unified Decorators (From AnonX for Handling Call End) ===
     @capture_internal_err
     async def decorators(self) -> None:
         assistants = list(filter(None, [self.one, self.two, self.three, self.four, self.five]))
@@ -614,7 +540,7 @@ class Call:
                 if update.stream_type == StreamEnded.Type.AUDIO:
                     assistant = await group_assistant(self, update.chat_id)
                     await self.play(assistant, update.chat_id)
-
+            
             elif isinstance(update, ChatUpdate):
                 status = update.status
                 if (status & ChatUpdate.Status.LEFT_CALL) or (status & CRITICAL):
@@ -623,6 +549,5 @@ class Call:
 
         for assistant in assistants:
             assistant.on_update()(unified_update_handler)
-
 
 StreamController = Call()
