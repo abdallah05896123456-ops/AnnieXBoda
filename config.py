@@ -60,6 +60,55 @@ TG_VIDEO_FILESIZE_LIMIT = int(getenv("TG_VIDEO_FILESIZE_LIMIT", "1288490189"))
 PLAYLIST_FETCH_LIMIT = int(getenv("PLAYLIST_FETCH_LIMIT", "30"))
 
 # ===============================================================================
+# 🎚️ STREAMING & DOWNLOAD QUALITY SETTINGS (جودات التشغيل والتنزيل)
+# ===============================================================================
+
+# الجودة الافتراضية لو المستخدم ما اختارش
+DEFAULT_QUALITY = getenv("DEFAULT_QUALITY", "high")
+
+# جودات الصوت والفيديو (تُستخدم في PyTgCalls + ffmpeg)
+QUALITY_PRESETS = {
+    # أقل جودة – أسرع تحميل (مناسب للسيرفرات الضعيفة)
+    "low": {
+        "audio_bitrate": "48k",
+        "audio_samplerate": "22050",
+        "video_bitrate": "300k",
+        "description": "Low – Fast & Light"
+    },
+
+    # متوسطة – توازن
+    "medium": {
+        "audio_bitrate": "96k",
+        "audio_samplerate": "44100",
+        "video_bitrate": "600k",
+        "description": "Medium – Balanced"
+    },
+
+    # عالية – الافتراضية (قريبة من Alexa)
+    "high": {
+        "audio_bitrate": "160k",
+        "audio_samplerate": "48000",
+        "video_bitrate": "1200k",
+        "description": "High – Clear Audio"
+    },
+
+    # أعلى جودة ممكنة
+    "best": {
+        "audio_bitrate": "320k",
+        "audio_samplerate": "48000",
+        "video_bitrate": "2500k",
+        "description": "Best – Studio Quality"
+    },
+
+    # صوت فقط (ممتاز للقرآن)
+    "audio": {
+        "audio_bitrate": "128k",
+        "audio_samplerate": "44100",
+        "video_bitrate": "800k",
+        "description": "Audio Only – Quran & Nasheed"
+    },
+}
+# ===============================================================================
 # 🔗 EXTERNAL APIS
 # ===============================================================================
 COOKIE_URL = getenv("COOKIE_URL")
