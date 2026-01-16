@@ -86,7 +86,7 @@ def get_ytdlp_base_opts() -> Dict[str, object]:
             "-x", "16",       # 16 خط اتصال
             "-s", "16",       # تقسيم الملف لـ 16 جزء
             "-j", "16",       # تحميل متوازي
-            "-k", "1M",       # حجم البلوك
+            "-k", "5M",       # حجم البلوك
             # انتحال شخصية متصفح لتفادي الحظر
             "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         ],
