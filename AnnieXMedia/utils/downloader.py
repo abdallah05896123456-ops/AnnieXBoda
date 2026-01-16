@@ -1,4 +1,6 @@
 # Authored By Certified Coders © 2025
+# Optimized Downloader: Aria2c (16x Turbo) + Anti-403 Config
+
 import asyncio
 import contextlib
 import glob
@@ -55,17 +57,10 @@ def get_cookie_file() -> Optional[str]:
     return None
 
 
-def find_cached_file(video_id: str) -> Optional[str]:
-    if not video_id:
-        return None
-    for ext in ("mp3", "m4a", "webm", "mp4", "mkv"):
-        path = f"{DOWNLOAD_DIR}/{video_id}.{ext}"
-        if os.path.exists(path):
-            return path
-    return None
-
-
 def get_ytdlp_base_opts() -> Dict[str, object]:
+    """
+    إعدادات yt-dlp الأساسية مضاف إليها Aria2c وتخطي الحظر
+    """
     opts = {
         "outtmpl": f"{DOWNLOAD_DIR}/%(id)s.%(ext)s",
         "quiet": True,
@@ -81,7 +76,28 @@ def get_ytdlp_base_opts() -> Dict[str, object]:
         "fragment_retries": 1,
         "cachedir": str(CACHE_DIR),
         "ignoreerrors": True,
-        "merge_output_format": "mp4"
+        "merge_output_format": "mp4",
+        "geo_bypass": True,
+        "nocheckcertificate": True,
+
+        # --- إعدادات Aria2c الصاروخية (تمت إضافتها هنا) ---
+        "external_downloader": "aria2c",
+        "external_downloader_args": [
+            "-x", "16",       # 16 خط اتصال
+            "-s", "16",       # تقسيم الملف لـ 16 جزء
+            "-j", "16",       # تحميل متوازي
+            "-k", "1M",       # حجم البلوك
+            # انتحال شخصية متصفح لتفادي الحظر
+            "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ],
+        # --------------------------------------------------
+
+        # خدعة الاندرويد لتخطي القيود (بتشتغل مع Node.js اللي في الدوكر)
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "web"]
+            }
+        },
     }
     if cookiefile := get_cookie_file():
         opts["cookiefile"] = cookiefile
@@ -202,6 +218,7 @@ def get_final_path_from_info(info: Dict) -> Optional[str]:
 
 def download_with_ytdlp_sync(link: str, fmt: str) -> Optional[str]:
     try:
+        # هنا هيستخدم الإعدادات الجديدة اللي ضفناها فوق (Aria2c)
         opts = get_ytdlp_base_opts()
         opts["format"] = fmt
         with YoutubeDL(opts) as ydl:
