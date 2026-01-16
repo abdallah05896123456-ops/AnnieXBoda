@@ -1,11 +1,12 @@
-﻿# Authored By Certified Coders © 2025
+# Authored By Certified Coders © 2025
 import asyncio
 import re
 from typing import Any, Dict, Optional, Tuple, Union
 
 from yt_dlp import YoutubeDL
 
-from AnnieXMedia.utils.downloader import yt_dlp_download
+# ✅ التعديل: استيراد الكلاس الجديد بدل الدالة القديمة
+from AnnieXMedia.utils.downloader import YouTubeAPI
 from AnnieXMedia.utils.formatters import seconds_to_min
 
 
@@ -13,6 +14,10 @@ _SC_RE = re.compile(r"^https?://(soundcloud\.com|on\.soundcloud\.com)/.+", re.I)
 
 
 class SoundAPI:
+    def __init__(self):
+        # تهيئة المحمل الجديد
+        self.downloader = YouTubeAPI()
+
     async def valid(self, link: str) -> bool:
         return bool(link and _SC_RE.match(link))
 
@@ -46,6 +51,9 @@ class SoundAPI:
             return False
 
         title = (info.get("title") or "SoundCloud").strip()
+        # ✅ تنظيف العنوان من الرموز الممنوعة في أسماء الملفات
+        title = re.sub(r'[\\/*?:"<>|]', '', title)
+
         try:
             duration_sec = int(info.get("duration") or 0)
         except Exception:
@@ -58,7 +66,19 @@ class SoundAPI:
             or ""
         )
 
-        out_path: Optional[str] = await yt_dlp_download(url, type="audio", title=title)
+        # ✅ استخدام النظام الجديد للتحميل (Aria2c Turbo)
+        # نمرر songaudio=True عشان ينزلها كـ MP3
+        try:
+            out_path = await self.downloader.download(
+                url,
+                mystic=None,
+                songaudio=True,
+                title=title,
+                format_id="bestaudio/best"
+            )
+        except Exception:
+            return False
+
         if not out_path:
             return False
 
