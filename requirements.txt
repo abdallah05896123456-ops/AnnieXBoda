@@ -12,7 +12,7 @@ uvloop==0.21.0
 
 # === Media & Downloads (Updated) ===
 # النسخة البديلة المتوافقة مع httpx الجديد
-https://github.com/chatgpt05896-lang/youtube-search-python
+git+https://github.com/chatgpt05896-lang/youtube-search-python
 # yt-dlp من المصدر لضمان دعم 2026
 git+https://github.com/yt-dlp/yt-dlp.git@master#egg=yt-dlp
 
