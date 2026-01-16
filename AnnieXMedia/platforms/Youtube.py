@@ -10,8 +10,7 @@ from typing import Dict, List, Optional, Tuple, Union
 import yt_dlp
 from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
-# ✅ التعديل هنا: استخدام __future__ بدلاً من aio
-from youtubesearchpython.__future__ import VideosSearch, Playlist
+from youtubesearchpython.aio import VideosSearch, Playlist
 
 from AnnieXMedia.utils.cookie_handler import COOKIE_PATH
 from AnnieXMedia.utils.database import is_on_off
