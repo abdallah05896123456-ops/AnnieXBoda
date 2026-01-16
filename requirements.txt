@@ -9,7 +9,7 @@ aiohttp~=3.13.2
 httpx[http2]>=0.27.2
 requests
 uvloop==0.21.0
-
+psutil
 # === Media & Downloads (Updated) ===
 # النسخة البديلة المتوافقة مع httpx الجديد
 git+https://github.com/chatgpt05896-lang/youtube-search-python
