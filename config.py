@@ -14,11 +14,8 @@ load_dotenv()
 # ===============================================================================
 # 🌐 TITAN OS DASHBOARD CONFIGURATION (إعدادات الموقع)
 # ===============================================================================
-# كلمة سر الدخول للوحة التحكم
 WEB_PASSWORD = getenv("WEB_PASSWORD", "asdfghjkl05896") 
-# مفتاح التشفير (مهم للسيشنز في الموقع)
 WEB_SECRET = getenv("WEB_SECRET", "AnnieX_Secret_Key_99123") 
-# إعدادات السيرفر
 HOST = getenv("HOST", "0.0.0.0")
 PORT = int(getenv("PORT", "8080"))
 
@@ -34,11 +31,9 @@ except (TypeError, ValueError):
 
 BOT_TOKEN = getenv("BOT_TOKEN")
 
-# معلومات المالك
 OWNER_ID = int(getenv("OWNER_ID", 8313557781))
 OWNER_USERNAME = getenv("OWNER_USERNAME", "CertifiedCoder")
 
-# معلومات البوت
 BOT_USERNAME = getenv("BOT_USERNAME", "SourceBodaBot")
 BOT_NAME = getenv("BOT_NAME", "˹𝚂ᴏᴜʀᴄᴇ ✘ 𝐁ᴏᴅᴀ˼ ♪")
 ASSUSERNAME = getenv("ASSUSERNAME", "SourceBodaAssistant")
@@ -60,54 +55,25 @@ TG_VIDEO_FILESIZE_LIMIT = int(getenv("TG_VIDEO_FILESIZE_LIMIT", "1288490189"))
 PLAYLIST_FETCH_LIMIT = int(getenv("PLAYLIST_FETCH_LIMIT", "30"))
 
 # ===============================================================================
-# 🎚️ STREAMING & DOWNLOAD QUALITY SETTINGS (جودات التشغيل والتنزيل)
+# 🎚️ STREAMING & DOWNLOAD QUALITY SETTINGS (نظام الجودة)
 # ===============================================================================
 
-# الجودة الافتراضية لو المستخدم ما اختارش
+# 1. الجودة الافتراضية (من ملف البيئة أو "high")
 DEFAULT_QUALITY = getenv("DEFAULT_QUALITY", "high")
 
-# جودات الصوت والفيديو (تُستخدم في PyTgCalls + ffmpeg)
+# 2. الجودة الحالية للنظام (هذا المتغير الذي يتم تعديله من لوحة التحكم)
+# مبدئياً يأخذ قيمته من الافتراضي، ثم يتغير أثناء التشغيل
+SYSTEM_QUALITY = DEFAULT_QUALITY
+
+# 3. إعدادات البريست (للمرجع فقط، تُستخدم في PyTgCalls)
 QUALITY_PRESETS = {
-    # أقل جودة – أسرع تحميل (مناسب للسيرفرات الضعيفة)
-    "low": {
-        "audio_bitrate": "48k",
-        "audio_samplerate": "22050",
-        "video_bitrate": "300k",
-        "description": "Low – Fast & Light"
-    },
-
-    # متوسطة – توازن
-    "medium": {
-        "audio_bitrate": "96k",
-        "audio_samplerate": "44100",
-        "video_bitrate": "600k",
-        "description": "Medium – Balanced"
-    },
-
-    # عالية – الافتراضية (قريبة من Alexa)
-    "high": {
-        "audio_bitrate": "160k",
-        "audio_samplerate": "48000",
-        "video_bitrate": "1200k",
-        "description": "High – Clear Audio"
-    },
-
-    # أعلى جودة ممكنة
-    "best": {
-        "audio_bitrate": "320k",
-        "audio_samplerate": "48000",
-        "video_bitrate": "2500k",
-        "description": "Best – Studio Quality"
-    },
-
-    # صوت فقط (ممتاز للقرآن)
-    "audio": {
-        "audio_bitrate": "128k",
-        "audio_samplerate": "44100",
-        "video_bitrate": "800k",
-        "description": "Audio Only – Quran & Nasheed"
-    },
+    "low": {"audio_bitrate": "48k", "video_bitrate": "300k", "description": "Low – Saver"},
+    "medium": {"audio_bitrate": "96k", "video_bitrate": "600k", "description": "Medium – Balanced"},
+    "high": {"audio_bitrate": "160k", "video_bitrate": "1200k", "description": "High – HD"},
+    "best": {"audio_bitrate": "320k", "video_bitrate": "2500k", "description": "Best – Studio"},
+    "audio": {"audio_bitrate": "128k", "video_bitrate": "800k", "description": "Audio Only"},
 }
+
 # ===============================================================================
 # 🔗 EXTERNAL APIS
 # ===============================================================================
@@ -127,21 +93,17 @@ UPSTREAM_REPO = getenv("UPSTREAM_REPO", "https://t.me/SourceBoda")
 UPSTREAM_BRANCH = getenv("UPSTREAM_BRANCH", "Master")
 GIT_TOKEN = getenv("GIT_TOKEN")
 
-# روابط الدعم
 SUPPORT_CHANNEL = getenv("SUPPORT_CHANNEL", "https://t.me/SourceBoda")
 SUPPORT_CHAT = getenv("SUPPORT_CHAT", "https://t.me/music0587")
 
-# مغادرة المساعد
 AUTO_LEAVING_ASSISTANT = False
 AUTO_LEAVE_ASSISTANT_TIME = int(getenv("ASSISTANT_LEAVE_TIME", "3600"))
 
 DEBUG_IGNORE_LOG = True
 
-# سبوتيفاي
 SPOTIFY_CLIENT_ID = getenv("SPOTIFY_CLIENT_ID", "22b6125bfe224587b722d6815002db2b")
 SPOTIFY_CLIENT_SECRET = getenv("SPOTIFY_CLIENT_SECRET", "c9c63c6fbf2f467c8bc68624851e9773")
 
-# جلسات بايروجرام
 STRING1 = getenv("STRING_SESSION")
 STRING2 = getenv("STRING_SESSION2")
 STRING3 = getenv("STRING_SESSION3")
