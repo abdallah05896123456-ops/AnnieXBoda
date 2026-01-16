@@ -14,7 +14,8 @@ from youtubesearchpython.aio import VideosSearch, Playlist
 
 from AnnieXMedia.utils.cookie_handler import COOKIE_PATH
 from AnnieXMedia.utils.database import is_on_off
-from AnnieXMedia.utils.downloader import yt_dlp_download
+# لم نعد بحاجة لهذا المستورد البطيء
+# from AnnieXMedia.utils.downloader import yt_dlp_download
 from AnnieXMedia.utils.errors import capture_internal_err
 from AnnieXMedia.utils.formatters import time_to_seconds
 from AnnieXMedia.utils.tuning import YTDLP_TIMEOUT, YOUTUBE_META_MAX, YOUTUBE_META_TTL
@@ -366,6 +367,7 @@ class YouTubeAPI:
             r.get("id", ""),
         )
 
+    # 🔥🔥🔥 الدالة الجديدة المعدلة لسرعة صاروخية (نفس منطق Alexa) 🔥🔥🔥
     @capture_internal_err
     async def download(
         self,
@@ -376,29 +378,63 @@ class YouTubeAPI:
         videoid: Union[str, bool, None] = None,
     ) -> Union[Tuple[str, Optional[bool]], Tuple[None, None]]:
         link = self._prepare_link(link, videoid)
+        loop = asyncio.get_running_loop()
 
+        # دالة تحميل الصوت (مسرعة جداً)
+        def audio_dl():
+            opts = {
+                "format": "bestaudio[ext=m4a]/bestaudio/best", # السر هنا: m4a لا يحتاج تحويل
+                "outtmpl": "downloads/%(id)s.%(ext)s",
+                "geo_bypass": True,
+                "nocheckcertificate": True,
+                "quiet": True,
+                "no_warnings": True,
+            }
+            if cf := _cookiefile_path():
+                opts["cookiefile"] = cf
+
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(link, download=False)
+                xyz = os.path.join("downloads", f"{info['id']}.{info['ext']}")
+                if os.path.exists(xyz):
+                    return xyz
+                ydl.download([link])
+                return xyz
+
+        # دالة تحميل الفيديو
+        def video_dl():
+            opts = {
+                "format": "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]",
+                "outtmpl": "downloads/%(id)s.%(ext)s",
+                "geo_bypass": True,
+                "nocheckcertificate": True,
+                "quiet": True,
+                "no_warnings": True,
+            }
+            if cf := _cookiefile_path():
+                opts["cookiefile"] = cf
+
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(link, download=False)
+                xyz = os.path.join("downloads", f"{info['id']}.{info['ext']}")
+                if os.path.exists(xyz):
+                    return xyz
+                ydl.download([link])
+                return xyz
+
+        # منطق التشغيل
         if video:
             if await self.is_live(link):
+                # البث المباشر: نعيد الرابط فقط
                 status, stream_url = await self.video(link)
                 if status == 1:
                     return stream_url, None
                 return None, None
+            
+            # تحميل الفيديو كملف (أكثر استقراراً)
+            downloaded_file = await loop.run_in_executor(None, video_dl)
+            return (downloaded_file, True) if downloaded_file else (None, None)
 
-            if await is_on_off(1):
-                p = await yt_dlp_download(link, type="video", title=await self.title(link))
-                return (p, True) if p else (None, None)
-
-            stdout, _ = await _exec_proc(
-                "yt-dlp",
-                *(_cookies_args()),
-                "-g",
-                "-f",
-                "best[height<=?720][width<=?1280]",
-                link,
-            )
-            if stdout:
-                return stdout.decode().split("\n")[0], None
-            return None, None
-
-        p = await yt_dlp_download(link, type="audio", title=await self.title(link))
-        return (p, True) if p else (None, None)
+        # تحميل الصوت كملف
+        downloaded_file = await loop.run_in_executor(None, audio_dl)
+        return (downloaded_file, True) if downloaded_file else (None, None)
