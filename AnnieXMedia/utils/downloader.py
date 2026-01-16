@@ -13,6 +13,7 @@ from typing import Union, Tuple, Optional, Dict, List
 from yt_dlp import YoutubeDL
 from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
+# ✅ استيراد المكتبة بالتحديث الجديد
 from youtubesearchpython.__future__ import VideosSearch, Playlist
 
 # === AnnieX Imports ===
@@ -24,36 +25,50 @@ from AnnieXMedia.utils.errors import capture_internal_err
 COOKIE_FILE_NAME = "cookies.txt"
 DOWNLOAD_DIR = "downloads"
 
+# إعدادات Aria2c الصاروخية (موحدة لكل الدوال)
+ARIA_OPTS = {
+    'external_downloader': 'aria2c',
+    'external_downloader_args': [
+        '-x', '16',   # 16 خط اتصال
+        '-s', '16',   # تقسيم 16 جزء
+        '-j', '16',   # تحميل متوازي
+        '-k', '1M',   # حجم القطعة
+        '--file-allocation=none',
+    ]
+}
+
 # تأكد من وجود مجلد التحميل
 if not os.path.exists(DOWNLOAD_DIR):
     os.makedirs(DOWNLOAD_DIR)
 
-# --- 1. Auto Cache Cleaner (من الملف الجديد) ---
+# --- 1. Auto Cache Cleaner ---
 def _clean_stale_files():
     """تنظيف الملفات القديمة لتوفير المساحة على Fly.io"""
     now = time.time()
-    # احذف الملفات اللي مر عليها أكثر من 15 دقيقة
     ttl = 900 
-    for filename in os.listdir(DOWNLOAD_DIR):
-        file_path = os.path.join(DOWNLOAD_DIR, filename)
-        try:
+    try:
+        for filename in os.listdir(DOWNLOAD_DIR):
+            file_path = os.path.join(DOWNLOAD_DIR, filename)
             if os.path.isfile(file_path):
                 if os.stat(file_path).st_mtime < now - ttl:
                     os.remove(file_path)
-        except Exception:
-            pass
+    except Exception:
+        pass
 
-# --- 2. Cookie Loader ---
+# --- 2. Cookie Loader (FIXED) ---
 def _download_cookies_from_secret():
-    """تحميل الكوكيز من السكرت"""
+    """تحميل الكوكيز بشكل آمن لا يسبب كراش"""
     cookie_url = os.getenv("COOKIE_URL")
     if not cookie_url:
         return
 
+    # لو الملف موجود وفيه بيانات، متضيعش وقت في التحميل
     if os.path.exists(COOKIE_FILE_NAME) and os.path.getsize(COOKIE_FILE_NAME) > 0:
         return
 
     try:
+        # ✅ أهم تعديل: Catch Exception
+        # لو فشل التحميل لأي سبب، البوت مش هيموت، هيكمل عادي
         response = requests.get(cookie_url, timeout=10)
         if response.status_code == 200:
             if not response.text.startswith("# Netscape") and not response.text.startswith("# HTTP"):
@@ -63,10 +78,12 @@ def _download_cookies_from_secret():
                 f.write(response.text)
             print("Cookies loaded successfully.")
     except Exception as e:
-        print(f"Error downloading cookies: {e}")
+        # مجرد طباعة الخطأ والاستمرار
+        print(f"⚠️ Error downloading cookies (Ignored): {e}")
 
+# استدعاء الدوال عند التشغيل
 _download_cookies_from_secret()
-_clean_stale_files() # تنظيف عند البدء
+_clean_stale_files()
 
 def cookiefile():
     if os.path.exists(COOKIE_FILE_NAME) and os.path.getsize(COOKIE_FILE_NAME) > 0:
@@ -94,7 +111,6 @@ class YouTubeAPI:
         self.base = "https://www.youtube.com/watch?v="
         self.regex = r"(?:youtube\.com|youtu\.be)"
         self.listbase = "https://youtube.com/playlist?list="
-        # تنظيف الكاش دورياً عند استدعاء الكلاس
         _clean_stale_files()
 
     @capture_internal_err
@@ -133,7 +149,11 @@ class YouTubeAPI:
         if "&" in link:
             link = link.split("&")[0]
         results = VideosSearch(link, limit=1)
-        for result in (await results.next())["result"]:
+        data = await results.next()
+        if not data.get("result"):
+             return "Unknown", 0, 0, "", ""
+             
+        for result in data["result"]:
             title = result["title"]
             duration_min = result["duration"]
             thumbnail = result["thumbnails"][0]["url"].split("?")[0]
@@ -228,7 +248,11 @@ class YouTubeAPI:
         if "&" in link:
             link = link.split("&")[0]
         results = VideosSearch(link, limit=1)
-        for result in (await results.next())["result"]:
+        data = await results.next()
+        if not data.get("result"):
+             return {}, None
+             
+        for result in data["result"]:
             title = result["title"]
             duration_min = result["duration"]
             vidid = result["id"]
@@ -330,9 +354,8 @@ class YouTubeAPI:
                 "nocheckcertificate": True,
                 "quiet": True,
                 "no_warnings": True,
-                # تفعيل Aria2c
-                "external_downloader": "aria2c",
-                "external_downloader_args": ["-x", "16", "-s", "16", "-k", "1M"],
+                # ✅ Aria2c Turbo
+                **ARIA_OPTS,
             }
             if cookiefile():
                 ydl_optssx["cookiefile"] = cookiefile()
@@ -354,9 +377,8 @@ class YouTubeAPI:
                 "nocheckcertificate": True,
                 "quiet": True,
                 "no_warnings": True,
-                # تفعيل Aria2c
-                "external_downloader": "aria2c",
-                "external_downloader_args": ["-x", "16", "-s", "16", "-k", "1M"],
+                # ✅ Aria2c Turbo
+                **ARIA_OPTS,
             }
             if cookiefile():
                 ydl_optssx["cookiefile"] = cookiefile()
@@ -380,9 +402,8 @@ class YouTubeAPI:
                 "quiet": True,
                 "no_warnings": True,
                 "prefer_ffmpeg": True,
-                # تفعيل Aria2c
-                "external_downloader": "aria2c",
-                "external_downloader_args": ["-x", "16", "-s", "16", "-k", "1M"],
+                # ✅ Aria2c Turbo
+                **ARIA_OPTS,
                 "postprocessors": [
                     {
                         "key": "FFmpegExtractAudio",
@@ -408,9 +429,8 @@ class YouTubeAPI:
                 "quiet": True,
                 "no_warnings": True,
                 "prefer_ffmpeg": True,
-                # تفعيل Aria2c
-                "external_downloader": "aria2c",
-                "external_downloader_args": ["-x", "16", "-s", "16", "-k", "1M"],
+                # ✅ Aria2c Turbo
+                **ARIA_OPTS,
                 "merge_output_format": "mp4",
             }
             if cookiefile():
