@@ -13,12 +13,13 @@ ENV PIP_NO_CACHE_DIR=1
 WORKDIR /app
 
 # ------------------------------------------------------------------------------
-# [1] تحديث النظام وتثبيت الحزم الأساسية (ffmpeg, git, build tools)
+# [1] تحديث النظام وتثبيت الحزم الأساسية (ffmpeg, aria2, git, build tools)
 # ------------------------------------------------------------------------------
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     git \
     ffmpeg \
+    aria2 \
     curl \
     unzip \
     build-essential && \
