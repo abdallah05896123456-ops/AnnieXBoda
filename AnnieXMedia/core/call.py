@@ -1,15 +1,8 @@
 # Authored By Certified Coders © 2025
-"""
-Core call controller for AnnieXMedia.
-- Ensures remote manifests (m3u8) are converted to local files via the downloader.
-- Starts cache cleaner on startup.
-- Exposes StreamController = Call() for imports.
-"""
-
 import asyncio
 import os
 from datetime import datetime, timedelta
-from typing import Union, Optional
+from typing import Union
 
 from ntgcalls import TelegramServerError, ConnectionNotFound
 from pyrogram import Client
@@ -17,7 +10,15 @@ from pyrogram.errors import FloodWait, ChatAdminRequired
 from pyrogram.types import InlineKeyboardMarkup
 from pytgcalls import PyTgCalls
 from pytgcalls.exceptions import NoActiveGroupCall, NoAudioSourceFound, NoVideoSourceFound
-from pytgcalls.types import AudioQuality, ChatUpdate, MediaStream, StreamEnded, Update, VideoQuality
+from pytgcalls.types import (
+    AudioQuality, 
+    ChatUpdate, 
+    MediaStream, 
+    StreamEnded, 
+    Update, 
+    VideoQuality, 
+    GroupCallConfig
+)
 
 import config
 from strings import get_string
@@ -42,43 +43,15 @@ from AnnieXMedia.utils.stream.autoclear import auto_clean
 from AnnieXMedia.utils.thumbnails import get_thumb
 from AnnieXMedia.utils.errors import capture_internal_err
 
-# Integrations with our downloader/cache
-from AnnieXMedia.utils.downloader import yt_dlp_download, init_cache_cleaner
-
 autoend = {}
 counter = {}
 
-# --- helper to safely parse video flag ---
-def _is_true_flag(val) -> bool:
-    """
-    Safely interpret video-like flags passed as bool or string.
-    Accepts: True, False, "true","false","1","0","yes","no"
-    Defaults to False for unknown/None.
-    """
-    if isinstance(val, bool):
-        return val
-    if val is None:
-        return False
-    s = str(val).strip().lower()
-    return s in ("true", "1", "yes", "y", "t")
-
-
-def dynamic_media_stream(path: str, video: Union[bool, str] = False, ffmpeg_params: str = None) -> MediaStream:
-    """
-    Build a MediaStream with safer defaults:
-    - parse video flag safely
-    - set default low-latency ffmpeg params and stereo audio
-    """
-    is_video = _is_true_flag(video)
-
-    # sensible default ffmpeg params to reduce buffer/latency and ensure stereo
-    default_ffmpeg = "-re -fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0 -ac 2"
-    ffmpeg_params = ffmpeg_params or default_ffmpeg
-
-    if is_video:
+# --- Helper Function for Streams (Optimized) ---
+def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
+    if video:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.HIGH,
+            audio_parameters=AudioQuality.STUDIO, # Alexa uses better quality
             video_parameters=VideoQuality.HD_720p,
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.REQUIRED,
@@ -87,7 +60,7 @@ def dynamic_media_stream(path: str, video: Union[bool, str] = False, ffmpeg_para
     else:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.HIGH,
+            audio_parameters=AudioQuality.STUDIO, # Alexa uses better quality
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.IGNORE,
             ffmpeg_parameters=ffmpeg_params,
@@ -102,69 +75,35 @@ async def _clear_(chat_id: int) -> None:
     await remove_active_chat(chat_id)
     await set_loop(chat_id, 0)
 
-# -------------------- New: ensure local file --------------------
-async def ensure_local_media(path_or_url: Optional[str], kind: str, title: str = "", attempts: int = 2) -> Optional[str]:
-    """
-    If path_or_url is a remote URL (especially m3u8/manifest), try to produce a local file via yt_dlp_download.
-    kind: "video" or "audio"
-    Returns local file path if successful, else returns original path_or_url (so caller can attempt fallback).
-    """
-    try:
-        if not path_or_url:
-            return None
-        # if already a local file path, return it
-        if isinstance(path_or_url, str) and os.path.exists(path_or_url):
-            return path_or_url
-        # only handle http/https
-        if not (isinstance(path_or_url, str) and path_or_url.startswith("http")):
-            return path_or_url
-
-        # attempt downloading/converting to local file
-        for i in range(attempts):
-            LOGGER(__name__).info(f"ensure_local_media: attempt {i+1} -> downloading {kind} from {path_or_url}")
-            try:
-                local = await yt_dlp_download(path_or_url, kind, title=title or "")
-                if local and os.path.exists(local):
-                    LOGGER(__name__).info(f"ensure_local_media: success -> {local}")
-                    return local
-            except Exception as e:
-                LOGGER(__name__).warning(f"ensure_local_media: yt_dlp_download failed attempt {i+1}: {e}")
-            await asyncio.sleep(0.5)
-        LOGGER(__name__).warning(f"ensure_local_media: failed to produce local file for {path_or_url}")
-        return path_or_url
-    except Exception as e:
-        LOGGER(__name__).exception(f"ensure_local_media fatal: {e}")
-        return path_or_url
-
 class Call:
     def __init__(self):
+        # 🔥 ALEXA OPTIMIZATION: cache_duration=100 added to all clients
         self.userbot1 = Client(
             "AnnieXAssis1", config.API_ID, config.API_HASH, session_string=config.STRING1
         ) if config.STRING1 else None
-        self.one = PyTgCalls(self.userbot1) if self.userbot1 else None
+        self.one = PyTgCalls(self.userbot1, cache_duration=100) if self.userbot1 else None
 
         self.userbot2 = Client(
             "AnnieXAssis2", config.API_ID, config.API_HASH, session_string=config.STRING2
         ) if config.STRING2 else None
-        self.two = PyTgCalls(self.userbot2) if self.userbot2 else None
+        self.two = PyTgCalls(self.userbot2, cache_duration=100) if self.userbot2 else None
 
         self.userbot3 = Client(
             "AnnieXAssis3", config.API_ID, config.API_HASH, session_string=config.STRING3
         ) if config.STRING3 else None
-        self.three = PyTgCalls(self.userbot3) if self.userbot3 else None
+        self.three = PyTgCalls(self.userbot3, cache_duration=100) if self.userbot3 else None
 
         self.userbot4 = Client(
             "AnnieXAssis4", config.API_ID, config.API_HASH, session_string=config.STRING4
         ) if config.STRING4 else None
-        self.four = PyTgCalls(self.userbot4) if self.userbot4 else None
+        self.four = PyTgCalls(self.userbot4, cache_duration=100) if self.userbot4 else None
 
         self.userbot5 = Client(
             "AnnieXAssis5", config.API_ID, config.API_HASH, session_string=config.STRING5
         ) if config.STRING5 else None
-        self.five = PyTgCalls(self.userbot5) if self.userbot5 else None
+        self.five = PyTgCalls(self.userbot5, cache_duration=100) if self.userbot5 else None
 
         self.active_calls: set[int] = set()
-
 
     @capture_internal_err
     async def pause_stream(self, chat_id: int) -> None:
@@ -199,7 +138,6 @@ class Call:
         finally:
             self.active_calls.discard(chat_id)
 
-
     @capture_internal_err
     async def force_stop_stream(self, chat_id: int) -> None:
         assistant = await group_assistant(self, chat_id)
@@ -221,31 +159,13 @@ class Call:
         finally:
             self.active_calls.discard(chat_id)
 
-
     @capture_internal_err
     async def skip_stream(self, chat_id: int, link: str, video: Union[bool, str] = None, image: Union[bool, str] = None) -> None:
         assistant = await group_assistant(self, chat_id)
-
-        # ensure local if URL (force video->local if requested)
-        kind = "video" if _is_true_flag(video) else "audio"
-        play_path = await ensure_local_media(link, kind, title="")
-        stream = dynamic_media_stream(path=play_path, video=_is_true_flag(video))
-        try:
-            await assistant.play(chat_id, stream)
-        except NoVideoSourceFound:
-            # fallback: try audio-only local
-            if play_path != link:
-                fallback = await ensure_local_media(link, "audio", title="")
-                try:
-                    await assistant.play(chat_id, dynamic_media_stream(path=fallback, video=False))
-                except Exception:
-                    raise
-            else:
-                raise
-        except NoAudioSourceFound:
-            # try simpler audio fallback
-            raise
-
+        # 🔥 ALEXA OPTIMIZATION: Using GroupCallConfig
+        ksk = GroupCallConfig(auto_start=False)
+        stream = dynamic_media_stream(path=link, video=bool(video))
+        await assistant.play(chat_id, stream, config=ksk)
 
     @capture_internal_err
     async def vc_users(self, chat_id: int) -> list:
@@ -263,6 +183,7 @@ class Call:
 
     @capture_internal_err
     async def speedup_stream(self, chat_id: int, file_path: str, speed: float, playing: list) -> None:
+        # Code kept from Annie for compatibility
         if not isinstance(playing, list) or not playing or not isinstance(playing[0], dict):
             raise AssistantErr("Invalid stream info for speedup.")
 
@@ -303,7 +224,6 @@ class Call:
         else:
             raise AssistantErr("Stream mismatch during speedup.")
 
-
     @capture_internal_err
     async def stream_call(self, link: str) -> None:
         assistant = await group_assistant(self, config.LOGGER_ID)
@@ -328,64 +248,29 @@ class Call:
         assistant = await group_assistant(self, chat_id)
         lang = await get_lang(chat_id)
         _ = get_string(lang)
-
-        # ensure local file when link is URL/manifest
-        desired_kind = "video" if _is_true_flag(video) else "audio"
-        play_path = await ensure_local_media(link, desired_kind, title="")
-
-        stream = dynamic_media_stream(path=play_path, video=_is_true_flag(video))
-
-        # ✅ FIX: Force leave first to prevent Ghost Call issues
-        try:
-            await assistant.leave_call(chat_id)
-            await asyncio.sleep(1)
-        except:
-            pass
-        # ====================================================
+        stream = dynamic_media_stream(path=link, video=bool(video))
+        
+        # 🔥 ALEXA OPTIMIZATION: Config added here
+        ksk = GroupCallConfig(auto_start=False)
 
         try:
-            await assistant.play(chat_id, stream)
+            await assistant.play(chat_id, stream, config=ksk)
         except (NoActiveGroupCall, ChatAdminRequired):
             raise AssistantErr(_["call_8"])
         except NoAudioSourceFound:
-            # try audio-only local fallback
-            if play_path and play_path != link:
-                raise AssistantErr(_["call_11"])
-            else:
-                local_audio = await ensure_local_media(link, "audio", title="")
-                if local_audio and os.path.exists(local_audio):
-                    try:
-                        await assistant.play(chat_id, dynamic_media_stream(path=local_audio, video=False))
-                        play_path = local_audio
-                    except Exception:
-                        raise AssistantErr(_["call_11"])
-                else:
-                    raise AssistantErr(_["call_11"])
+            raise AssistantErr(_["call_11"])
         except NoVideoSourceFound:
-            # try audio-only fallback if video not found
-            local_audio = await ensure_local_media(link, "audio", title="")
-            if local_audio and os.path.exists(local_audio):
-                try:
-                    await assistant.play(chat_id, dynamic_media_stream(path=local_audio, video=False))
-                    play_path = local_audio
-                except Exception:
-                    raise AssistantErr(_["call_12"])
-            else:
-                raise AssistantErr(_["call_12"])
+            raise AssistantErr(_["call_12"])
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
         except Exception as e:
-            # last attempt: try playing a local file if available
+             # Retry logic
             try:
-                 await asyncio.sleep(0.8)
-                 if play_path and os.path.exists(play_path):
-                     await assistant.play(chat_id, dynamic_media_stream(path=play_path, video=_is_true_flag(video)))
-                 else:
-                     await assistant.play(chat_id, stream)
-            except Exception as exc:
-                 raise AssistantErr(
-                    f"ᴜɴᴀʙʟᴇ ᴛᴏ ᴊᴏɪɴ ᴛʜᴇ ɢʀᴏᴜᴘ ᴄᴀʟʟ.\nRᴇᴀsᴏɴ: {exc}"
-                )
+                 await asyncio.sleep(1)
+                 await assistant.play(chat_id, stream, config=ksk)
+            except:
+                 raise AssistantErr(f"ᴜɴᴀʙʟᴇ ᴛᴏ ᴊᴏɪɴ ᴛʜᴇ ɢʀᴏᴜᴘ ᴄᴀʟʟ.\nRᴇᴀsᴏɴ: {e}")
+                 
         self.active_calls.add(chat_id)
         await add_active_chat(chat_id)
         await music_on(chat_id)
@@ -394,13 +279,16 @@ class Call:
 
         if await is_autoend():
             counter[chat_id] = {}
-            users = len(await assistant.get_participants(chat_id))
-            if users == 1:
-                autoend[chat_id] = datetime.now() + timedelta(minutes=1)
-
+            try:
+                users = len(await assistant.get_participants(chat_id))
+                if users == 1:
+                    autoend[chat_id] = datetime.now() + timedelta(minutes=1)
+            except:
+                pass
 
     @capture_internal_err
     async def play(self, client, chat_id: int) -> None:
+        # 🔥 Refactored to match Alexa's `change_stream` logic but with Annie's vars
         check = db.get(chat_id)
         popped = None
         loop = await get_loop(chat_id)
@@ -410,19 +298,20 @@ class Call:
             else:
                 loop = loop - 1
                 await set_loop(chat_id, loop)
+            
+            # Using auto_clean from Alexa's logic context (if config allows)
             await auto_clean(popped)
+            
             if not check:
-                    await _clear_(chat_id)
-                    if chat_id in self.active_calls:
-                        try:
-                            await client.leave_call(chat_id)
-                        except NoActiveGroupCall:
-                            pass
-                        except Exception:
-                            pass
-                        finally:
-                            self.active_calls.discard(chat_id)
-                    return
+                await _clear_(chat_id)
+                if chat_id in self.active_calls:
+                    try:
+                        await client.leave_call(chat_id)
+                    except Exception:
+                        pass
+                    finally:
+                        self.active_calls.discard(chat_id)
+                return
         except:
             try:
                 await _clear_(chat_id)
@@ -448,21 +337,16 @@ class Call:
                 db[chat_id][0]["speed"] = 1.0
 
             video = True if str(streamtype) == "video" else False
-
-            # helper to prepare a playable local path when queued is a URL/manifest
-            async def prepare_play_path(raw):
-                if isinstance(raw, str) and raw.startswith("http"):
-                    kind = "video" if video else "audio"
-                    return await ensure_local_media(raw, kind, title=title)
-                return raw
-
+            
+            # 🔥 ALEXA OPTIMIZATION: Pre-calculate stream to save time
+            # Note: We use the dynamic helper to keep code clean, but it uses Alexa's params inside
+            
             if "live_" in queued:
                 n, link = await YouTube.video(videoid, True)
                 if n == 0:
                     return await app.send_message(original_chat_id, text=_["call_6"])
-
-                play_path = await prepare_play_path(link)
-                stream = dynamic_media_stream(path=play_path, video=video)
+                stream = dynamic_media_stream(path=link, video=video)
+                
                 try:
                     await client.play(chat_id, stream)
                 except Exception:
@@ -491,18 +375,10 @@ class Call:
                         videoid,
                         mystic,
                         videoid=True,
-                        video=True if str(streamtype) == "video" else False,
+                        video=video,
                     )
                 except:
-                    return await mystic.edit_text(
-                        _["call_6"], disable_web_page_preview=True
-                    )
-
-                # ensure local (in case YouTube.download returned a URL or remote manifest)
-                if not file_path or not os.path.exists(file_path):
-                    file_path = await ensure_local_media(file_path or videoid, "video" if video else "audio", title=title)
-                    if not file_path:
-                        return await mystic.edit_text(_["call_6"], disable_web_page_preview=True)
+                    return await mystic.edit_text(_["call_6"], disable_web_page_preview=True)
 
                 stream = dynamic_media_stream(path=file_path, video=video)
                 try:
@@ -528,8 +404,7 @@ class Call:
                 db[chat_id][0]["markup"] = "stream"
 
             elif "index_" in queued:
-                play_path = await prepare_play_path(videoid)
-                stream = dynamic_media_stream(path=play_path, video=video)
+                stream = dynamic_media_stream(path=videoid, video=video)
                 try:
                     await client.play(chat_id, stream)
                 except:
@@ -546,8 +421,7 @@ class Call:
                 db[chat_id][0]["markup"] = "tg"
 
             else:
-                play_path = await prepare_play_path(queued)
-                stream = dynamic_media_stream(path=play_path, video=video)
+                stream = dynamic_media_stream(path=queued, video=video)
                 try:
                     await client.play(chat_id, stream)
                 except:
@@ -599,7 +473,6 @@ class Call:
                             reply_markup=InlineKeyboardMarkup(button),
                         )
                     except FloodWait as e:
-                        LOGGER(__name__).warning(f"FloodWait: Sleeping for {e.value}")
                         await asyncio.sleep(e.value)
                         run = await app.send_photo(
                             chat_id=original_chat_id,
@@ -615,7 +488,6 @@ class Call:
                     db[chat_id][0]["mystic"] = run
                     db[chat_id][0]["markup"] = "stream"
 
-
     async def start(self) -> None:
         LOGGER(__name__).info("Starting PyTgCalls Clients...")
         if config.STRING1:
@@ -628,14 +500,6 @@ class Call:
             await self.four.start()
         if config.STRING5:
             await self.five.start()
-
-        # Start cache cleaner (downloader.init_cache_cleaner) once event loop is active
-        try:
-            init_cache_cleaner()
-            LOGGER(__name__).info("Cache cleaner started.")
-        except Exception:
-            LOGGER(__name__).warning("Could not start cache cleaner.")
-
 
     @capture_internal_err
     async def ping(self) -> str:
@@ -677,6 +541,4 @@ class Call:
         for assistant in assistants:
             assistant.on_update()(unified_update_handler)
 
-
-# single exported controller used by rest of the app
 StreamController = Call()
