@@ -15,7 +15,7 @@ from youtubesearchpython.aio import VideosSearch, Playlist
 from AnnieXMedia.utils.cookie_handler import COOKIE_PATH
 from AnnieXMedia.utils.database import is_on_off
 # لم نعد بحاجة لهذا المستورد البطيء
-# from AnnieXMedia.utils.downloader import yt_dlp_download
+from AnnieXMedia.utils.downloader import yt_dlp_download
 from AnnieXMedia.utils.errors import capture_internal_err
 from AnnieXMedia.utils.formatters import time_to_seconds
 from AnnieXMedia.utils.tuning import YTDLP_TIMEOUT, YOUTUBE_META_MAX, YOUTUBE_META_TTL
