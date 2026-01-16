@@ -3,8 +3,7 @@ import re
 
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
-# التعديل تم هنا
-from youtubesearchpython.__future__ import VideosSearch
+from youtubesearchpython.aio import VideosSearch
 
 import config
 
@@ -38,11 +37,6 @@ class SpotifyAPI:
                 info += fetched
         results = VideosSearch(info, limit=1)
         data = await results.next()
-        
-        # حماية ضد النتائج الفارغة
-        if not data.get("result"):
-            return None, None
-
         r = data["result"][0]
         track_details = {
             "title": r["title"],
