@@ -70,7 +70,10 @@ def _resolve_quality_ffmpeg_params(quality: Optional[str], video: bool = False) 
     Resolve quality name to ffmpeg parameter string.
     Returns a string to be appended to ffmpeg_parameters, e.g. "-b:a 160k -ar 48000"
     """
-    q = (quality or DEFAULT_QUALITY).lower()
+    # 🔥 تعديل: قراءة الجودة من متغير النظام الديناميكي (SYSTEM_QUALITY)
+    sys_q = getattr(config, "SYSTEM_QUALITY", DEFAULT_QUALITY)
+    q = (quality or sys_q).lower()
+    
     preset = QUALITY_PRESETS.get(q, QUALITY_PRESETS.get(DEFAULT_QUALITY, {}))
     ab = preset.get("audio_bitrate")
     ar = preset.get("audio_samplerate")
@@ -82,6 +85,8 @@ def _resolve_quality_ffmpeg_params(quality: Optional[str], video: bool = False) 
         parts.append(f"-ar {ar}")
     if video and vb:
         parts.append(f"-b:v {vb}")
+        # تحسين إضافي للفيديو لتقليل التقطيع
+        parts.append("-preset veryfast")
     if parts:
         return " ".join(parts)
     return None
@@ -392,8 +397,11 @@ class Call:
                 return
         else:
             queued = check[0]["file"]
-            # read quality from queue item if set, otherwise default
-            quality = check[0].get("quality", DEFAULT_QUALITY)
+            
+            # 🔥 تعديل: قراءة الجودة من النظام إذا لم تكن محددة في الطابور
+            sys_q = getattr(config, "SYSTEM_QUALITY", DEFAULT_QUALITY)
+            quality = check[0].get("quality", sys_q)
+            
             language = await get_lang(chat_id)
             _ = get_string(language)
             title = (check[0]["title"]).title()
