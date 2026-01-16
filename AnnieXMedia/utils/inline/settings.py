@@ -1,9 +1,13 @@
-﻿# Authored By Certified Coders © 2025
+# Authored By Certified Coders © 2025
 from typing import Union
 
 from pyrogram.types import InlineKeyboardButton
+from config import DEFAULT_QUALITY   # 🔗 ربط الجودة من الكونفنج
 
 
+# =============================================================================
+# ⚙️ MAIN SETTINGS MENU
+# =============================================================================
 def setting_markup(_):
     buttons = [
         [
@@ -12,6 +16,12 @@ def setting_markup(_):
         ],
         [
             InlineKeyboardButton(text=_["ST_B_2"], callback_data="PLAYBACK_SETTINGS"),
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"🎚 جودة التشغيل ({DEFAULT_QUALITY.upper()})",
+                callback_data="QUALITY_SETTINGS",
+            ),
         ],
         [
             InlineKeyboardButton(text=_["ST_B_4"], callback_data="VOTE_SETTINGS"),
@@ -23,6 +33,32 @@ def setting_markup(_):
     return buttons
 
 
+# =============================================================================
+# 🎚 QUALITY SETTINGS
+# =============================================================================
+def quality_settings_markup(_):
+    buttons = [
+        [
+            InlineKeyboardButton(text="🎧 Low", callback_data="QUALITY_LOW"),
+            InlineKeyboardButton(text="🎼 Medium", callback_data="QUALITY_MEDIUM"),
+        ],
+        [
+            InlineKeyboardButton(text="🎵 High", callback_data="QUALITY_HIGH"),
+        ],
+        [
+            InlineKeyboardButton(
+                text=_["BACK_BUTTON"],
+                callback_data="SETTINGS_BACK",
+            ),
+            InlineKeyboardButton(text=_["CLOSE_BUTTON"], callback_data="close"),
+        ],
+    ]
+    return buttons
+
+
+# =============================================================================
+# 🗳 VOTE MODE SETTINGS
+# =============================================================================
 def vote_mode_markup(_, current, mode: Union[bool, str] = None):
     buttons = [
         [
@@ -51,6 +87,9 @@ def vote_mode_markup(_, current, mode: Union[bool, str] = None):
     return buttons
 
 
+# =============================================================================
+# 🔐 AUTH USERS SETTINGS
+# =============================================================================
 def auth_users_markup(_, status: Union[bool, str] = None):
     buttons = [
         [
@@ -74,6 +113,9 @@ def auth_users_markup(_, status: Union[bool, str] = None):
     return buttons
 
 
+# =============================================================================
+# ▶️ PLAY MODE SETTINGS
+# =============================================================================
 def playmode_users_markup(
     _,
     Direct: Union[bool, str] = None,
