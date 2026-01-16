@@ -19,7 +19,7 @@ qrcode
 flask
 hachoir
 heroku3
-httpx[http2]>=0.28.1
+httpx[http2]>=0.27.2
 jinja2
 lexica-api
 lyricsgenius
