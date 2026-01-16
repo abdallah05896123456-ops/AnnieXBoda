@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 from yt_dlp import YoutubeDL
 
 # ✅ التعديل: استيراد الكلاس الجديد بدل الدالة القديمة
-from AnnieXMedia.utils.downloader import YouTubeAPI
+from AnnieXMedia.utils.youtube import YouTubeAPI
 from AnnieXMedia.utils.formatters import seconds_to_min
 
 
