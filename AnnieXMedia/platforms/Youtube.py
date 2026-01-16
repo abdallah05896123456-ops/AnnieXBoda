@@ -1,11 +1,12 @@
 # Authored By Certified Coders © 2025
-# ULTIMATE MERGE: AnnieX + Alexa Speed + Fly.io Cookie Fix + Aria2c Turbo
+# ULTIMATE TITAN EDITION: AnnieX Class Structure + Aria2c Speed + Cache Cleaner + Fly.io Fix
 
 import asyncio
 import os
 import re
 import json
 import requests
+import shutil
 import time
 from typing import Union, Tuple, Optional, Dict, List
 
@@ -21,9 +22,30 @@ from AnnieXMedia.utils.errors import capture_internal_err
 
 # === Constants & Cookie Handling ===
 COOKIE_FILE_NAME = "cookies.txt"
+DOWNLOAD_DIR = "downloads"
 
+# تأكد من وجود مجلد التحميل
+if not os.path.exists(DOWNLOAD_DIR):
+    os.makedirs(DOWNLOAD_DIR)
+
+# --- 1. Auto Cache Cleaner (من الملف الجديد) ---
+def _clean_stale_files():
+    """تنظيف الملفات القديمة لتوفير المساحة على Fly.io"""
+    now = time.time()
+    # احذف الملفات اللي مر عليها أكثر من 15 دقيقة
+    ttl = 900 
+    for filename in os.listdir(DOWNLOAD_DIR):
+        file_path = os.path.join(DOWNLOAD_DIR, filename)
+        try:
+            if os.path.isfile(file_path):
+                if os.stat(file_path).st_mtime < now - ttl:
+                    os.remove(file_path)
+        except Exception:
+            pass
+
+# --- 2. Cookie Loader ---
 def _download_cookies_from_secret():
-    """تحميل الكوكيز من السكرت عند التشغيل"""
+    """تحميل الكوكيز من السكرت"""
     cookie_url = os.getenv("COOKIE_URL")
     if not cookie_url:
         return
@@ -39,11 +61,12 @@ def _download_cookies_from_secret():
             
             with open(COOKIE_FILE_NAME, "w") as f:
                 f.write(response.text)
-            print("Cookies loaded successfully from Secret.")
+            print("Cookies loaded successfully.")
     except Exception as e:
         print(f"Error downloading cookies: {e}")
 
 _download_cookies_from_secret()
+_clean_stale_files() # تنظيف عند البدء
 
 def cookiefile():
     if os.path.exists(COOKIE_FILE_NAME) and os.path.getsize(COOKIE_FILE_NAME) > 0:
@@ -70,9 +93,9 @@ class YouTubeAPI:
     def __init__(self):
         self.base = "https://www.youtube.com/watch?v="
         self.regex = r"(?:youtube\.com|youtu\.be)"
-        self.status = "https://www.youtube.com/oembed?url="
         self.listbase = "https://youtube.com/playlist?list="
-        self.reg = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+        # تنظيف الكاش دورياً عند استدعاء الكلاس
+        _clean_stale_files()
 
     @capture_internal_err
     async def exists(self, link: str, videoid: Union[bool, str] = None):
