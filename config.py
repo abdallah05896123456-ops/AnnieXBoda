@@ -8,45 +8,33 @@ from os import getenv
 from dotenv import load_dotenv
 from pyrogram import filters
 
-# تحميل المتغيرات
+# Load environment variables
 load_dotenv()
 
-# ===============================================================================
-# 🌐 TITAN OS DASHBOARD CONFIGURATION (إعدادات الموقع)
-# ===============================================================================
-WEB_PASSWORD = getenv("WEB_PASSWORD", "asdfghjkl05896") 
-WEB_SECRET = getenv("WEB_SECRET", "AnnieX_Secret_Key_99123") 
-HOST = getenv("HOST", "0.0.0.0")
-PORT = int(getenv("PORT", "8080"))
-
-# ===============================================================================
-# 🤖 CORE BOT CONFIG (إعدادات البوت)
-# ===============================================================================
+# ── Core bot config (إعدادات البوت الأساسية) ───────────────────────────────────
 try:
     API_ID = int(getenv("API_ID"))
     API_HASH = getenv("API_HASH")
 except (TypeError, ValueError):
-    print("🚫 خطأ: يجب وضع API_ID و API_HASH في متغيرات النظام (Vars/Secrets).")
+    print("🚫 خطأ: يجب وضع API_ID و API_HASH في متغيرات النظام (Vars/Secrets) ليعمل البوت.")
     sys.exit()
 
 BOT_TOKEN = getenv("BOT_TOKEN")
 
+# معلومات المالك
 OWNER_ID = int(getenv("OWNER_ID", 8313557781))
 OWNER_USERNAME = getenv("OWNER_USERNAME", "CertifiedCoder")
 
+# معلومات البوت والمساعد
 BOT_USERNAME = getenv("BOT_USERNAME", "SourceBodaBot")
 BOT_NAME = getenv("BOT_NAME", "˹𝚂ᴏᴜʀᴄᴇ ✘ 𝐁ᴏᴅᴀ˼ ♪")
 ASSUSERNAME = getenv("ASSUSERNAME", "SourceBodaAssistant")
 
-# ===============================================================================
-# 🗄️ DATABASE & LOGGING
-# ===============================================================================
+# ── Database & logging ─────────────────────────────────────────────────────────
 MONGO_DB_URI = getenv("MONGO_DB_URI")
 LOGGER_ID = int(getenv("LOGGER_ID", -1003339220169))
 
-# ===============================================================================
-# ⚙️ LIMITS & SETTINGS
-# ===============================================================================
+# ── Limits ─────────────────────────────────────────────────────────────────────
 DURATION_LIMIT_MIN = int(getenv("DURATION_LIMIT", 300))
 SONG_DOWNLOAD_DURATION = int(getenv("SONG_DOWNLOAD_DURATION", "1200"))
 SONG_DOWNLOAD_DURATION_LIMIT = int(getenv("SONG_DOWNLOAD_DURATION_LIMIT", "1800"))
@@ -54,76 +42,59 @@ TG_AUDIO_FILESIZE_LIMIT = int(getenv("TG_AUDIO_FILESIZE_LIMIT", "157286400"))
 TG_VIDEO_FILESIZE_LIMIT = int(getenv("TG_VIDEO_FILESIZE_LIMIT", "1288490189"))
 PLAYLIST_FETCH_LIMIT = int(getenv("PLAYLIST_FETCH_LIMIT", "30"))
 
-# ===============================================================================
-# 🎚️ STREAMING & DOWNLOAD QUALITY SETTINGS (نظام الجودة)
-# ===============================================================================
-
-# 1. الجودة الافتراضية (من ملف البيئة أو "high")
-DEFAULT_QUALITY = getenv("DEFAULT_QUALITY", "high")
-
-# 2. الجودة الحالية للنظام (هذا المتغير الذي يتم تعديله من لوحة التحكم)
-# مبدئياً يأخذ قيمته من الافتراضي، ثم يتغير أثناء التشغيل
-SYSTEM_QUALITY = DEFAULT_QUALITY
-
-# 3. إعدادات البريست (للمرجع فقط، تُستخدم في PyTgCalls)
-QUALITY_PRESETS = {
-    "low": {"audio_bitrate": "48k", "video_bitrate": "300k", "description": "Low – Saver"},
-    "medium": {"audio_bitrate": "96k", "video_bitrate": "600k", "description": "Medium – Balanced"},
-    "high": {"audio_bitrate": "160k", "video_bitrate": "1200k", "description": "High – HD"},
-    "best": {"audio_bitrate": "320k", "video_bitrate": "2500k", "description": "Best – Studio"},
-    "audio": {"audio_bitrate": "128k", "video_bitrate": "800k", "description": "Audio Only"},
-}
-
-# ===============================================================================
-# 🔗 EXTERNAL APIS
-# ===============================================================================
+# ── External APIs ──────────────────────────────────────────────────────────────
 COOKIE_URL = getenv("COOKIE_URL")
 API_URL = getenv("API_URL")
 VIDEO_API_URL = getenv("VIDEO_API_URL")
 API_KEY = getenv("API_KEY")
 DEEP_API = getenv("DEEP_API")
 
-# ===============================================================================
-# ☁️ DEPLOYMENT & GIT
-# ===============================================================================
+# ── Hosting / deployment ───────────────────────────────────────────────────────
 HEROKU_APP_NAME = getenv("HEROKU_APP_NAME")
 HEROKU_API_KEY = getenv("HEROKU_API_KEY")
 
+# ── Git / updates ──────────────────────────────────────────────────────────────
 UPSTREAM_REPO = getenv("UPSTREAM_REPO", "https://t.me/SourceBoda")
 UPSTREAM_BRANCH = getenv("UPSTREAM_BRANCH", "Master")
 GIT_TOKEN = getenv("GIT_TOKEN")
 
+# ── Support links ──────────────────────────────────────────────────────────────
 SUPPORT_CHANNEL = getenv("SUPPORT_CHANNEL", "https://t.me/SourceBoda")
 SUPPORT_CHAT = getenv("SUPPORT_CHAT", "https://t.me/music0587")
 
+# ── Assistant auto-leave ───────────────────────────────────────────────────────
 AUTO_LEAVING_ASSISTANT = False
 AUTO_LEAVE_ASSISTANT_TIME = int(getenv("ASSISTANT_LEAVE_TIME", "3600"))
 
+# ── Debug ──────────────────────────────────────────────────────────────────────
 DEBUG_IGNORE_LOG = True
 
+# ── Spotify (optional) ─────────────────────────────────────────────────────────
 SPOTIFY_CLIENT_ID = getenv("SPOTIFY_CLIENT_ID", "22b6125bfe224587b722d6815002db2b")
 SPOTIFY_CLIENT_SECRET = getenv("SPOTIFY_CLIENT_SECRET", "c9c63c6fbf2f467c8bc68624851e9773")
 
+# ── Session strings ────────────────────────────────────────────────────────────
 STRING1 = getenv("STRING_SESSION")
 STRING2 = getenv("STRING_SESSION2")
 STRING3 = getenv("STRING_SESSION3")
 STRING4 = getenv("STRING_SESSION4")
 STRING5 = getenv("STRING_SESSION5")
 
-# ===============================================================================
-# 🎨 MEDIA & ASSETS
-# ===============================================================================
+# ── Media assets ───────────────────────────────────────────────────────────────
+# فيديوهات الستارت
 START_VIDS = [
     "https://files.catbox.moe/b6533n.jpg",
     "https://files.catbox.moe/wqipfn.jpg",
     "https://files.catbox.moe/efzuds.jpg",
 ]
 
+# الاستيكرات
 STICKERS = [
     "CAACAgQAAyEFAATHCHTJAAIToGlfMcgnOpNnuYnm1hlBTW_pZgZfAAIfFgAC-CS4UbtZNHZyyA3BHgQ",
     "CAACAgUAAyEFAATHCHTJAAITn2lfMb5VpY0QAom50knojYHju4bTAAILFQAC-vEZVMBmWHCQ-sJuHgQ",
 ]
 
+# الصورة الموحدة
 UNIFIED_IMG = "https://files.catbox.moe/tvmyz6.jpg"
 
 START_IMG_URL = UNIFIED_IMG
@@ -138,14 +109,13 @@ SOUNCLOUD_IMG_URL = UNIFIED_IMG
 YOUTUBE_IMG_URL = UNIFIED_IMG
 SPOTIFY_ARTIST_IMG_URL = SPOTIFY_ALBUM_IMG_URL = SPOTIFY_PLAYLIST_IMG_URL = UNIFIED_IMG
 
-# ===============================================================================
-# 🛠️ HELPER FUNCTIONS & TEXTS
-# ===============================================================================
+# ── Helpers ────────────────────────────────────────────────────────────────────
 def time_to_seconds(time: str) -> int:
     return sum(int(x) * 60**i for i, x in enumerate(reversed(time.split(":"))))
 
 DURATION_LIMIT = time_to_seconds(f"{DURATION_LIMIT_MIN}:00")
 
+# ───── نصوص التشغيل والتحميل المتنوعة ───── #
 AYU = [
     "جـاري الـتـشـغـيـل .. 🤍",
     "جـاري الـتـحـمـيـل .. 🫶",
@@ -154,7 +124,9 @@ AYU = [
     "يـتـم تـشـغـيـل الـتـراك .. 💝"
 ]
 
+# ───── رسالة الستارت العصرية ───── #
 AYUV = [
+    # ── رسالة الخاص (PM) ──
     """
 صـلـي عـلـي الـنـبـي وتـبـسـم 🤍🌿.
 
@@ -172,6 +144,8 @@ AYUV = [
 ⧉ الـرام : {5}
 ـــــــــــــــــــــــــــــــــــــــــــــــــــــــ
     """,
+    
+    # ── رسالة المجموعات (Group) ──
     """
 صـلـي عـلـي الـنـبـي وتـبـسـم 🤍🌿.
 
@@ -187,12 +161,11 @@ AYUV = [
     """
 ]
 
-# ===============================================================================
-# 🚧 RUNTIME STRUCTURES
-# ===============================================================================
+# ── Runtime structures ─────────────────────────────────────────────────────────
 BANNED_USERS = filters.user()
 adminlist, lyrical, autoclean, confirmer = {}, {}, [], {}
 
+# ── Minimal validation ─────────────────────────────────────────────────────────
 if SUPPORT_CHANNEL and not re.match(r"^https?://", SUPPORT_CHANNEL):
     raise SystemExit("[ERROR] - Invalid SUPPORT_CHANNEL URL. Must start with https://")
 
