@@ -1,69 +1,64 @@
-# === Core & Telegram (Updated) ===
-kurigram>=2.2.17
-pytgcrypto>=1.2.11
-# تم حذف py-tgcalls بناءً على طلبك
-
-# === Networking (High Performance) ===
-# بناءً على طلبك: آخر إصدارات بدون تخفيض
-aiohttp~=3.13.2
-httpx[http2]>=0.27.2
-requests
-uvloop==0.21.0
-psutil
-# === Media & Downloads (Updated) ===
-# النسخة البديلة المتوافقة مع httpx الجديد
-git+https://github.com/chatgpt05896-lang/youtube-search-python
-# yt-dlp من المصدر لضمان دعم 2026
-git+https://github.com/yt-dlp/yt-dlp.git@master#egg=yt-dlp
-
-# === Libraries from your specific list ===
-pillow~=12.0.0
-psutil~=7.2.1
-pymongo>=4.15.5
-python-dotenv~=1.2.1
-
-# === Rest of your Original Stack ===
+# ==========================================
+# [Priority 1] The Old Stable List (بناءً على طلبك)
+# ==========================================
 aiofiles
+aiohttp
 apscheduler
-argon2
+asyncio
 bing_image_downloader
 bs4
-cachetools
 deepai
 edge-tts
 ffmpeg-python
-fastapi
-flask
 future
 gitpython
 google-api-python-client
 gpytranslate
 gtts
-hachoir
 heroku3
-jinja2
+httpx[http2]>=0.28.1
+kurigram>=2.2.14
 lexica-api
-lyricsgenius
 motor
 nekosbest
-ntgcalls>=2.0.6
 numpy
 opencv-python
+pillow>=12.0.0
+psutil
+ntgcalls>=2.0.6
 pycryptodome
 pydub
 pyfiglet
 pyshorteners
-python-multipart
+python-dotenv
 python-whois
 pyyaml
-rapidfuzz
-pyotp
 qrcode
-SpeechRecognition
+requests
 speedtest-cli
+SpeechRecognition
 spotipy
 telegraph
-ujson
+pytgcrypto
 unidecode
-uvicorn
 wget
+yt-dlp[default]==2025.12.8
+git+https://github.com/CertifiedCoders/youtube-search-python
+
+# ==========================================
+# [Priority 2] Server Essentials
+# (مكتبات الموقع اللي مش موجودة في القديم بس ضرورية عشان السيرفر يشتغل)
+# ==========================================
+fastapi
+uvicorn
+ujson
+jinja2
+python-multipart
+cachetools
+flask
+hachoir
+lyricsgenius
+rapidfuzz
+pyotp
+argon2
+uvloop
