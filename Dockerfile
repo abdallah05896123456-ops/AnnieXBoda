@@ -1,11 +1,11 @@
 # ==============================================================================
 # Dockerfile AnnieXMedia (TitanOS Ultimate Edition)
-# Optimized for Web Dashboard + Music Bot Bridge
+# Optimized for Web Dashboard + Music Bot Bridge + YouTube JS Solver
 # ==============================================================================
 
 FROM python:3.12-slim
 
-# إعدادات البيئة لتحسين الأداء وتقليل المساحة
+# إعدادات البيئة
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PIP_NO_CACHE_DIR=1
@@ -13,32 +13,33 @@ ENV PIP_NO_CACHE_DIR=1
 WORKDIR /app
 
 # ------------------------------------------------------------------------------
-# [1] تحديث النظام وتثبيت الحزم الأساسية (ffmpeg, aria2, git, build tools)
+# [1] تحديث النظام وتثبيت Node.js (الحل السحري لمشكلة 403)
 # ------------------------------------------------------------------------------
 RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    curl \
+    gnupg \
+    ca-certificates && \
+    # تثبيت Node.js 20 (أفضل من Deno لـ yt-dlp)
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
+    # تثبيت باقي الحزم
     apt-get install -y --no-install-recommends \
     git \
     ffmpeg \
     aria2 \
-    curl \
     unzip \
     build-essential && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # ------------------------------------------------------------------------------
-# [2] تثبيت Deno (ضروري لبعض ملفات السورس)
-# ------------------------------------------------------------------------------
-RUN curl -fsSL https://deno.land/install.sh | sh && \
-    ln -s /root/.deno/bin/deno /usr/local/bin/deno
-
-# ------------------------------------------------------------------------------
-# [3] نسخ مجلد pytgcalls المحلي (لتجنب مشاكل الإصدارات)
+# [2] نسخ مجلد pytgcalls المحلي
 # ------------------------------------------------------------------------------
 COPY pytgcalls /app/pytgcalls
 
 # ------------------------------------------------------------------------------
-# [4] تثبيت مكتبات بايثون (البوت + الموقع)
+# [3] تثبيت مكتبات بايثون
 # ------------------------------------------------------------------------------
 COPY requirements.txt /app/requirements.txt
 
@@ -47,25 +48,20 @@ RUN if [ -f /app/requirements.txt ]; then \
       grep -v -i '^py-tgcalls' /app/requirements.txt > /app/filtered-requirements.txt || true; \
     fi
 
-# تحديث pip وتثبيت المتطلبات + (jinja2) الضرورية للموقع
+# تحديث pip وتثبيت المتطلبات + (jinja2)
 RUN pip install --upgrade pip setuptools wheel && \
     if [ -f /app/filtered-requirements.txt ]; then \
         pip install --no-cache-dir -r /app/filtered-requirements.txt; \
     fi && \
-    # 🔥 تثبيت jinja2 يدوياً لضمان عمل قوالب الويب (كانت ناقصة في قائمتك)
     pip install --no-cache-dir jinja2
 
 # ------------------------------------------------------------------------------
-# [5] نسخ ملفات المشروع بالكامل
+# [4] نسخ ملفات المشروع بالكامل
 # ------------------------------------------------------------------------------
 COPY . /app
 
 # ------------------------------------------------------------------------------
-# [6] فتح المنفذ 8080 (الجسر الخارجي للموقع)
+# [5] فتح المنفذ وتشغيل البوت
 # ------------------------------------------------------------------------------
 EXPOSE 8080
-
-# ------------------------------------------------------------------------------
-# [7] نقطة التشغيل (المعدلة في __main__.py لتشغيل الاثنين معاً)
-# ------------------------------------------------------------------------------
 CMD ["python3", "-m", "AnnieXMedia"]
