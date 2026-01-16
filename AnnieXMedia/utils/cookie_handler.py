@@ -1,4 +1,4 @@
-﻿# Authored By Certified Coders © 2025
+# Authored By Certified Coders © 2025
 import asyncio
 import requests
 from pathlib import Path
@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 from config import COOKIE_URL
 from AnnieXMedia.utils.errors import capture_internal_err
 
+# ده المسار اللي هنحفظ فيه، وهنخلي الداونلودر يقرأ منه
 COOKIE_PATH = Path("AnnieXMedia/assets/cookies.txt")
 
 
@@ -36,7 +37,8 @@ def resolve_raw_cookie_url(url: str) -> str:
 @capture_internal_err
 async def fetch_and_store_cookies():
     if not COOKIE_URL:
-        raise EnvironmentError("⚠️ ᴄᴏᴏᴋɪᴇ_ᴜʀʟ ɴᴏᴛ sᴇᴛ ɪɴ ᴇɴᴠ.")
+        # مش هنوقف البوت لو مفيش كوكيز، بس هنحذر
+        return 
 
     raw_url = resolve_raw_cookie_url(COOKIE_URL)
 
