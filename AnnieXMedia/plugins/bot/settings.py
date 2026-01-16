@@ -1,4 +1,6 @@
-﻿# Authored By Certified Coders © 2025
+# Authored By Certified Coders © 2025
+# System Settings Module - Clean Dashboard Style (No Emojis)
+
 from pyrogram import filters
 from pyrogram.enums import ChatType
 from pyrogram.errors import MessageNotModified
@@ -28,16 +30,20 @@ from AnnieXMedia.utils.inline.settings import (
     playmode_users_markup,
     setting_markup,
     vote_mode_markup,
+    quality_settings_markup,
 )
 from AnnieXMedia.utils.inline.start import private_panel
-from config import BANNED_USERS, OWNER_ID
+from config import BANNED_USERS, OWNER_ID, SUDO_USERS
+
+# متغير الجودة الافتراضي
+CURRENT_SESSION_QUALITY = "High"
 
 # ─── SETTINGS MESSAGE ──────────────────────────────────────────────
 
 @app.on_message(filters.command(["settings", "setting"]) & filters.group & ~BANNED_USERS)
 @language
 async def settings_mar(client, message: Message, _):
-    buttons = setting_markup(_)
+    buttons = setting_markup(_, quality=CURRENT_SESSION_QUALITY)
     await message.reply_text(
         _["setting_1"].format(app.mention, message.chat.id, message.chat.title),
         reply_markup=InlineKeyboardMarkup(buttons),
@@ -52,7 +58,7 @@ async def settings_cb(client, callback: CallbackQuery, _):
         await callback.answer(_["set_cb_5"])
     except Exception:
         pass
-    buttons = setting_markup(_)
+    buttons = setting_markup(_, quality=CURRENT_SESSION_QUALITY)
     return await callback.edit_message_text(
         _["setting_1"].format(app.mention, callback.message.chat.id, callback.message.chat.title),
         reply_markup=InlineKeyboardMarkup(buttons),
@@ -76,10 +82,70 @@ async def settings_back_markup(client, callback: CallbackQuery, _):
             reply_markup=InlineKeyboardMarkup(buttons),
         )
     else:
-        buttons = setting_markup(_)
+        buttons = setting_markup(_, quality=CURRENT_SESSION_QUALITY)
         return await callback.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(buttons))
 
-# ─── CALLBACK WITHOUT ADMIN RIGHTS ──────────────────────────────────
+# ─── QUALITY CONTROL (OWNER DASHBOARD) ──────────────────────────────
+
+@app.on_callback_query(filters.regex(r"^(QUALITY_SETTINGS|SET_QUALITY_)") & ~BANNED_USERS)
+async def quality_control_handler(client, callback: CallbackQuery):
+    global CURRENT_SESSION_QUALITY
+    user_id = callback.from_user.id
+    
+    # التحقق من الصلاحيات (Sudo/Owner)
+    if user_id != OWNER_ID and user_id not in SUDO_USERS:
+        return await callback.answer(
+            "تنبيه أمني: لا تملك الصلاحيات الكافية للوصول إلى إعدادات نواة النظام.",
+            show_alert=True
+        )
+
+    data = callback.data
+
+    # عرض لوحة التحكم
+    if data == "QUALITY_SETTINGS":
+        await callback.answer()
+        return await callback.edit_message_text(
+            text=(
+                "ــ لـوحـة تـحـكـم جـودة الـخـادم ــ\n"
+                "ــــــــــــــــــــــــــــــــــــــــــــــــــــ\n\n"
+                f"حالة المعالجة الحالية : {CURRENT_SESSION_QUALITY}\n\n"
+                "[ التقرير التقني ]\n"
+                "يؤثر تغيير إعدادات الجودة بشكل مباشر على استهلاك النطاق الترددي (Bandwidth) "
+                "وسرعة استجابة الخادم للأوامر الصوتية والمرئية.\n\n"
+                "[ الخيارات المتاحة ]\n"
+                "ـ Low : وضع توفير الموارد (أسرع استجابة)\n"
+                "ـ Medium : الوضع القياسي (متوازن)\n"
+                "ـ High : دقة عالية (موصى به للاستقرار)\n"
+                "ـ Best : وضع الاستوديو (يتطلب اتصال شبكي قوي)"
+            ),
+            reply_markup=InlineKeyboardMarkup(
+                quality_settings_markup(None, current_quality=CURRENT_SESSION_QUALITY)
+            )
+        )
+
+    # تنفيذ أمر تغيير الجودة
+    elif data.startswith("SET_QUALITY_"):
+        target_quality = data.split("_")[2]
+        
+        # حفظ التغييرات
+        CURRENT_SESSION_QUALITY = target_quality.title()
+        
+        await callback.answer(f"تم تحديث بروتوكول الجودة بنجاح إلى: {CURRENT_SESSION_QUALITY}", show_alert=True)
+        
+        return await callback.edit_message_text(
+            text=(
+                "ــ لـوحـة تـحـكـم جـودة الـخـادم ــ\n"
+                "ــــــــــــــــــــــــــــــــــــــــــــــــــــ\n\n"
+                f"[ تم الحفظ ] : {CURRENT_SESSION_QUALITY}\n\n"
+                "تم تطبيق الإعدادات الجديدة على كافة عمليات البث القادمة.\n"
+                "يمكنك تعديل المستوى مرة أخرى من الخيارات أدناه."
+            ),
+            reply_markup=InlineKeyboardMarkup(
+                quality_settings_markup(None, current_quality=CURRENT_SESSION_QUALITY)
+            )
+        )
+
+# ─── INFO CALLBACKS (SYSTEM PANELS) ─────────────────────────────────
 
 @app.on_callback_query(
     filters.regex(
@@ -89,6 +155,8 @@ async def settings_back_markup(client, callback: CallbackQuery, _):
 @languageCB
 async def without_admin_rights(client, callback: CallbackQuery, _):
     command = callback.matches[0].group(1)
+    
+    # تحويل التنبيهات إلى نصوص رسمية
     if command == "SEARCH_MODE_INFO":
         try:
             return await callback.answer(_["setting_2"], show_alert=True)
