@@ -1,5 +1,5 @@
 # Authored By Certified Coders © 2025
-# THE IMMORTAL EDITION: Alexa Speed + AnonX Stability + Titan Error Handling
+# THE IMMORTAL EDITION v2: Safe Imports & Anti-Crash
 
 import asyncio
 import os
@@ -13,14 +13,20 @@ from pyrogram.types import InlineKeyboardMarkup
 from pytgcalls import PyTgCalls
 from pytgcalls.exceptions import NoActiveGroupCall, NoAudioSourceFound, NoVideoSourceFound
 from pytgcalls.types import (
-    AudioQuality,
     ChatUpdate,
     MediaStream,
     StreamEnded,
     Update,
     VideoQuality,
-    GroupCallConfig,
+    AudioQuality,
 )
+
+# --- محاولة استيراد GroupCallConfig بأمان ---
+try:
+    from pytgcalls.types import GroupCallConfig
+except ImportError:
+    GroupCallConfig = None
+# ---------------------------------------------
 
 import config
 from strings import get_string
@@ -48,17 +54,23 @@ from AnnieXMedia.utils.errors import capture_internal_err
 autoend = {}
 counter = {}
 
-# === 1. helper function for Crystal Clear Audio (From Alexa) ===
+# دالة لتحديد جودة الصوت بأمان (لو STUDIO مش موجودة نستخدم HIGH)
+def get_audio_quality():
+    if hasattr(AudioQuality, 'STUDIO'):
+        return AudioQuality.STUDIO
+    return AudioQuality.HIGH
+
 def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
     if not path:
-        # حماية ضد الـ NoneType Crash
         raise ValueError("Media Path cannot be None")
         
+    audio_q = get_audio_quality()
+    
     if video:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.STUDIO, # أعلى جودة صوت
-            video_parameters=VideoQuality.HD_720p, # جودة فيديو ممتازة
+            audio_parameters=audio_q,
+            video_parameters=VideoQuality.HD_720p,
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.REQUIRED,
             ffmpeg_parameters=ffmpeg_params,
@@ -66,7 +78,7 @@ def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = No
     else:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.STUDIO, # أعلى جودة صوت
+            audio_parameters=audio_q,
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.IGNORE,
             ffmpeg_parameters=ffmpeg_params,
@@ -83,8 +95,6 @@ async def _clear_(chat_id: int) -> None:
 
 class Call:
     def __init__(self):
-        # === 2. Clients Setup with Cache Duration (From Alexa/AnonX for Stability) ===
-        # Cache duration 100 prevents stuttering (التقطيع)
         self.userbot1 = Client(
             "AnnieXAssis1", config.API_ID, config.API_HASH, session_string=config.STRING1
         ) if config.STRING1 else None
@@ -172,10 +182,12 @@ class Call:
     @capture_internal_err
     async def skip_stream(self, chat_id: int, link: str, video: Union[bool, str] = None, image: Union[bool, str] = None) -> None:
         assistant = await group_assistant(self, chat_id)
-        # Using GroupCallConfig for stability (From Alexa)
-        ksk = GroupCallConfig(auto_start=False)
         stream = dynamic_media_stream(path=link, video=bool(video))
-        await assistant.play(chat_id, stream, config=ksk)
+        # استخدام Config فقط إذا كانت المكتبة تدعمها
+        if GroupCallConfig:
+            await assistant.play(chat_id, stream, config=GroupCallConfig(auto_start=False))
+        else:
+            await assistant.play(chat_id, stream)
 
     @capture_internal_err
     async def vc_users(self, chat_id: int) -> list:
@@ -246,14 +258,11 @@ class Call:
         lang = await get_lang(chat_id)
         _ = get_string(lang)
 
-        # === 3. Anti-Crash Check (The Fix) ===
         if not link:
-            raise AssistantErr(_["call_11"]) # No Audio Source
+            raise AssistantErr(_["call_11"])
 
         stream = dynamic_media_stream(path=link, video=bool(video))
-        ksk = GroupCallConfig(auto_start=False)
 
-        # === 4. Ghost Call Prevention (From AnonX) ===
         try:
             await assistant.leave_call(chat_id)
             await asyncio.sleep(0.5)
@@ -261,7 +270,11 @@ class Call:
             pass
 
         try:
-            await assistant.play(chat_id, stream, config=ksk)
+            if GroupCallConfig:
+                await assistant.play(chat_id, stream, config=GroupCallConfig(auto_start=False))
+            else:
+                await assistant.play(chat_id, stream)
+                
         except (NoActiveGroupCall, ChatAdminRequired):
             raise AssistantErr(_["call_8"])
         except NoAudioSourceFound:
@@ -271,10 +284,12 @@ class Call:
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
         except Exception as e:
-            # Fallback Retry
             try:
                  await asyncio.sleep(1)
-                 await assistant.play(chat_id, stream, config=ksk)
+                 if GroupCallConfig:
+                    await assistant.play(chat_id, stream, config=GroupCallConfig(auto_start=False))
+                 else:
+                    await assistant.play(chat_id, stream)
             except:
                  raise AssistantErr(f"ᴜɴᴀʙʟᴇ ᴛᴏ ᴊᴏɪɴ ᴛʜᴇ ɢʀᴏᴜᴘ ᴄᴀʟʟ.\nRᴇᴀsᴏɴ: {e}")
 
@@ -380,12 +395,10 @@ class Call:
                 except:
                     return await mystic.edit_text(_["call_6"], disable_web_page_preview=True)
                 
-                # === 5. The Critical FIX for NoneType Crash ===
+                # FIX: Recursive Skip
                 if not file_path:
                     await mystic.edit_text("<b>❌ فشل التحميل، جاري تخطي المقطع...</b>")
-                    # Recursive call to skip logic logic effectively
                     return await self.play(client, chat_id)
-                # ===============================================
 
                 stream = dynamic_media_stream(path=file_path, video=video)
                 try:
@@ -524,7 +537,6 @@ class Call:
             pings.append(self.five.ping)
         return str(round(sum(pings) / len(pings), 3)) if pings else "0.0"
 
-    # === 6. Unified Decorators (From AnonX for Handling Call End) ===
     @capture_internal_err
     async def decorators(self) -> None:
         assistants = list(filter(None, [self.one, self.two, self.three, self.four, self.five]))
