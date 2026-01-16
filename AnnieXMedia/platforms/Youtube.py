@@ -1,5 +1,6 @@
 # Authored By Certified Coders © 2025
 # Hyperion Engine Integrated + Failover System
+# Modified: integrated robust Hyperion API usage + improved failover and error handling
 
 import asyncio
 import contextlib
@@ -7,9 +8,10 @@ import json
 import os
 import re
 import time
+import pathlib
 from typing import Dict, List, Optional, Tuple, Union
 
-import requests
+import aiohttp
 import yt_dlp
 from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
@@ -21,19 +23,20 @@ from AnnieXMedia.utils.errors import capture_internal_err
 from AnnieXMedia.utils.formatters import time_to_seconds
 from AnnieXMedia.utils.tuning import YTDLP_TIMEOUT, YOUTUBE_META_MAX, YOUTUBE_META_TTL
 
-
 # === Caches ===
 _cache: Dict[str, Tuple[float, List[Dict]]] = {}
 _cache_lock = asyncio.Lock()
 _formats_cache: Dict[str, Tuple[float, List[Dict], str]] = {}
 _formats_lock = asyncio.Lock()
 
-
 # === Constants ===
 YOUTUBE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 # ⚡ رابط السيرفر الخاص بك (الأولوية الأولى)
-HYPERION_API_URL = "https://hyperionengine.fly.dev"
+HYPERION_API_URL = "https://hyperionengine.fly.dev".rstrip("/")
 
+# Helper paths
+DOWNLOADS_DIR = pathlib.Path("downloads")
+DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 # === Helpers ===
 def _cookiefile_path() -> Optional[str]:
@@ -352,24 +355,6 @@ class YouTubeAPI:
 
         return out, link
 
-    @capture_internal_err
-    async def slider(
-        self, link: str, query_type: int, videoid: Union[str, bool, None] = None
-    ) -> Tuple[str, Optional[str], str, str]:
-        data = await VideosSearch(self._prepare_link(link, videoid), limit=10).next()
-        results = data.get("result", [])
-        if not results or query_type >= len(results):
-            raise IndexError(
-                f"Query type index {query_type} out of range (found {len(results)} results)"
-            )
-        r = results[query_type]
-        return (
-            r.get("title", ""),
-            r.get("duration"),
-            r.get("thumbnails", [{}])[-1].get("url", "").split("?")[0],
-            r.get("id", ""),
-        )
-
     # 🔥🔥🔥 الدالة الذكية (Hybrid Download) 🔥🔥🔥
     # 1. Hyperion API (Priority)
     # 2. Local Failover (Backup)
@@ -382,7 +367,12 @@ class YouTubeAPI:
         video: Union[bool, str, None] = None,
         videoid: Union[str, bool, None] = None,
     ) -> Union[Tuple[str, Optional[bool]], Tuple[None, None]]:
-        
+        """
+        Returns:
+            (stream_url, False) => stream_url is an HTTP(S) URL that the bot can stream directly
+            (local_path, True)  => local file path (absolute) that the bot can use as fallback
+            (None, None)        => failed
+        """
         link = self._prepare_link(link, videoid)
         loop = asyncio.get_running_loop()
 
@@ -394,44 +384,72 @@ class YouTubeAPI:
             payload = {
                 "url": link,
                 "type": "video" if video else "audio",
-                "requester": "AnnieX_Bot"
+                "requester": "AnnieX_Bot",
             }
-            
-            # Timeout سريع (5 ثواني) للاتصال عشان لو السيرفر واقع ميعطلش البوت
-            response = requests.post(f"{HYPERION_API_URL}/api/v1/download", data=payload, timeout=5)
-            
-            if response.status_code == 200:
-                data = response.json()
-                job_id = data.get("job_id")
-                
-                if job_id:
-                    print(f"⏳ [Hyperion] Job Started: {job_id}")
-                    # انتظار النتيجة (Polling) بحد أقصى 45 ثانية
-                    # لو طول عن كدة يبقى Local أسرع
-                    for _ in range(30): 
-                        try:
-                            status_res = requests.get(f"{HYPERION_API_URL}/api/v1/status/{job_id}", timeout=3)
-                            status_data = status_res.json()
-                            state = status_data.get("status")
-                            
-                            if state == "completed":
-                                final_url = status_data.get("download_url")
-                                print(f"🚀 [Hyperion] Success! Using Stream URL.")
-                                # False تعني: ده رابط مباشر مش ملف محلي
-                                return final_url, False
-                                
-                            elif state == "failed":
-                                print("❌ [Hyperion] Job Failed. Switching to Local...")
-                                break # اخرج وروح للخطوة اللي بعدها
-                                
-                        except:
-                            pass
-                        await asyncio.sleep(1.5)
-                else:
-                    print("❌ [Hyperion] No Job ID.")
-            else:
-                print(f"⚠️ [Hyperion] Server responded: {response.status_code}")
-                
+
+            # Use aiohttp for non-blocking HTTP
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                try:
+                    async with session.post(f"{HYPERION_API_URL}/api/v1/download", data=payload) as resp:
+                        status_code = resp.status
+                        # Accept 200 or 202 (queued)
+                        if status_code not in (200, 201, 202):
+                            text = await resp.text()
+                            print(f"⚠️ [Hyperion] Server responded with status {status_code}: {text[:200]}")
+                        else:
+                            data = await resp.json(content_type=None)
+                            job_id = data.get("job_id")
+                            if job_id:
+                                print(f"⏳ [Hyperion] Job Started: {job_id}")
+                                # Polling loop up to ~45 seconds (30 * 1.5s)
+                                poll_attempts = 30
+                                for _ in range(poll_attempts):
+                                    try:
+                                        async with session.get(f"{HYPERION_API_URL}/api/v1/status/{job_id}", timeout=5) as sres:
+                                            if sres.status == 200:
+                                                status_data = await sres.json(content_type=None)
+                                                state = status_data.get("status")
+                                                if state == "completed":
+                                                    # Prefer download_url if provided
+                                                    final_url = status_data.get("download_url") or status_data.get("file_path")
+                                                    if final_url:
+                                                        # If file_path returned (just filename), build full URL
+                                                        if final_url.startswith("/"):
+                                                            stream_url = HYPERION_API_URL + final_url
+                                                        elif final_url.startswith("http://") or final_url.startswith("https://"):
+                                                            stream_url = final_url
+                                                        else:
+                                                            # try /downloads/<filename> first (static), then /api/v1/file/
+                                                            fname = final_url
+                                                            # if it's a path like downloads/xxx.mp3, extract filename
+                                                            if "/" in fname:
+                                                                fname = fname.split("/")[-1]
+                                                            stream_url = f"{HYPERION_API_URL}/downloads/{fname}"
+                                                        print(f"🚀 [Hyperion] Success! Stream URL: {stream_url}")
+                                                        return stream_url, False
+                                                    else:
+                                                        print("⚠️ [Hyperion] Completed but no download_url/file_path returned.")
+                                                        break
+                                                elif state == "failed":
+                                                    print("❌ [Hyperion] Job Failed. Switching to Local...")
+                                                    break
+                                            else:
+                                                # non-200 from status endpoint: continue
+                                                pass
+                                    except Exception as e:
+                                        # transient error, continue polling
+                                        # print minimal for debug
+                                        # print(f"⚠️ [Hyperion] Poll error: {e}")
+                                        pass
+                                    await asyncio.sleep(1.5)
+                            else:
+                                print("❌ [Hyperion] No Job ID in response.")
+                except asyncio.TimeoutError:
+                    print("⚠️ [Hyperion] Request timed out (initial post).")
+                except Exception as e:
+                    print(f"⚠️ [Hyperion] Connection error: {e}")
+
         except Exception as e:
             print(f"⚠️ [Hyperion] Connection Skipped: {e}")
 
@@ -444,12 +462,12 @@ class YouTubeAPI:
             opts = {
                 # إعدادات معدلة لتجنب خطأ Empty File
                 "format": "bestaudio[ext=m4a]/bestaudio/best",
-                "outtmpl": "downloads/%(id)s.%(ext)s",
+                "outtmpl": str(DOWNLOADS_DIR / "%(id)s.%(ext)s"),
                 "geo_bypass": True,
                 "nocheckcertificate": True,
                 "quiet": True,
                 "no_warnings": True,
-                "ignoreerrors": True, # تجاهل الأخطاء الطفيفة
+                "ignoreerrors": True,  # تجاهل الأخطاء الطفيفة
                 "prefer_ffmpeg": True,
             }
             if cf := _cookiefile_path():
@@ -458,11 +476,19 @@ class YouTubeAPI:
             try:
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(link, download=False)
-                    xyz = os.path.join("downloads", f"{info['id']}.{info['ext']}")
-                    if os.path.exists(xyz):
-                        return xyz
+                    ext = info.get("ext") or "m4a"
+                    fid = info.get("id") or ""
+                    xyz = str(DOWNLOADS_DIR / f"{fid}.{ext}")
+                    if os.path.exists(xyz) and os.path.getsize(xyz) > 0:
+                        return os.path.abspath(xyz)
                     ydl.download([link])
-                    return xyz
+                    if os.path.exists(xyz) and os.path.getsize(xyz) > 0:
+                        return os.path.abspath(xyz)
+                    # attempt to find any file starting with id
+                    for f in DOWNLOADS_DIR.iterdir():
+                        if f.name.startswith(fid):
+                            return str(f.resolve())
+                    return None
             except Exception as e:
                 print(f"❌ [Local] Audio DL Error: {e}")
                 return None
@@ -470,7 +496,7 @@ class YouTubeAPI:
         def video_dl():
             opts = {
                 "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-                "outtmpl": "downloads/%(id)s.%(ext)s",
+                "outtmpl": str(DOWNLOADS_DIR / "%(id)s.%(ext)s"),
                 "geo_bypass": True,
                 "nocheckcertificate": True,
                 "quiet": True,
@@ -483,11 +509,18 @@ class YouTubeAPI:
             try:
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(link, download=False)
-                    xyz = os.path.join("downloads", f"{info['id']}.{info['ext']}")
-                    if os.path.exists(xyz):
-                        return xyz
+                    ext = info.get("ext") or "mp4"
+                    fid = info.get("id") or ""
+                    xyz = str(DOWNLOADS_DIR / f"{fid}.{ext}")
+                    if os.path.exists(xyz) and os.path.getsize(xyz) > 0:
+                        return os.path.abspath(xyz)
                     ydl.download([link])
-                    return xyz
+                    if os.path.exists(xyz) and os.path.getsize(xyz) > 0:
+                        return os.path.abspath(xyz)
+                    for f in DOWNLOADS_DIR.iterdir():
+                        if f.name.startswith(fid):
+                            return str(f.resolve())
+                    return None
             except Exception as e:
                 print(f"❌ [Local] Video DL Error: {e}")
                 return None
@@ -499,7 +532,7 @@ class YouTubeAPI:
                 if status == 1:
                     return stream_url, None
                 return None, None
-            
+
             downloaded_file = await loop.run_in_executor(None, video_dl)
             return (downloaded_file, True) if downloaded_file else (None, None)
 
