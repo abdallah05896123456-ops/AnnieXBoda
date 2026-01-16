@@ -1,5 +1,5 @@
 # Authored By Certified Coders © 2025
-# ULTIMATE MERGE: AnnieX + Alexa Speed + Fly.io Cookie Fix + Aria2c Turbo
+# ULTIMATE MERGE: AnnieX + Alexa Speed + System Quality Control + Aria2c Turbo
 
 import asyncio
 import os
@@ -18,6 +18,9 @@ from youtubesearchpython.__future__ import VideosSearch, Playlist
 from AnnieXMedia.utils.database import is_on_off
 from AnnieXMedia.utils.formatters import time_to_seconds
 from AnnieXMedia.utils.errors import capture_internal_err
+
+# === Config Import for Quality System ===
+import config  # 🔗 استيراد الكونفج لقراءة متغير الجودة لحظياً
 
 # === Constants & Cookie Handling ===
 COOKIE_FILE_NAME = "cookies.txt"
@@ -280,7 +283,7 @@ class YouTubeAPI:
         thumbnail = result[query_type]["thumbnails"][0]["url"].split("?")[0]
         return title, duration_min, thumbnail, vidid
 
-    # 🔥🔥🔥 الدالة المدمجة (قلب الدمج + Aria2c) 🔥🔥🔥
+    # 🔥🔥🔥 الدالة المدمجة (قلب الدمج + Aria2c + Quality Check) 🔥🔥🔥
     @capture_internal_err
     async def download(
         self,
@@ -298,10 +301,36 @@ class YouTubeAPI:
             link = self.base + link
         loop = asyncio.get_running_loop()
 
+        # 🔄 قراءة الجودة من الكونفج ديناميكياً
+        # نستخدم getattr لتجنب الأخطاء لو المتغير مش موجود
+        sys_quality = getattr(config, "SYSTEM_QUALITY", "high").lower()
+
+        # ⚙️ إعدادات الجودة بناءً على المتغير
+        if sys_quality == "low":
+            # جودة منخفضة جداً لتوفير الإنترنت
+            vid_fmt = "bestvideo[height<=360]+bestaudio[abr<=64]/best[height<=360]"
+            aud_fmt = "bestaudio[abr<=64]/bestaudio[ext=m4a]"
+            mp3_rate = "64"
+        elif sys_quality == "medium":
+            # جودة متوسطة (توازن)
+            vid_fmt = "bestvideo[height<=480]+bestaudio[abr<=96]/best[height<=480]"
+            aud_fmt = "bestaudio[abr<=96]/bestaudio[ext=m4a]"
+            mp3_rate = "128"
+        elif sys_quality == "best":
+            # جودة استوديو (بدون سقف)
+            vid_fmt = "bestvideo+bestaudio/best"
+            aud_fmt = "bestaudio/best"
+            mp3_rate = "320"
+        else:
+            # الوضع الافتراضي (High) - 1080p
+            vid_fmt = "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]"
+            aud_fmt = "bestaudio[ext=m4a]/bestaudio/best"
+            mp3_rate = "192"
+
         # دالة تحميل الصوت الافتراضية
         def audio_dl():
             ydl_optssx = {
-                "format": "bestaudio[ext=m4a]/bestaudio/best",
+                "format": aud_fmt,
                 "outtmpl": "downloads/%(id)s.%(ext)s",
                 "geo_bypass": True,
                 "nocheckcertificate": True,
@@ -325,7 +354,7 @@ class YouTubeAPI:
         # دالة تحميل الفيديو الافتراضية
         def video_dl():
             ydl_optssx = {
-                "format": "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]",
+                "format": vid_fmt,
                 "outtmpl": "downloads/%(id)s.%(ext)s",
                 "geo_bypass": True,
                 "nocheckcertificate": True,
@@ -364,7 +393,7 @@ class YouTubeAPI:
                     {
                         "key": "FFmpegExtractAudio",
                         "preferredcodec": "mp3",
-                        "preferredquality": "192",
+                        "preferredquality": mp3_rate, # استخدام معدل البت الديناميكي
                     }
                 ],
             }
