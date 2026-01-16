@@ -5,9 +5,7 @@ from pyrogram.types import InlineKeyboardButton
 # =============================================================================
 # ⚙️ MAIN SETTINGS MENU
 # =============================================================================
-def setting_markup(_, quality: str = "High"): 
-    # quality: بياخد القيمة الحالية عشان يعرضها في الزرار من بره
-    
+def setting_markup(_, quality: str = "High"):
     buttons = [
         [
             InlineKeyboardButton(text=_["ST_B_1"], callback_data="AUTH_SETTINGS"),
@@ -17,9 +15,9 @@ def setting_markup(_, quality: str = "High"):
             InlineKeyboardButton(text=_["ST_B_2"], callback_data="PLAYBACK_SETTINGS"),
         ],
         [
-            # هنا الزرار هيعرض الجودة الحالية (LOW, MEDIUM, HIGH)
+            # أضفنا علامة القفل 🔐 للدلالة على أنها للأونر فقط
             InlineKeyboardButton(
-                text=f"🎚 جودة التشغيل : {quality.upper()}",
+                text=f"♥️ جودة الصوت : {quality.upper()}",
                 callback_data="QUALITY_SETTINGS",
             ),
         ],
@@ -34,21 +32,30 @@ def setting_markup(_, quality: str = "High"):
 
 
 # =============================================================================
-# 🎚 QUALITY SETTINGS (بالعلامات ✅)
+# 🎚 QUALITY SETTINGS (OWNER ONLY)
 # =============================================================================
 def quality_settings_markup(_, current_quality: str):
-    # بنحدد مكان العلامة حسب الجودة المتسجلة
-    low_btn = f"{'✅ ' if current_quality.lower() == 'low' else ''}🎧 Low (Data Saver)"
-    med_btn = f"{'✅ ' if current_quality.lower() == 'medium' else ''}🎼 Medium (Standard)"
-    high_btn = f"{'✅ ' if current_quality.lower() == 'high' else ''}🎵 High (Best)"
+    # تطبيع النص لحروف صغيرة للمقارنة
+    q = current_quality.lower().strip() if current_quality else "high"
+
+    # تحديد الزر النشط
+    s_low = "✅ " if q == "low" else ""
+    s_med = "✅ " if q == "medium" else ""
+    s_high = "✅ " if q == "high" else ""
+    s_best = "✅ " if q == "best" else ""
 
     buttons = [
         [
-            InlineKeyboardButton(text=low_btn, callback_data="SET_QUALITY_low"),
-            InlineKeyboardButton(text=med_btn, callback_data="SET_QUALITY_medium"),
+            # جودة منخفضة (توفير داتا وسرعة)
+            InlineKeyboardButton(text=f"{s_low}Low (Saver)", callback_data="SET_QUALITY_low"),
+            # جودة متوسطة (الافتراضي للتيليجرام)
+            InlineKeyboardButton(text=f"{s_med}Medium (Std)", callback_data="SET_QUALITY_medium"),
         ],
         [
-            InlineKeyboardButton(text=high_btn, callback_data="SET_QUALITY_high"),
+            # جودة عالية (HD / 192kbps)
+            InlineKeyboardButton(text=f"{s_high}High (HD)", callback_data="SET_QUALITY_high"),
+            # جودة قصوى (4K / 320kbps)
+            InlineKeyboardButton(text=f"{s_best}Best (Studio)", callback_data="SET_QUALITY_best"),
         ],
         [
             InlineKeyboardButton(
