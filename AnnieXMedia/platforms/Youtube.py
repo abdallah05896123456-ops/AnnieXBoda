@@ -1,5 +1,5 @@
 # Authored By Certified Coders © 2025
-# ULTIMATE MERGE: AnnieX Structure + Alexa Speed/Features + Fly.io Cookie Fix
+# ULTIMATE MERGE: AnnieX + Alexa Speed + Fly.io Cookie Fix + Aria2c Turbo
 
 import asyncio
 import os
@@ -23,20 +23,17 @@ from AnnieXMedia.utils.errors import capture_internal_err
 COOKIE_FILE_NAME = "cookies.txt"
 
 def _download_cookies_from_secret():
-    """تحميل الكوكيز من السكرت عند التشغيل لضمان العمل على فلاي"""
+    """تحميل الكوكيز من السكرت عند التشغيل"""
     cookie_url = os.getenv("COOKIE_URL")
     if not cookie_url:
         return
 
-    # لو الملف موجود وفيه داتا، خلاص
     if os.path.exists(COOKIE_FILE_NAME) and os.path.getsize(COOKIE_FILE_NAME) > 0:
         return
 
     try:
-        # تحميل الملف
         response = requests.get(cookie_url, timeout=10)
         if response.status_code == 200:
-            # تحقق بسيط إنه مش HTML
             if not response.text.startswith("# Netscape") and not response.text.startswith("# HTTP"):
                 print("WARNING: Cookie URL returned HTML! Check your link.")
             
@@ -46,16 +43,14 @@ def _download_cookies_from_secret():
     except Exception as e:
         print(f"Error downloading cookies: {e}")
 
-# استدعاء التحميل فوراً عند تشغيل البوت
 _download_cookies_from_secret()
 
 def cookiefile():
-    """إرجاع مسار ملف الكوكيز"""
     if os.path.exists(COOKIE_FILE_NAME) and os.path.getsize(COOKIE_FILE_NAME) > 0:
         return COOKIE_FILE_NAME
     return None
 
-# === Alexa Helper (Shell Command for Speed) ===
+# === Alexa Helper ===
 async def shell_cmd(cmd):
     proc = await asyncio.create_subprocess_shell(
         cmd,
@@ -159,7 +154,6 @@ class YouTubeAPI:
             thumbnail = result["thumbnails"][0]["url"].split("?")[0]
         return thumbnail
 
-    # === Alexa Optimized Video Link Fetcher ===
     @capture_internal_err
     async def video(self, link: str, videoid: Union[bool, str] = None):
         if videoid:
@@ -167,7 +161,6 @@ class YouTubeAPI:
         if "&" in link:
             link = link.split("&")[0]
         
-        # استخدام دالة الكوكيز
         cookies = cookiefile()
         cmd_args = ["yt-dlp", "-g", "-f", "best[height<=?720][width<=?1280]", f"{link}"]
         
@@ -190,7 +183,6 @@ class YouTubeAPI:
         if "&" in link:
             link = link.split("&")[0]
         
-        # استخدام Shell Command للسرعة كما في Alexa
         cmd = (
             f"yt-dlp -i --compat-options no-youtube-unavailable-videos "
             f"--get-id --flat-playlist --playlist-end {limit} --skip-download '{link}' "
@@ -288,7 +280,7 @@ class YouTubeAPI:
         thumbnail = result[query_type]["thumbnails"][0]["url"].split("?")[0]
         return title, duration_min, thumbnail, vidid
 
-    # 🔥🔥🔥 الدالة المدمجة (قلب الدمج) 🔥🔥🔥
+    # 🔥🔥🔥 الدالة المدمجة (قلب الدمج + Aria2c) 🔥🔥🔥
     @capture_internal_err
     async def download(
         self,
@@ -296,10 +288,10 @@ class YouTubeAPI:
         mystic,
         video: Union[bool, str] = None,
         videoid: Union[bool, str] = None,
-        songaudio: Union[bool, str] = None, # ميزة اليكسا
-        songvideo: Union[bool, str] = None, # ميزة اليكسا
-        format_id: Union[bool, str] = None, # ميزة اليكسا
-        title: Union[bool, str] = None,     # ميزة اليكسا
+        songaudio: Union[bool, str] = None, 
+        songvideo: Union[bool, str] = None, 
+        format_id: Union[bool, str] = None, 
+        title: Union[bool, str] = None,     
     ) -> Union[Tuple[str, Optional[bool]], Tuple[None, None], str]:
         
         if videoid:
@@ -315,6 +307,9 @@ class YouTubeAPI:
                 "nocheckcertificate": True,
                 "quiet": True,
                 "no_warnings": True,
+                # تفعيل Aria2c
+                "external_downloader": "aria2c",
+                "external_downloader_args": ["-x", "16", "-s", "16", "-k", "1M"],
             }
             if cookiefile():
                 ydl_optssx["cookiefile"] = cookiefile()
@@ -336,6 +331,9 @@ class YouTubeAPI:
                 "nocheckcertificate": True,
                 "quiet": True,
                 "no_warnings": True,
+                # تفعيل Aria2c
+                "external_downloader": "aria2c",
+                "external_downloader_args": ["-x", "16", "-s", "16", "-k", "1M"],
             }
             if cookiefile():
                 ydl_optssx["cookiefile"] = cookiefile()
@@ -348,7 +346,7 @@ class YouTubeAPI:
                 x.download([link])
                 return xyz
 
-        # --- دوال اليكسا الخاصة لتحميل أغاني وفيديوهات بصيغ محددة ---
+        # --- دوال اليكسا الخاصة ---
         def song_audio_dl():
             fpath = f"downloads/{title}.%(ext)s"
             ydl_optssx = {
@@ -359,6 +357,9 @@ class YouTubeAPI:
                 "quiet": True,
                 "no_warnings": True,
                 "prefer_ffmpeg": True,
+                # تفعيل Aria2c
+                "external_downloader": "aria2c",
+                "external_downloader_args": ["-x", "16", "-s", "16", "-k", "1M"],
                 "postprocessors": [
                     {
                         "key": "FFmpegExtractAudio",
@@ -384,6 +385,9 @@ class YouTubeAPI:
                 "quiet": True,
                 "no_warnings": True,
                 "prefer_ffmpeg": True,
+                # تفعيل Aria2c
+                "external_downloader": "aria2c",
+                "external_downloader_args": ["-x", "16", "-s", "16", "-k", "1M"],
                 "merge_output_format": "mp4",
             }
             if cookiefile():
@@ -393,7 +397,6 @@ class YouTubeAPI:
             x.download([link])
 
         # === Logic Selection ===
-        # 1. لو الطلب جاي من ميزة تحميل الأغاني الخاصة بأليكسا
         if songvideo:
             await loop.run_in_executor(None, song_video_dl)
             fpath = f"downloads/{title}.mp4"
@@ -403,13 +406,11 @@ class YouTubeAPI:
             fpath = f"downloads/{title}.mp3"
             return fpath
         
-        # 2. لو الطلب تشغيل فيديو عادي (AnnieX Standard)
         elif video:
             if await is_on_off(1): # لو المود Direct
                 direct = True
                 downloaded_file = await loop.run_in_executor(None, video_dl)
             else:
-                # استخدام طريقة الـ Streaming السريعة الخاصة بأليكسا
                 cookies = cookiefile()
                 cmd_args = ["yt-dlp", "-g", "-f", "best[height<=?720][width<=?1280]", f"{link}"]
                 if cookies:
@@ -428,7 +429,6 @@ class YouTubeAPI:
                 else:
                     return None, None
         
-        # 3. لو الطلب تشغيل صوت عادي (AnnieX Standard)
         else:
             direct = True
             downloaded_file = await loop.run_in_executor(None, audio_dl)
