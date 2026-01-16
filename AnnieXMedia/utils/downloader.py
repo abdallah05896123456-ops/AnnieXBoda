@@ -1,5 +1,5 @@
 # Authored By Certified Coders © 2025
-# Optimized Downloader: Aria2c (16x Turbo) + Anti-403 Config + Bug Fixes
+# Optimized Downloader: Aria2c (16x Turbo) + Anti-403 Config
 
 import asyncio
 import contextlib
@@ -14,7 +14,7 @@ from aiohttp import TCPConnector
 from yt_dlp import YoutubeDL
 
 from AnnieXMedia.core.dir import CACHE_DIR, DOWNLOAD_DIR
-# ربطنا الكود بملف الكوكيز الجديد اللي عملناه
+# ✅ التعديل المهم هنا: الاستدعاء من utils.cookie_handler
 from AnnieXMedia.utils.cookie_handler import COOKIE_PATH
 from AnnieXMedia.utils.tuning import CHUNK_SIZE, SEM
 from config import API_KEY, API_URL, VIDEO_API_URL
@@ -49,7 +49,7 @@ def extract_video_id(link: str) -> str:
     return ""
 
 
-# الدالة دي بتجيب مسار الكوكيز وتتأكد إنه موجود
+# الدالة دي بتجيب مسار الكوكيز من الملف اللي في utils
 def get_cookie_file() -> Optional[str]:
     try:
         if COOKIE_PATH and os.path.exists(COOKIE_PATH) and os.path.getsize(COOKIE_PATH) > 0:
@@ -59,7 +59,7 @@ def get_cookie_file() -> Optional[str]:
     return None
 
 
-# دي الدالة اللي كانت ناقصة وصلحناها عشان تمنع NameError
+# دي الدالة اللي كانت ناقصة وصلحناها عشان تمنع أي Error
 def find_cached_file(video_id: str) -> Optional[str]:
     if not video_id:
         return None
@@ -94,7 +94,7 @@ def get_ytdlp_base_opts() -> Dict[str, object]:
         # --- إعدادات Aria2c الصاروخية ---
         "external_downloader": "aria2c",
         "external_downloader_args": [
-            "-x", "16",       # 16 خط اتصال (سرعة مضاعفة)
+            "-x", "16",       # 16 خط اتصال
             "-s", "16",       
             "-j", "16",       
             "-k", "1M",       
