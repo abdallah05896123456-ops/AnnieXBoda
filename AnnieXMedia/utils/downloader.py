@@ -1,6 +1,4 @@
 # Authored By Certified Coders © 2025
-# Optimized Downloader: Aria2c (16x Turbo) + Anti-403 Config
-
 import asyncio
 import contextlib
 import glob
@@ -14,8 +12,7 @@ from aiohttp import TCPConnector
 from yt_dlp import YoutubeDL
 
 from AnnieXMedia.core.dir import CACHE_DIR, DOWNLOAD_DIR
-# ✅ التعديل المهم هنا: الاستدعاء من utils.cookie_handler
-from AnnieXMedia.utils.cookie_handler import COOKIE_PATH
+from AnnieXMedia.utils.cookie_handler import COOKIE_PATH as _COOKIES_FILE
 from AnnieXMedia.utils.tuning import CHUNK_SIZE, SEM
 from config import API_KEY, API_URL, VIDEO_API_URL
 from AnnieXMedia.logging import LOGGER
@@ -49,17 +46,15 @@ def extract_video_id(link: str) -> str:
     return ""
 
 
-# الدالة دي بتجيب مسار الكوكيز من الملف اللي في utils
 def get_cookie_file() -> Optional[str]:
     try:
-        if COOKIE_PATH and os.path.exists(COOKIE_PATH) and os.path.getsize(COOKIE_PATH) > 0:
-            return str(COOKIE_PATH)
+        if _COOKIES_FILE and os.path.exists(_COOKIES_FILE) and os.path.getsize(_COOKIES_FILE) > 0:
+            return _COOKIES_FILE
     except Exception:
         pass
     return None
 
 
-# دي الدالة اللي كانت ناقصة وصلحناها عشان تمنع أي Error
 def find_cached_file(video_id: str) -> Optional[str]:
     if not video_id:
         return None
@@ -71,9 +66,6 @@ def find_cached_file(video_id: str) -> Optional[str]:
 
 
 def get_ytdlp_base_opts() -> Dict[str, object]:
-    """
-    إعدادات yt-dlp مع تفعيل Aria2c للسرعة القصوى
-    """
     opts = {
         "outtmpl": f"{DOWNLOAD_DIR}/%(id)s.%(ext)s",
         "quiet": True,
@@ -82,33 +74,15 @@ def get_ytdlp_base_opts() -> Dict[str, object]:
         "overwrites": False,
         "continuedl": True,
         "noprogress": True,
-        "http_chunk_size": 10485760,
-        "socket_timeout": 30,
-        "retries": 3,
+        "concurrent_fragment_downloads": 16,
+        "http_chunk_size": 1 << 20,
+        "socket_timeout": 15,
+        "retries": 1,
+        "fragment_retries": 1,
         "cachedir": str(CACHE_DIR),
         "ignoreerrors": True,
-        "merge_output_format": "mp4",
-        "geo_bypass": True,
-        "nocheckcertificate": True,
-
-        # --- إعدادات Aria2c الصاروخية ---
-        "external_downloader": "aria2c",
-        "external_downloader_args": [
-            "-x", "16",       # 16 خط اتصال
-            "-s", "16",       
-            "-j", "16",       
-            "-k", "1M",       
-            "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        ],
-        # --------------------------------
-
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android", "web"]
-            }
-        },
+        "merge_output_format": "mp4"
     }
-    # تفعيل الكوكيز لو موجودة
     if cookiefile := get_cookie_file():
         opts["cookiefile"] = cookiefile
     return opts
@@ -231,17 +205,11 @@ def download_with_ytdlp_sync(link: str, fmt: str) -> Optional[str]:
         opts = get_ytdlp_base_opts()
         opts["format"] = fmt
         with YoutubeDL(opts) as ydl:
-            try:
-                info = ydl.extract_info(link, download=False)
-                if path := get_final_path_from_info(info):
-                    return path
-                ydl.download([link])
-                return get_final_path_from_info(info)
-            except Exception:
-                # محاولة أخيرة لو التحميل فشل
-                ydl.download([link])
-                vid = extract_video_id(link)
-                return find_cached_file(vid)
+            info = ydl.extract_info(link, download=False)
+            if path := get_final_path_from_info(info):
+                return path
+            ydl.download([link])
+            return get_final_path_from_info(info)
     except Exception:
         return None
 
@@ -300,8 +268,6 @@ async def race_ytdlp_and_api(yt_task, api_task, title: str):
 async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str]:
     loop = asyncio.get_running_loop()
     vid = extract_video_id(link)
-    
-    # التأكد من الكاش الأول
     if cached := find_cached_file(vid):
         if title:
             LOGGER.info(f"Track '{title}' - Served from cache")
@@ -309,6 +275,7 @@ async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str
 
     if type == "audio":
         key = f"audio:{link}"
+
         async def run():
             ytdlp_task = asyncio.create_task(
                 run_with_semaphore(
@@ -322,10 +289,12 @@ async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str
             if result and title:
                 log_download_source(title, "yt-dlp")
             return result
+
         return await deduplicate_download(key, run)
 
     elif type == "video":
         key = f"video:{link}"
+
         async def run():
             ytdlp_task = asyncio.create_task(
                 run_with_semaphore(
@@ -339,6 +308,7 @@ async def yt_dlp_download(link: str, type: str, title: str = "") -> Optional[str
             if result and title:
                 log_download_source(title, "yt-dlp")
             return result
+
         return await deduplicate_download(key, run)
 
     return None
