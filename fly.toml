@@ -4,20 +4,19 @@ primary_region = "iad"
 [build]
   dockerfile = "Dockerfile"
 
-# تعريف متغير البورت ليتوافق مع كود بايثون
-[env]
-  PORT = "8080"
+# [env]  <-- علقنا ده مش محتاجينه
+#   PORT = "8080"
 
-# 🌐 إعدادات الشبكة (مهمة جداً لفتح الداشبورد)
-[http_service]
-  internal_port = 8080
-  force_https = true
-  auto_stop_machines = false   # ⛔️ منع السيرفر من النوم عشان الأغاني متفصلش
-  auto_start_machines = true
-  min_machines_running = 1
-  processes = ["app"]
+# ⛔️ علقنا (وقفنا) كل ده عشان السيرفر ميبصش على البورت
+# [http_service]
+#   internal_port = 8080
+#   force_https = true
+#   auto_stop_machines = false
+#   auto_start_machines = true
+#   min_machines_running = 1
+#   processes = ["app"]
 
-# أمر التشغيل
+# أمر التشغيل (مهم جداً نسيبه)
 [processes]
   app = "python3 -m AnnieXMedia"
 
