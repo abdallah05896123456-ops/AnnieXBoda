@@ -1,64 +1,53 @@
-# ==========================================
-# [Priority 1] The Old Stable List (بناءً على طلبك)
-# ==========================================
 aiofiles
 aiohttp
+argon2
 apscheduler
-asyncio
 bing_image_downloader
 bs4
+cachetools
 deepai
 edge-tts
 ffmpeg-python
+fastapi
 future
 gitpython
 google-api-python-client
 gpytranslate
 gtts
+flask
+hachoir
 heroku3
 httpx[http2]>=0.28.1
-kurigram>=2.2.17
 lexica-api
+lyricsgenius
 motor
 nekosbest
+ntgcalls>=2.0.6
 numpy
 opencv-python
 pillow>=12.0.0
 psutil
-ntgcalls>=2.0.6
 pycryptodome
 pydub
 pyfiglet
 pyshorteners
+pytgcrypto
 python-dotenv
+python-multipart
 python-whois
 pyyaml
 qrcode
+rapidfuzz
 requests
-speedtest-cli
 SpeechRecognition
+speedtest-cli
 spotipy
 telegraph
-pytgcrypto
 unidecode
-wget
-yt-dlp[default]==2025.12.8
-git+https://github.com/CertifiedCoders/youtube-search-python
-
-# ==========================================
-# [Priority 2] Server Essentials
-# (مكتبات الموقع اللي مش موجودة في القديم بس ضرورية عشان السيرفر يشتغل)
-# ==========================================
-fastapi
 uvicorn
-ujson
-jinja2
-python-multipart
-cachetools
-flask
-hachoir
-lyricsgenius
-rapidfuzz
-pyotp
-argon2
-uvloop
+uvloop==0.21.0
+wget
+pymongo
+kurigram>=2.2.17
+git+https://github.com/yt-dlp/yt-dlp.git@master#egg=yt-dlp
+git+https://github.com/CertifiedCoders/youtube-search-python
