@@ -50,4 +50,4 @@ wget
 pymongo
 git+https://github.com/KurimuzonAkuma/kurigram.git
 git+https://github.com/CertifiedCoders/youtube-search-python.git
-git+https://github.com/chatgpt05896-lang/yt-dlp.git@master#egg=yt-dlp
+git+https://github.com/yt-dlp/yt-dlp
