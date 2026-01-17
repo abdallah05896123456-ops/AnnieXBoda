@@ -1,5 +1,4 @@
 import json
-import logging
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -84,7 +83,6 @@ from ..types import RawCallUpdate
 from .bridged_client import BridgedClient
 from .client_cache import ClientCache
 
-log = logging.getLogger(__name__)
 
 class PyrogramClient(BridgedClient):
     def __init__(
@@ -93,10 +91,6 @@ class PyrogramClient(BridgedClient):
         client: Client,
     ):
         super().__init__()
-        # ✅ رسالة التأكيد إن الملف اشتغل
-        print("ملف بايرو متصل ☔")
-        log.info("ملف بايرو متصل ☔ - Custom Pyrogram Client Loaded")
-        
         self._app: Client = client
         self._cache: ClientCache = ClientCache(
             cache_duration,
@@ -212,47 +206,42 @@ class PyrogramClient(BridgedClient):
                         if result is not None:
                             await self._propagate(p_update)
 
-            # === FIX: Ghost Call Prevention & Missing Chat ID Handling ===
-            if isinstance(update, UpdateGroupCall):
-                try:
-                    chat_id = None
-                    
-                    # 1. محاولة جلب الايدي من التحديث مباشرة
-                    c_id = getattr(update, "chat_id", None)
-                    if c_id is not None and c_id in chats:
-                        chat_id = self.chat_id(chats[c_id])
-                    
-                    # 2. لو مفيش ايدي في التحديث، ندور في الذاكرة (Cache) باستخدام ايدي المكالمة
-                    # دي اللي بتمنع الجوست كول لأنها بتفتكر الشات القديم
-                    if chat_id is None:
-                        chat_id = self._cache.get_chat_id(update.call.id)
+            if isinstance(
+                update,
+                UpdateGroupCall,
+            ):
+                chat_id: Optional[int] = None
+                if update.chat_id:
+                    chat_id = self.chat_id(
+                        chats[update.chat_id]
+                    )
+                elif self._cache.get_chat_id(update.call.id) is not None:
+                    chat_id = self._cache.get_chat_id(update.call.id)
 
-                    # لو قدرنا نوصل للشات ايدي، نكمل شغل
-                    if chat_id is not None:
-                        if isinstance(update.call, GroupCall):
-                            if update.call.schedule_date is None:
-                                self._cache.set_cache(
-                                    chat_id,
-                                    InputGroupCall(
-                                        access_hash=update.call.access_hash,
-                                        id=update.call.id,
-                                    ),
-                                )
-                        
-                        # لو المكالمة انتهت، نمسح الكاش عشان ميعملش جوست كول
-                        if isinstance(update.call, GroupCallDiscarded):
-                            self._cache.drop_cache(chat_id)
-                            await self._propagate(
-                                ChatUpdate(
-                                    chat_id,
-                                    ChatUpdate.Status.CLOSED_VOICE_CHAT,
+                if chat_id is not None:
+                    if isinstance(
+                        update.call,
+                        GroupCall,
+                    ):
+                        if update.call.schedule_date is None:
+                            self._cache.set_cache(
+                                chat_id,
+                                InputGroupCall(
+                                    access_hash=update.call.access_hash,
+                                    id=update.call.id,
                                 ),
                             )
-                except Exception as e:
-                    log.error(f"Error handling UpdateGroupCall: {e}")
-                    pass
-            # === END FIX ===
-
+                    if isinstance(
+                        update.call,
+                        GroupCallDiscarded,
+                    ):
+                        self._cache.drop_cache(chat_id)
+                        await self._propagate(
+                            ChatUpdate(
+                                chat_id,
+                                ChatUpdate.Status.CLOSED_VOICE_CHAT,
+                            ),
+                        )
             if isinstance(
                 update,
                 (
