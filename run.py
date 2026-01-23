@@ -1,22 +1,27 @@
 # Authored By Certified Coders © 2025
-# TitanOS Ultimate Engine: Fixed Loop Mismatch & Import Order
+# TitanOS Ultimate Engine: Loop Mismatch Fix 🛡️
 
-import sys
 import asyncio
 import logging
-import gc
+import sys
+import os
 
-# 1. تفعيل UVLoop قبل أي استيراد آخر (أهم خطوة لمنع الخطأ)
+# 1. تفعيل uvloop وإنشاء المحرك (أول خطوة إجبارية)
 try:
     import uvloop
     uvloop.install()
-    print("🚀 uvloop Installed Successfully (Fast Mode)")
 except ImportError:
-    print("⚠️ uvloop not found, falling back to asyncio")
+    print("⚠️ uvloop not installed, using default asyncio")
 
-# 2. الآن نستدعي البوت (بعد تفعيل المحرك)
-# هذا الترتيب يضمن أن البوت يتعرف على المحرك الصحيح
+# 2. إنشاء الـ Loop يدوياً وتعيينه كـ Global
+# الخطوة دي بتجبر أي كود يجي بعدها إنه يستخدم الـ Loop ده
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
+# 3. استيراد البوت (لاحظ: الاستيراد لازم يكون هنا بعد إنشاء الـ Loop)
+# لو حطيت السطر ده فوق، المشكلة هتتكرر
 from AnnieXMedia.__main__ import init
+from AnnieXMedia import LOGGER
 
 # إعدادات اللوج
 logging.basicConfig(
@@ -28,27 +33,25 @@ logging.basicConfig(
         logging.FileHandler("log.txt")
     ]
 )
-logger = logging.getLogger("TitanOS")
-
-def optimize_performance():
-    """ضبط أداء الذاكرة"""
-    try:
-        gc.set_threshold(700, 10, 10)
-        gc.enable()
-        logger.info("✅ Garbage Collector Tuned.")
-    except Exception as e:
-        logger.warning(f"⚠️ GC Tuning Failed: {e}")
 
 if __name__ == "__main__":
-    optimize_performance()
-    
-    logger.info("⚡ Starting AnnieXMedia Core...")
-    
+    LOGGER("TitanOS").info("✅ System Loop configured successfully.")
+    LOGGER("TitanOS").info("⚡ Starting AnnieXMedia Core...")
+
     try:
-        # استخدام asyncio.run هو الطريقة الصحيحة مع Python 3.12
-        # هذا ينشئ الـ Loop ويديره ويغلقه تلقائياً بدون تعارض
-        asyncio.run(init())
+        # تشغيل البوت باستخدام الـ Loop اللي عملناه فوق
+        loop.run_until_complete(init())
     except KeyboardInterrupt:
-        logger.info("🛑 Bot Process Stopped by User.")
+        LOGGER("TitanOS").info("🛑 Bot Process Stopped by User.")
     except Exception as e:
-        logger.error(f"❌ Fatal Error: {e}", exc_info=True)
+        LOGGER("TitanOS").error(f"❌ Fatal Error: {e}", exc_info=True)
+    finally:
+        # تنظيف الذاكرة عند الإغلاق
+        try:
+            tasks = asyncio.all_tasks(loop)
+            for task in tasks:
+                task.cancel()
+            loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+            loop.close()
+        except:
+            pass
