@@ -4,10 +4,11 @@ primary_region = "iad"
 [build]
   dockerfile = "Dockerfile"
 
-# [env]  <-- علقنا ده مش محتاجينه
-#   PORT = "8080"
+# أمر التشغيل المباشر للبوت
+[processes]
+  app = "python3 -m AnnieXMedia"
 
-# ⛔️ علقنا (وقفنا) كل ده عشان السيرفر ميبصش على البورت
+# ⛔️ تم إيقاف خدمة الويب بالكامل عشان البوت يشتغل Worker وميفصلش
 # [http_service]
 #   internal_port = 8080
 #   force_https = true
@@ -16,12 +17,8 @@ primary_region = "iad"
 #   min_machines_running = 1
 #   processes = ["app"]
 
-# أمر التشغيل (مهم جداً نسيبه)
-[processes]
-  app = "python3 -m AnnieXMedia"
-
-# مواصفات السيرفر
+# 🔥 مواصفات الخادم (TITANIUM SPECS) 🔥
 [[vm]]
-  cpu_kind = "shared"
-  cpus = 1
-  memory_mb = 1024
+  cpu_kind = "performance"  # لازم performance عشان يقبل 16 كور
+  cpus = 16                 # 16 Cores
+  memory_mb = 92160         # 90 GB RAM (90 * 1024)
