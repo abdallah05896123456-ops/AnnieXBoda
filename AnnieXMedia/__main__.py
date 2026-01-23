@@ -1,15 +1,13 @@
 # Authored By Certified Coders © 2025
 import sys
 import os
-
-# السطر ده بيجبر البوت يستخدم مجلد pytgcalls المحلي بدل اللي نازل من النت
-sys.path.insert(0, os.getcwd())
-
 import asyncio
 import importlib
-
 from pyrogram import idle
 from pytgcalls.exceptions import NoActiveGroupCall
+
+# إصلاح المسارات
+sys.path.insert(0, os.getcwd())
 
 import config
 from AnnieXMedia import LOGGER, app, userbot
@@ -29,16 +27,15 @@ async def init():
         and not config.STRING4
         and not config.STRING5
     ):
-        LOGGER(__name__).error("ᴀssɪsᴛᴀɴᴛ sᴇssɪᴏɴ ɴᴏᴛ ғɪʟʟᴇᴅ, ᴘʟᴇᴀsᴇ ғɪʟʟ ᴀ ᴘʏʀᴏɢʀᴀᴍ sᴇssɪᴏɴ...")
+        LOGGER(__name__).error("Please fill a Pyrogram Session...")
         exit()
 
-    # ✅ Try to fetch cookies at startup
+    # محاولة جلب الكوكيز
     try:
         await fetch_and_store_cookies()
-        LOGGER("AnnieXMedia").info("ʏᴏᴜᴛᴜʙᴇ ᴄᴏᴏᴋɪᴇs ʟᴏᴀᴅᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ ✅")
+        LOGGER("AnnieXMedia").info("Youtube Cookies Loaded ✅")
     except Exception as e:
-        LOGGER("AnnieXMedia").warning(f"⚠️ᴄᴏᴏᴋɪᴇ ᴇʀʀᴏʀ: {e}")
-
+        LOGGER("AnnieXMedia").warning(f"⚠️ Cookie Error: {e}")
 
     await sudo()
 
@@ -52,11 +49,13 @@ async def init():
     except:
         pass
 
+    # تشغيل البوت
     await app.start()
+    
     for all_module in ALL_MODULES:
         importlib.import_module("AnnieXMedia.plugins" + all_module)
 
-    LOGGER("AnnieXMedia.plugins").info("ᴀɴɴɪᴇ's ᴍᴏᴅᴜʟᴇs ʟᴏᴀᴅᴇᴅ...")
+    LOGGER("AnnieXMedia.plugins").info("Modules Loaded...")
 
     await userbot.start()
     await StreamController.start()
@@ -64,22 +63,20 @@ async def init():
     try:
         await StreamController.stream_call("http://docs.evostream.com/sample_content/assets/sintel1m720p.mp4")
     except NoActiveGroupCall:
-        LOGGER("AnnieXMedia").error(
-            "ᴘʟᴇᴀsᴇ ᴛᴜʀɴ ᴏɴ ᴛʜᴇ ᴠᴏɪᴄᴇ ᴄʜᴀᴛ ᴏғ ʏᴏᴜʀ ʟᴏɢ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ.\n\nᴀɴɴɪᴇ ʙᴏᴛ sᴛᴏᴘᴘᴇᴅ..."
-        )
+        LOGGER("AnnieXMedia").error("Please turn on Voice Chat...")
         exit()
     except:
         pass
 
     await StreamController.decorators()
-    LOGGER("AnnieXMedia").info(
-        "\x41\x6e\x6e\x69\x65\x20\x4d\x75\x73\x69\x63\x20\x52\x6f\x62\x6f\x74\x20\x53\x74\x61\x72\x74\x65\x64\x20\x53\x75\x63\x63\x65\x73\x73\x66\x75\x6c\x6c\x79\x2e\x2e\x2e"
-    )
+    LOGGER("AnnieXMedia").info("✅ Annie Music Bot Started Successfully.")
+    
     await idle()
+    
     await app.stop()
     await userbot.stop()
-    LOGGER("AnnieXMedia").info("sᴛᴏᴘᴘɪɴɢ ᴀɴɴɪᴇ ᴍᴜsɪᴄ ʙᴏᴛ ...")
+    LOGGER("AnnieXMedia").info("Stopping Annie Music Bot...")
 
-
-if __name__ == "__main__":
-    asyncio.get_event_loop().run_until_complete(init())
+# ⛔️ تم حذف كود التشغيل من هنا لأن run.py هو المسؤول الآن
+# if __name__ == "__main__":
+#     asyncio.get_event_loop().run_until_complete(init())
