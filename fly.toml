@@ -4,20 +4,6 @@ primary_region = "iad"
 [build]
   dockerfile = "Dockerfile"
 
-# أمر التشغيل المباشر للبوت
-[processes]
-  app = "python3 -m AnnieXMedia"
-
-# ⛔️ تم إيقاف خدمة الويب بالكامل عشان البوت يشتغل Worker وميفصلش
-# [http_service]
-#   internal_port = 8080
-#   force_https = true
-#   auto_stop_machines = false
-#   auto_start_machines = true
-#   min_machines_running = 1
-#   processes = ["app"]
-
-# 🔥 مواصفات الخادم (TITANIUM SPECS) 🔥
 [[vm]]
   cpu_kind = "performance"  # لازم performance عشان يقبل 16 كور
   cpus = 16                 # 16 Cores
