@@ -1,19 +1,21 @@
 # Authored By Certified Coders © 2025
-# TitanOS Ultimate Engine: uvloop + Memory Optimization + Anti-Lag
+# TitanOS Ultimate Engine: Fixed Loop Mismatch & Import Order
 
+import sys
 import asyncio
 import logging
 import gc
-import os
-import sys
 
-# محاولة استيراد uvloop
+# 1. تفعيل UVLoop قبل أي استيراد آخر (أهم خطوة لمنع الخطأ)
 try:
     import uvloop
+    uvloop.install()
+    print("🚀 uvloop Installed Successfully (Fast Mode)")
 except ImportError:
-    print("❌ Error: 'uvloop' is missing. Add it to requirements.txt")
-    sys.exit(1)
+    print("⚠️ uvloop not found, falling back to asyncio")
 
+# 2. الآن نستدعي البوت (بعد تفعيل المحرك)
+# هذا الترتيب يضمن أن البوت يتعرف على المحرك الصحيح
 from AnnieXMedia.__main__ import init
 
 # إعدادات اللوج
@@ -29,54 +31,24 @@ logging.basicConfig(
 logger = logging.getLogger("TitanOS")
 
 def optimize_performance():
-    """
-    دالة لضبط أداء بايثون لمنع التقطيع وتسريع المعالجة
-    """
-    # 1. ضبط Garbage Collector (منع التقطيع)
-    # بنقلل عدد مرات تنظيف الذاكرة عشان المعالج يركز في الستريم والتحميل
-    # القيم دي (700, 10, 10) متزنة جداً للبوتات الموسيقية
+    """ضبط أداء الذاكرة"""
     try:
         gc.set_threshold(700, 10, 10)
         gc.enable()
-        logger.info("✅ Garbage Collector Tuned for Streaming.")
+        logger.info("✅ Garbage Collector Tuned.")
     except Exception as e:
-        logger.warning(f"⚠️ Could not tune GC: {e}")
-
-def main():
-    # 1. تفعيل تحسينات الأداء
-    optimize_performance()
-
-    # 2. تفعيل uvloop ليكون المدير الحصري للعمليات
-    # uvloop.install() هي الطريقة الأحدث والأسرع من set_event_loop_policy
-    uvloop.install()
-    logger.info("🚀 uvloop Engine Activated (High Performance Mode).")
-
-    # 3. إنشاء Loop جديد
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    # 4. تشغيل البوت
-    try:
-        logger.info("⚡ Starting AnnieXMedia Core...")
-        
-        # تشغيل الدالة الرئيسية
-        loop.run_until_complete(init())
-        
-    except KeyboardInterrupt:
-        logger.info("🛑 Bot Process Stopped.")
-    except Exception as e:
-        logger.error(f"❌ Fatal Runtime Error: {e}", exc_info=True)
-    finally:
-        # تنظيف العمليات عند الإغلاق
-        try:
-            tasks = asyncio.all_tasks(loop)
-            for task in tasks:
-                task.cancel()
-            loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
-            loop.close()
-            logger.info("✅ Loop Closed Safely.")
-        except:
-            pass
+        logger.warning(f"⚠️ GC Tuning Failed: {e}")
 
 if __name__ == "__main__":
-    main()
+    optimize_performance()
+    
+    logger.info("⚡ Starting AnnieXMedia Core...")
+    
+    try:
+        # استخدام asyncio.run هو الطريقة الصحيحة مع Python 3.12
+        # هذا ينشئ الـ Loop ويديره ويغلقه تلقائياً بدون تعارض
+        asyncio.run(init())
+    except KeyboardInterrupt:
+        logger.info("🛑 Bot Process Stopped by User.")
+    except Exception as e:
+        logger.error(f"❌ Fatal Error: {e}", exc_info=True)
