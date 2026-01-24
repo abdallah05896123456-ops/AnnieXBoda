@@ -1,5 +1,5 @@
 # 1. استخدام نسخة Slim خفيفة بناءً على طلبك (من السورس الثاني)
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim
 
 # إعدادات البيئة لتحسين الأداء
 ENV PYTHONDONTWRITEBYTECODE=1
