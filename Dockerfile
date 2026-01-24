@@ -1,48 +1,62 @@
-FROM python:3.12
+# 1. استخدام نسخة Slim خفيفة بناءً على طلبك (من السورس الثاني)
+FROM python:3.12-slim-bookworm
 
+# إعدادات البيئة لتحسين الأداء
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PIP_NO_CACHE_DIR=1
+# إعدادات Deno (من السورس الثاني)
+ENV DENO_INSTALL="/root/.deno"
+ENV PATH="${DENO_INSTALL}/bin:${PATH}"
+
 WORKDIR /app
 
-# 1. تحديث النظام وتثبيت الأدوات الأساسية + Node.js
+# 2. تحديث النظام وتثبيت الأدوات المدمجة (الأساسية + Node.js + Deno)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         curl \
-        gnupg \
-        ca-certificates \
         git \
         ffmpeg \
         aria2 \
         unzip \
-        build-essential && \
+        build-essential \
+        # نحتاج المكتبات دي عشان بايثون يعرف يبني الملفات في نسخة slim
+        libffi-dev \
+        libxml2-dev \
+        libxslt-dev \
+        zlib1g-dev \
+        gcc && \
+    # تثبيت Node.js 20 (مهم عشان yt-dlp ومشاكل يوتيوب)
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs && \
+    # تثبيت Deno (من السورس الثاني اللي طلبته)
+    curl -fsSL https://deno.land/install.sh | sh && \
+    # تنظيف المخلفات عشان الصورة تفضل Slim
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    rm -rf /var/lib/apt/lists/*
 
-# 2. التأكد من وجود pip وتحديثه
-# (تم حذف سطر مسح site-packages لأنه هو سبب المشكلة)
-RUN python3 -m ensurepip --default-pip && \
-    python3 -m pip install --upgrade pip setuptools wheel
+# 3. تحديث pip
+RUN pip install --upgrade pip setuptools wheel
 
-# 3. نسخ مكتبة pytgcalls المحلية أولاً
+# 4. نسخ مكتبة pytgcalls المحلية (من السورس بتاعك)
 COPY pytgcalls /app/pytgcalls
 
-# 4. معالجة ملف requirements واستبعاد pytgcalls
+# 5. معالجة ملف المتطلبات واستبعاد pytgcalls (من السورس بتاعك)
 COPY requirements.txt /app/requirements.txt
 RUN if [ -f /app/requirements.txt ]; then \
       grep -v -i '^py-tgcalls' /app/requirements.txt > /app/filtered-requirements.txt || true; \
     fi
 
-# 5. تثبيت المكتبات
+# 6. تثبيت المكتبات
 RUN if [ -f /app/filtered-requirements.txt ]; then \
         pip install --no-cache-dir -r /app/filtered-requirements.txt; \
     fi && \
+    # تثبيت المكتبة المحلية
+    pip install --no-cache-dir ./pytgcalls && \
     pip install --no-cache-dir jinja2
 
-# 6. نسخ باقي ملفات المشروع
+# 7. نسخ باقي الملفات
 COPY . /app
 
-# 7. تشغيل البوت
+# 8. أمر التشغيل الخاص بيك (بدون تعديل)
 CMD ["python3", "run.py"]
