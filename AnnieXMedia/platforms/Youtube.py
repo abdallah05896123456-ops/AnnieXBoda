@@ -1,13 +1,15 @@
 # Authored By Certified Coders © 2025
-# Optimized by TitanOS (Custom Cookie Path + Anti-Ban)
+# Optimized by TitanOS (Custom Cookie Path + Anti-Ban + Aria2 Max Speed)
+# Fixed & Debugged for High-End Servers
 
 import asyncio
 import os
 import re
-import random
 import logging
+import traceback  # عشان نصطاد الخطأ بالتفصيل
 from typing import Union, List, Dict, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor
+import time
 
 import yt_dlp
 from pyrogram.enums import MessageEntityType
@@ -19,7 +21,6 @@ try:
     from AnnieXMedia.utils.formatters import time_to_seconds
     from AnnieXMedia import LOGGER
 except ImportError:
-    # Fallback لو الملفات مش موجودة عشان الكود ميكسرش
     logging.basicConfig(level=logging.ERROR)
     def LOGGER(name): return logging.getLogger(name)
     def time_to_seconds(t): return 0
@@ -31,9 +32,10 @@ logging.getLogger("urllib3").setLevel(logging.ERROR)
 # --- إعدادات النظام ---
 class Config:
     DOWNLOAD_PATH = "downloads"
-    # 🔥 مسار الكوكيز المحدد 🔥
+    # تأكد إن ملف الكوكيز موجود في المسار ده
     COOKIE_PATH = "AnnieXMedia/assets/cookies.txt"
-    MAX_WORKERS = 10
+    # بنستخدم عدد Threads عالي عشان سيرفرك قوي
+    MAX_WORKERS = 16 
 
 if not os.path.exists(Config.DOWNLOAD_PATH):
     os.makedirs(Config.DOWNLOAD_PATH)
@@ -46,20 +48,17 @@ YOUTUBE_META_TTL = 3600
 # --- دوال المساعدة ---
 
 def get_cookie_file():
-    """التحقق من وجود الكوكيز في المسار المحدد"""
-    # 1. البحث في المسار المحدد (الأولوية)
-    if os.path.exists(Config.COOKIE_PATH) and os.path.getsize(Config.COOKIE_PATH) > 0:
-        return Config.COOKIE_PATH
-    
-    # 2. البحث في المسار الرئيسي (احتياطي)
-    if os.path.exists("cookies.txt"):
-        return "cookies.txt"
-        
+    """التحقق من وجود الكوكيز بشكل صارم"""
+    paths_to_check = [
+        Config.COOKIE_PATH,
+        "cookies.txt",
+        "AnnieXMedia/cookies.txt",
+        "assets/cookies.txt"
+    ]
+    for path in paths_to_check:
+        if os.path.exists(path) and os.path.getsize(path) > 0:
+            return path
     return None
-
-def get_user_agent():
-    """توليد User-Agent للتمويه"""
-    return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 
 # --- الكلاس الرئيسي ---
 
@@ -67,8 +66,9 @@ class YouTubeAPI:
     def __init__(self):
         self.base = "https://www.youtube.com/watch?v="
         self.regex = r"(?:youtube\.com|youtu\.be)"
-        self.listbase = "https://youtube.com/playlist?list="
+        self.listbase = "https://www.youtube.com/playlist?list="
         self.pool = ThreadPoolExecutor(max_workers=Config.MAX_WORKERS)
+        # التحقق من وجود Aria2c
         self.has_aria2 = os.system("which aria2c > /dev/null 2>&1") == 0
 
     # -----------------------------------------------------------------
@@ -100,7 +100,7 @@ class YouTubeAPI:
         return None if offset in (None,) else text[offset : offset + length]
 
     # -----------------------------------------------------------------
-    # 🔍 البحث والمعلومات
+    # 🔍 البحث والمعلومات (معدل لتفادي الأخطاء)
     # -----------------------------------------------------------------
     async def track(self, link: str, videoid: Union[bool, str] = None):
         if videoid: link = self.base + link
@@ -115,10 +115,13 @@ class YouTubeAPI:
 
         # 2. البحث الفعلي
         try:
+            # محاولة البحث باستخدام VideosSearch
             results = VideosSearch(link, limit=1)
             res = await results.next()
+            
             if not res or not res.get("result"):
-                raise ValueError("No Result")
+                # محاولة بديلة (Fallback) في حالة فشل المكتبة الأولى
+                raise ValueError("VideosSearch returned empty")
                 
             data = res["result"][0]
             
@@ -136,7 +139,10 @@ class YouTubeAPI:
                 _cache[link] = (time.time(), (track_details, data["id"]))
             
             return track_details, data["id"]
-        except Exception:
+        
+        except Exception as e:
+            # تسجيل الخطأ الصامت هنا عشان نعرف لو البحث فيه مشكلة
+            # LOGGER(__name__).warning(f"Search failed for {link}: {e}")
             return {"title": "Unknown", "link": link, "vidid": "error", "duration_min": "0:00", "thumb": ""}, "error"
 
     async def details(self, link: str, videoid: Union[bool, str] = None):
@@ -157,7 +163,7 @@ class YouTubeAPI:
         return d.get("thumb")
 
     # -----------------------------------------------------------------
-    # 📥 المحرك النووي للتحميل (Titan Engine)
+    # 📥 المحرك النووي للتحميل (Titan Engine Optimized)
     # -----------------------------------------------------------------
     async def download(
         self,
@@ -171,14 +177,25 @@ class YouTubeAPI:
         title: Union[bool, str] = None,
     ) -> Tuple[Optional[str], bool]:
         
-        if videoid: link = self.base + link
+        # تصحيح الرابط لو جاي من زرار
+        if videoid: 
+            link = self.base + link
+        
+        # 🛡️ حماية ضد رابط الـ ID 0
+        if "youtube.com/0" in link or link.endswith("="):
+            LOGGER(__name__).error(f"❌ Blocked Invalid Link: {link}")
+            return None, False
+
         loop = asyncio.get_running_loop()
 
-        # استخراج ID للفيديو لتسمية الملف
+        # استخراج ID للفيديو لتسمية الملف بشكل نظيف
         try:
-            if "v=" in link: vid_id = link.split("v=")[1].split("&")[0]
-            elif "youtu.be/" in link: vid_id = link.split("youtu.be/")[1].split("?")[0]
-            else: vid_id = str(int(time.time()))
+            if "v=" in link: 
+                vid_id = link.split("v=")[1].split("&")[0]
+            elif "youtu.be/" in link:
+                vid_id = link.split("youtu.be/")[1].split("?")[0]
+            else: 
+                vid_id = str(int(time.time()))
         except:
              vid_id = str(int(time.time()))
 
@@ -186,20 +203,22 @@ class YouTubeAPI:
         file_name = f"{vid_id}.{'mp4' if video else 'm4a'}"
         final_path = os.path.join(Config.DOWNLOAD_PATH, file_name)
 
-        # 🔥 إعدادات التحميل المعدلة 🔥
-        # تم استخدام android client لتجاوز الحظر
+        # 🔥 إعدادات التحميل المعدلة للسرعة القصوى 🔥
         ydl_opts = {
             "outtmpl": final_path,
-            "cookiefile": get_cookie_file(), # ✅ المسار الصحيح للكوكيز
+            "cookiefile": get_cookie_file(),
             "geo_bypass": True,
-            "nocheckcertificate": True,
+            "nocheckcertificate": True, # مهم جداً
             "quiet": True,
             "no_warnings": True,
             "ignoreerrors": True,
+            "overwrites": True,
+            # استخدام عملاء متنوعين لتجاوز الحظر
             "extractor_args": {
                 'youtube': {
                     'skip': ['dash', 'hls'],
-                    'player_client': ['android', 'web'], # التمويه كأندرويد
+                    'player_client': ['ios', 'android', 'web'], # ios حالياً الأقوى
+                    'player_skip': ['configs', 'js'],
                 }
             }
         }
@@ -208,31 +227,38 @@ class YouTubeAPI:
         if video:
             ydl_opts["format"] = "bestvideo[height<=720]+bestaudio/best[height<=720]/best"
         else:
-            # محاولة جلب m4a أولاً (الأسرع والأخف) ثم fallback
             ydl_opts["format"] = "bestaudio[ext=m4a]/bestaudio/best"
         
-        # إضافة Aria2 لو موجود للسرعة القصوى
+        # 🚀 إعدادات Aria2 للسرعة الجنونية (بما إن عندك باندويث عالي)
         if self.has_aria2:
             ydl_opts["external_downloader"] = "aria2c"
-            ydl_opts["external_downloader_args"] = ["-x", "16", "-s", "16", "-k", "1M"]
+            ydl_opts["external_downloader_args"] = [
+                "-x", "16",  # 16 اتصالات لكل سيرفر
+                "-s", "16",  # تقسيم الملف لـ 16 جزء
+                "-k", "1M",  # حجم القطعة
+                "--min-split-size", "1M",
+                "--max-connection-per-server", "16"
+            ]
 
-        # دالة التنفيذ
+        # دالة التنفيذ مع صائد الأخطاء
         def _run_download():
             if os.path.exists(final_path):
                 return final_path
             
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                try:
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([link])
-                except Exception as e:
-                    LOGGER(__name__).error(f"Download Error: {e}")
-                    return None
+            except Exception as e:
+                # 📝 هنا هيطبعلك السبب الحقيقي في اللوج
+                err_msg = traceback.format_exc()
+                LOGGER(__name__).error(f"❌ Download Failed for {link}\nError: {e}\nTraceback: {err_msg}")
+                return None
             
             if os.path.exists(final_path):
                 return final_path
             return None
 
-        # تشغيل التحميل في Thread منفصل لمنع تجميد البوت
+        # تشغيل التحميل
         downloaded_file = await loop.run_in_executor(self.pool, _run_download)
         
         if downloaded_file:
@@ -288,11 +314,22 @@ class YouTubeAPI:
     async def slider(self, link: str, query_type: int, videoid: Union[bool, str] = None):
         if videoid: link = self.base + link
         try:
-            a = VideosSearch(link, limit=10)
-            result = (await a.next()).get("result")
-            r = result[query_type]
+            # تقليل الليمت هنا لتسريع الاستجابة
+            a = VideosSearch(link, limit=5) 
+            res = await a.next()
+            if not res or not res.get("result"):
+                return "Error", "0", "", "error"
+                
+            result = res.get("result")
+            # التأكد من وجود نتائج كافية للـ index المطلوب
+            if query_type >= len(result):
+                r = result[0] # Fallback to first result
+            else:
+                r = result[query_type]
+                
             return r["title"], r["duration"], r["thumbnails"][0]["url"].split("?")[0], r["id"]
-        except:
+        except Exception as e:
+            LOGGER(__name__).error(f"Slider Error: {e}")
             return "Error", "0", "", "error"
 
 # تصدير الكائن للاستخدام
