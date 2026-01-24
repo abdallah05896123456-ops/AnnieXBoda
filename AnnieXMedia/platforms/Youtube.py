@@ -1,6 +1,6 @@
 # Authored By Certified Coders © 2025
-# Fixed for platforms/Youtube.py location
-# Solved "Requested format is not available" error permanently.
+# Fixed for platforms/Youtube.py
+# SOLUTION: Added Automatic Fallback (Retry with different format if failed)
 
 import asyncio
 import os
@@ -16,7 +16,7 @@ from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
 from youtubesearchpython.aio import VideosSearch
 
-# --- محاولة استيراد الإعدادات (تجاهل الأخطاء لو المسارات مختلفة) ---
+# --- استيراد الإعدادات مع حماية من الأخطاء ---
 try:
     from AnnieXMedia.utils.formatters import time_to_seconds
     from AnnieXMedia import LOGGER
@@ -25,30 +25,24 @@ except ImportError:
     def LOGGER(name): return logging.getLogger(name)
     def time_to_seconds(t): return 0
 
-# إخفاء إزعاج المكتبات
+# تقليل إزعاج السجلات
 logging.getLogger("yt_dlp").setLevel(logging.ERROR)
 logging.getLogger("urllib3").setLevel(logging.ERROR)
 
-# --- إعدادات النظام ---
 class Config:
     DOWNLOAD_PATH = "downloads"
-    # مسارات الكوكيز المحتملة لضمان قراءتها
+    # مسارات الكوكيز المحتملة
     COOKIE_PATH = "AnnieXMedia/assets/cookies.txt"
-    # عدد الـ Threads (تم رفعه لـ 16 لاستغلال قوة السيرفر)
     MAX_WORKERS = 16 
 
 if not os.path.exists(Config.DOWNLOAD_PATH):
     os.makedirs(Config.DOWNLOAD_PATH)
 
-# --- الكاش (للذاكرة) ---
 _cache: Dict[str, Tuple[float, List[Dict]]] = {}
 _cache_lock = asyncio.Lock()
 YOUTUBE_META_TTL = 3600
 
-# --- دوال المساعدة ---
-
 def get_cookie_file():
-    """البحث عن الكوكيز في كل مكان محتمل"""
     possible_paths = [
         Config.COOKIE_PATH,
         "cookies.txt",
@@ -61,15 +55,12 @@ def get_cookie_file():
             return path
     return None
 
-# --- الكلاس الرئيسي ---
-
 class YouTubeAPI:
     def __init__(self):
         self.base = "https://www.youtube.com/watch?v="
         self.regex = r"(?:youtube\.com|youtu\.be)"
         self.listbase = "https://www.youtube.com/playlist?list="
         self.pool = ThreadPoolExecutor(max_workers=Config.MAX_WORKERS)
-        # التأكد من وجود Aria2
         self.has_aria2 = os.system("which aria2c > /dev/null 2>&1") == 0
 
     async def exists(self, link: str, videoid: Union[bool, str] = None):
@@ -146,7 +137,7 @@ class YouTubeAPI:
         return d.get("thumb")
 
     # -----------------------------------------------------------------
-    # 📥 منطقة التحميل (تم الإصلاح هنا)
+    # 📥 الدالة المعدلة (The Fix)
     # -----------------------------------------------------------------
     async def download(
         self,
@@ -163,13 +154,12 @@ class YouTubeAPI:
         if videoid: 
             link = self.base + link
         
-        # 1. منع الروابط المضروبة
+        # تنظيف الرابط
         if "youtube.com/0" in link or link.endswith("="):
             return None, False
 
         loop = asyncio.get_running_loop()
 
-        # 2. استخراج ID نظيف
         try:
             if "v=" in link: vid_id = link.split("v=")[1].split("&")[0]
             elif "youtu.be/" in link: vid_id = link.split("youtu.be/")[1].split("?")[0]
@@ -177,61 +167,69 @@ class YouTubeAPI:
         except:
              vid_id = str(int(time.time()))
 
-        # 3. إعداد الخيارات (Fixing Format Error)
-        # بدلاً من إجبار m4a، نطلب الأفضل ويوتيوب يبعت اللي عنده
-        fmt = "bestvideo+bestaudio/best" if video else "bestaudio/best"
-        
-        ydl_opts = {
-            # استخدام %(ext)s عشان نسمح بأي صيغة (webm/m4a/opus)
-            "outtmpl": f"{Config.DOWNLOAD_PATH}/{vid_id}.%(ext)s",
-            "cookiefile": get_cookie_file(),
-            "geo_bypass": True,
-            "nocheckcertificate": True,
-            "quiet": True,
-            "no_warnings": True,
-            "ignoreerrors": True,
-            "overwrites": True,
-            "format": fmt, # تم التعديل هنا
-            "extractor_args": {
-                'youtube': {
-                    'skip': ['dash', 'hls'],
-                    # iOS هو الأفضل حالياً لتفادي المشاكل
-                    'player_client': ['ios', 'android', 'web'], 
-                }
-            }
-        }
-
-        # تسريع التحميل بـ Aria2
-        if self.has_aria2:
-            ydl_opts["external_downloader"] = "aria2c"
-            ydl_opts["external_downloader_args"] = ["-x", "16", "-s", "16", "-k", "1M"]
-
-        def _run_download():
-            # البحث عن الملف لو كان موجود أصلاً بأي صيغة
-            possible_exts = ["m4a", "mp4", "webm", "opus", "mp3", "mkv"]
-            for ext in possible_exts:
+        def _run_download_attempt(fmt_option, use_aria=True):
+            """دالة داخلية للمحاولة بـ Format معين"""
+            
+            # مسح الملف القديم لو موجود عشان ميعملش تعارض
+            for ext in ['m4a', 'mp4', 'webm', 'opus', 'mp3']:
                 p = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
-                if os.path.exists(p):
-                    return p
+                if os.path.exists(p): return p
+
+            # إعدادات التنزيل
+            ydl_opts = {
+                "outtmpl": f"{Config.DOWNLOAD_PATH}/{vid_id}.%(ext)s",
+                "cookiefile": get_cookie_file(),
+                "geo_bypass": True,
+                "nocheckcertificate": True,
+                "quiet": True,
+                "ignoreerrors": True,
+                "format": fmt_option, # هنا بنغير الـ Format حسب المحاولة
+            }
+
+            # إضافة Aria2 لو متاح
+            if self.has_aria2 and use_aria:
+                ydl_opts["external_downloader"] = "aria2c"
+                ydl_opts["external_downloader_args"] = ["-x", "16", "-s", "16", "-k", "1M"]
 
             try:
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([link])
             except Exception as e:
-                LOGGER(__name__).error(f"DL Error: {e}")
+                # لو فشل، بنرجع None عشان نجرب المحاولة اللي بعدها
                 return None
             
-            # البحث عن الملف الجديد بعد التحميل (لأننا مش عارفين الصيغة مسبقاً)
-            for ext in possible_exts:
+            # التحقق من الملف
+            for ext in ['m4a', 'mp4', 'webm', 'opus', 'mp3', 'mkv']:
                 final_path = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
                 if os.path.exists(final_path):
                     return final_path
             return None
 
-        downloaded_file = await loop.run_in_executor(self.pool, _run_download)
+        # --- تنفيذ المحاولات ---
+        def _execute():
+            # المحاولة الأولى: أفضل جودة صوت (bestaudio/best)
+            # ده اللي كان بيعمل مشاكل، بس لازم نجربه الأول للجودة
+            file = _run_download_attempt("bestaudio/best", use_aria=True)
+            if file: return file
+            
+            # المحاولة الثانية: (Force Fallback)
+            # لو الأولى فشلت، جرب "worst" أو أي حاجة شغالة، وشيل Aria2 ممكن يكون هو السبب
+            LOGGER(__name__).warning(f"⚠️ Retrying download with Fallback for: {link}")
+            file = _run_download_attempt("bestaudio", use_aria=False)
+            if file: return file
+
+            # المحاولة الثالثة والأخيرة: هات أي حاجة (حتى لو فيديو)
+            LOGGER(__name__).warning(f"⚠️ Retrying download with FINAL option for: {link}")
+            file = _run_download_attempt("best", use_aria=False)
+            return file
+
+        downloaded_file = await loop.run_in_executor(self.pool, _execute)
         
         if downloaded_file:
             return downloaded_file, True
+        
+        # لو وصل هنا يبقى الملف فعلاً مش راضي يتحمل خالص
+        LOGGER(__name__).error(f"❌ ALL Download attempts failed for: {link}")
         return None, False
 
     async def playlist(self, link, limit, user_id, videoid: Union[bool, str] = None):
