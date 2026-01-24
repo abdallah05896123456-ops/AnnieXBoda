@@ -14,27 +14,31 @@ from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
 from youtubesearchpython.aio import VideosSearch
 
-# --- محاولة استيراد الإعدادات ---
+# --- محاولة استيراد الإعدادات من البوت ---
 try:
     from AnnieXMedia.utils.formatters import time_to_seconds
     from AnnieXMedia import LOGGER
 except ImportError:
+    # Fallback لو الملفات مش موجودة عشان الكود ميكسرش
     logging.basicConfig(level=logging.ERROR)
     def LOGGER(name): return logging.getLogger(name)
     def time_to_seconds(t): return 0
 
+# إخفاء إزعاج المكتبات
 logging.getLogger("yt_dlp").setLevel(logging.ERROR)
 logging.getLogger("urllib3").setLevel(logging.ERROR)
 
+# --- إعدادات النظام ---
 class Config:
     DOWNLOAD_PATH = "downloads"
-    # 🔥 مسار الكوكيز الثابت كما طلبته 🔥
+    # 🔥 مسار الكوكيز المحدد 🔥
     COOKIE_PATH = "AnnieXMedia/assets/cookies.txt"
     MAX_WORKERS = 10
 
 if not os.path.exists(Config.DOWNLOAD_PATH):
     os.makedirs(Config.DOWNLOAD_PATH)
 
+# --- الكاش (للذاكرة) ---
 _cache: Dict[str, Tuple[float, List[Dict]]] = {}
 _cache_lock = asyncio.Lock()
 YOUTUBE_META_TTL = 3600
@@ -43,17 +47,18 @@ YOUTUBE_META_TTL = 3600
 
 def get_cookie_file():
     """التحقق من وجود الكوكيز في المسار المحدد"""
+    # 1. البحث في المسار المحدد (الأولوية)
     if os.path.exists(Config.COOKIE_PATH) and os.path.getsize(Config.COOKIE_PATH) > 0:
         return Config.COOKIE_PATH
     
-    # Fallback: لو مش في المسار المحدد، دور في المسار الرئيسي
+    # 2. البحث في المسار الرئيسي (احتياطي)
     if os.path.exists("cookies.txt"):
         return "cookies.txt"
         
     return None
 
 def get_user_agent():
-    """تمويه المتصفح"""
+    """توليد User-Agent للتمويه"""
     return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 
 # --- الكلاس الرئيسي ---
@@ -66,6 +71,9 @@ class YouTubeAPI:
         self.pool = ThreadPoolExecutor(max_workers=Config.MAX_WORKERS)
         self.has_aria2 = os.system("which aria2c > /dev/null 2>&1") == 0
 
+    # -----------------------------------------------------------------
+    # 🔗 معالجة الروابط
+    # -----------------------------------------------------------------
     async def exists(self, link: str, videoid: Union[bool, str] = None):
         if videoid: link = self.base + link
         return bool(re.search(self.regex, link))
@@ -91,16 +99,21 @@ class YouTubeAPI:
                         return entity.url
         return None if offset in (None,) else text[offset : offset + length]
 
+    # -----------------------------------------------------------------
+    # 🔍 البحث والمعلومات
+    # -----------------------------------------------------------------
     async def track(self, link: str, videoid: Union[bool, str] = None):
         if videoid: link = self.base + link
         link = link.split("&")[0]
 
+        # 1. فحص الكاش
         async with _cache_lock:
             if link in _cache:
                 ts, val = _cache[link]
                 if time.time() - ts < YOUTUBE_META_TTL:
                     return val[0], val[1]
 
+        # 2. البحث الفعلي
         try:
             results = VideosSearch(link, limit=1)
             res = await results.next()
@@ -108,6 +121,7 @@ class YouTubeAPI:
                 raise ValueError("No Result")
                 
             data = res["result"][0]
+            
             track_details = {
                 "title": data["title"],
                 "link": data["link"],
@@ -116,6 +130,8 @@ class YouTubeAPI:
                 "thumb": data["thumbnails"][0]["url"].split("?")[0],
                 "cookiefile": get_cookie_file(),
             }
+            
+            # 3. حفظ في الكاش
             async with _cache_lock:
                 _cache[link] = (time.time(), (track_details, data["id"]))
             
@@ -140,7 +156,9 @@ class YouTubeAPI:
         d, _ = await self.track(link, videoid)
         return d.get("thumb")
 
-    # --- دالة التحميل المعدلة ---
+    # -----------------------------------------------------------------
+    # 📥 المحرك النووي للتحميل (Titan Engine)
+    # -----------------------------------------------------------------
     async def download(
         self,
         link: str,
@@ -156,6 +174,7 @@ class YouTubeAPI:
         if videoid: link = self.base + link
         loop = asyncio.get_running_loop()
 
+        # استخراج ID للفيديو لتسمية الملف
         try:
             if "v=" in link: vid_id = link.split("v=")[1].split("&")[0]
             elif "youtu.be/" in link: vid_id = link.split("youtu.be/")[1].split("?")[0]
@@ -163,14 +182,15 @@ class YouTubeAPI:
         except:
              vid_id = str(int(time.time()))
 
+        # تحديد المسار
         file_name = f"{vid_id}.{'mp4' if video else 'm4a'}"
         final_path = os.path.join(Config.DOWNLOAD_PATH, file_name)
 
-        # إعدادات متقدمة للتعامل مع يوتيوب
-        # استخدام android client بيقلل مشاكل الحظر بشكل كبير
+        # 🔥 إعدادات التحميل المعدلة 🔥
+        # تم استخدام android client لتجاوز الحظر
         ydl_opts = {
             "outtmpl": final_path,
-            "cookiefile": get_cookie_file(), # ✅ هنا بيستخدم المسار اللي حددته فوق
+            "cookiefile": get_cookie_file(), # ✅ المسار الصحيح للكوكيز
             "geo_bypass": True,
             "nocheckcertificate": True,
             "quiet": True,
@@ -179,22 +199,24 @@ class YouTubeAPI:
             "extractor_args": {
                 'youtube': {
                     'skip': ['dash', 'hls'],
-                    'player_client': ['android', 'web'],
+                    'player_client': ['android', 'web'], # التمويه كأندرويد
                 }
             }
         }
 
-        # استراتيجية الصيغ (Format Strategy)
+        # تحديد الجودة
         if video:
             ydl_opts["format"] = "bestvideo[height<=720]+bestaudio/best[height<=720]/best"
         else:
-            # محاولة جلب m4a أولاً (أفضل للتليجرام)، لو فشل يجيب أي صوت
+            # محاولة جلب m4a أولاً (الأسرع والأخف) ثم fallback
             ydl_opts["format"] = "bestaudio[ext=m4a]/bestaudio/best"
-
+        
+        # إضافة Aria2 لو موجود للسرعة القصوى
         if self.has_aria2:
             ydl_opts["external_downloader"] = "aria2c"
             ydl_opts["external_downloader_args"] = ["-x", "16", "-s", "16", "-k", "1M"]
 
+        # دالة التنفيذ
         def _run_download():
             if os.path.exists(final_path):
                 return final_path
@@ -210,12 +232,16 @@ class YouTubeAPI:
                 return final_path
             return None
 
+        # تشغيل التحميل في Thread منفصل لمنع تجميد البوت
         downloaded_file = await loop.run_in_executor(self.pool, _run_download)
         
         if downloaded_file:
             return downloaded_file, True
         return None, False
 
+    # -----------------------------------------------------------------
+    # 📺 قوائم التشغيل والسلايدر
+    # -----------------------------------------------------------------
     async def playlist(self, link, limit, user_id, videoid: Union[bool, str] = None):
         if videoid: link = self.listbase + link
         if "&" in link: link = link.split("&")[0]
@@ -229,6 +255,7 @@ class YouTubeAPI:
             cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
         out, _ = await proc.communicate()
+        
         try:
             result = [key for key in out.decode().split("\n") if key]
         except:
@@ -237,6 +264,7 @@ class YouTubeAPI:
 
     async def formats(self, link: str, videoid: Union[bool, str] = None):
         if videoid: link = self.base + link
+        
         ytdl_opts = {"quiet": True, "cookiefile": get_cookie_file()}
         with yt_dlp.YoutubeDL(ytdl_opts) as ydl:
             formats_available = []
@@ -244,6 +272,7 @@ class YouTubeAPI:
                 r = ydl.extract_info(link, download=False)
                 for format in r.get("formats", []):
                     if not format.get("filesize") and not format.get("filesize_approx"): continue
+                    
                     formats_available.append({
                         "format": format["format"],
                         "filesize": format.get("filesize") or format.get("filesize_approx"),
@@ -253,6 +282,7 @@ class YouTubeAPI:
                         "yturl": link,
                     })
             except: pass
+            
         return formats_available, link
 
     async def slider(self, link: str, query_type: int, videoid: Union[bool, str] = None):
@@ -265,4 +295,5 @@ class YouTubeAPI:
         except:
             return "Error", "0", "", "error"
 
+# تصدير الكائن للاستخدام
 YouTube = YouTubeAPI()
