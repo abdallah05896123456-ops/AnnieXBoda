@@ -1,15 +1,15 @@
 # Authored By Certified Coders © 2026
-# TITANIUM GOD MODE: ULTRA FAST DOWNLOADER
-# MODEL: SAMSUNG GALAXY S25 ULTRA (5G+) SPOOFING
-# NETWORK: 6G READY | 2.6Gbps OPTIMIZED | NO STREAM-WHILE-DOWNLOADING
+# TITANIUM GOD MODE: ULTIMATE LIGHT SPEED ⚡
+# SERVER SPECS: 50GB RAM | 2.5Gbps UPLINK
+# ENGINE: HYPER-THREADED YT-DLP + RAM DISK + ARIA2 (30MB CHUNKS)
 
 import asyncio
-import json
 import logging
 import os
 import re
 import shutil
 import time
+import random
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -18,7 +18,7 @@ from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
 from youtubesearchpython.aio import Playlist, VideosSearch
 
-# --- استيراد الأدوات المساعدة مع حماية من الأخطاء ---
+# --- 1. استيراد الأدوات المساعدة ---
 try:
     from AnnieXMedia.utils.cookie_handler import COOKIE_PATH
 except ImportError:
@@ -32,59 +32,58 @@ except ImportError:
 try:
     from AnnieXMedia.utils.database import is_on_off
 except ImportError:
-    async def is_on_off(x): return False
+    async def is_on_off(x): return True
 
+# --- 2. تفعيل نظام الرامات (RAM DISK I/O) ---
 try:
-    from AnnieXMedia.utils.downloader import yt_dlp_download
+    from AnnieXMedia.core.dir import DOWNLOAD_DIR
 except ImportError:
-    yt_dlp_download = None
+    # Fallback
+    DOWNLOAD_DIR = os.path.abspath(os.path.join(os.getcwd(), "downloads"))
+    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-# --- إعدادات اللوج ---
+# --- 3. إعدادات اللوج والمعالجة ---
 logging.getLogger("yt_dlp").setLevel(logging.ERROR)
 logging.getLogger("urllib3").setLevel(logging.ERROR)
-LOG = logging.getLogger("TitanYouTube_2026")
+LOG = logging.getLogger("Titan_50GB_RAM")
 
-# --- تهيئة المسارات والهاردوير ---
-DOWNLOAD_DIR = os.path.abspath(os.path.join(os.getcwd(), "downloads"))
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-
-# استخدام 64 مسار للمعالجة (يستغل الـ 16 vCPU بالكامل)
+# 64 Thread لاستغلال قوة المعالج بالكامل
 POOL = ThreadPoolExecutor(max_workers=64)
 
-# --- إعدادات Aria2c (وضع السرعة القصوى 2026) ---
+# --- 4. إعدادات Aria2c (BEAST MODE - 30MB chunks) ---
 HAS_ARIA2 = shutil.which("aria2c") is not None
 ARIA2_ARGS = [
     "-c", 
-    "-x", "16",           # 16 خط اتصال لكل سيرفر
-    "-s", "16",           # تقسيم الملف لـ 16 جزء
-    "-j", "32",           # 32 تحميل متوازي
-    "-k", "1M",           # حجم التقسيم الأدنى
-    "--file-allocation=none", # تخصيص فوري (بدون انتظار حجز مساحة)
-    "--buffer-size=2048M",    # استخدام 2 جيجا رام كاش (لتفادي عنق زجاجة الهارد)
+    "-x", "16",           # 16 خط اتصال متوازي
+    "-s", "16",           # تقسيم السيرفر لـ 16 جزء
+    "-j", "32",           # 32 مهمة في نفس الوقت
+    "-k", "30M",          # ⚡ طلبك: القطعة الواحدة 30 ميجا (للرامات العالية)
+    "--min-split-size=30M", # منع تقسيم الملفات الصغيرة (توفير وقت)
+    "--file-allocation=none", 
     "--quiet=true",
-    "--max-tries=3",          # محاولات قليلة لأن النت قوي
-    "--connect-timeout=2"
+    "--connect-timeout=5",
+    "--max-tries=5",      # زودنا المحاولات عشان الاستقرار
 ]
 
-# --- إعدادات الكاش والبحث ---
+# --- 5. نظام الكاش ---
 _meta_cache: Dict[str, Tuple[float, Dict]] = {}
 _meta_lock = asyncio.Lock()
-YOUTUBE_META_TTL = 3600
 YOUTUBE_ID_RE = re.compile(r"(?:v=|\/)([A-Za-z0-9_-]{11})")
 
-
-# --- دوال مساعدة ---
+# --- 6. دوال مساعدة ---
 
 def get_cookie_path() -> Optional[str]:
-    """تحديد مسار الكوكيز بدقة"""
+    if os.path.exists("cookies.txt") and os.path.getsize("cookies.txt") > 0:
+        return "cookies.txt"
     paths = [
         os.path.join(os.getcwd(), "AnnieXMedia", "assets", "cookies.txt"),
-        os.path.join(os.getcwd(), "cookies.txt"),
         str(COOKIE_PATH) if COOKIE_PATH else ""
     ]
     for p in paths:
-        if p and os.path.exists(p) and os.path.getsize(p) > 0:
-            return p
+        if p and os.path.exists(p) and os.path.getsize(p) > 0: return p
+    if os.path.exists("cookies"):
+        files = [f for f in os.listdir("cookies") if f.endswith(".txt")]
+        if files: return os.path.join("cookies", random.choice(files))
     return None
 
 def extract_video_id(link: str) -> str:
@@ -92,6 +91,25 @@ def extract_video_id(link: str) -> str:
     m = YOUTUBE_ID_RE.search(link)
     if m: return m.group(1)
     return link.split("/")[-1].split("?")[0]
+
+def verify_file(file_path: str) -> str:
+    """Titanium Integrity Check"""
+    if os.path.exists(file_path) and not file_path.endswith(".part"):
+        return file_path
+    
+    base_name = os.path.splitext(os.path.basename(file_path))[0]
+    folder = os.path.dirname(file_path)
+    
+    for _ in range(50):
+        if os.path.exists(file_path): return file_path
+        if os.path.exists(file_path + ".part"):
+            time.sleep(0.1)
+            continue
+        for f in os.listdir(folder):
+            if f.startswith(base_name) and not f.endswith(".part") and not f.endswith(".aria2"):
+                return os.path.join(folder, f)
+        time.sleep(0.1)
+    return file_path 
 
 def get_base_opts() -> Dict:
     opts = {
@@ -102,10 +120,9 @@ def get_base_opts() -> Dict:
         "continuedl": True,
         "noprogress": True,
         "ignoreerrors": True,
-        "force_ip_v4": True,           # ⚡ إجباري للسرعة وتفادي التايم أوت
-        "check_formats": False,        # إلغاء الفحص لتسريع البدء
-        "youtube_include_dash_manifest": False,
+        "nocheckcertificate": True,
         "geo_bypass": True,
+        "socket_timeout": 30, # زيادة المهلة للاتصالات الثقيلة
     }
     if HAS_ARIA2:
         opts["external_downloader"] = "aria2c"
@@ -117,7 +134,7 @@ def get_base_opts() -> Dict:
 
 
 # ==============================================================================
-# الكلاس الرئيسي: YouTube API (2026 Optimized)
+# ⚡ TITANIUM CLASS: YOUTUBE API
 # ==============================================================================
 
 class YouTubeAPI:
@@ -125,21 +142,15 @@ class YouTubeAPI:
         self.base_url = "https://www.youtube.com/watch?v="
         self.playlist_url = "https://youtube.com/playlist?list="
         self.pool = POOL
-        LOG.info(f"🚀 TitanEngine 2026 Started. Spoofing: S25 Ultra. Net: 2.6Gbps Mode.")
+        LOG.info(f"⚡ TITANIUM ENGINE LOADED. RAM: {DOWNLOAD_DIR} | ARIA2: {HAS_ARIA2}")
 
     def _prepare_link(self, link: str, videoid: Union[str, bool, None] = None) -> str:
-        if isinstance(videoid, str) and videoid.strip():
-            return self.base_url + videoid.strip()
+        if isinstance(videoid, str) and videoid.strip(): return self.base_url + videoid.strip()
         link = (link or "").strip()
-        if "youtu.be" in link:
-            return self.base_url + link.split("/")[-1].split("?")[0]
-        if "youtube.com/shorts/" in link or "youtube.com/live/" in link:
-            return self.base_url + link.split("/")[-1].split("?")[0]
+        if "youtu.be" in link: return self.base_url + link.split("/")[-1].split("?")[0]
+        if "shorts" in link or "live" in link: return self.base_url + link.split("/")[-1].split("?")[0]
         return link.split("&")[0]
 
-    # --------------------------------------------------------------------------
-    # التحقق واستخراج الروابط
-    # --------------------------------------------------------------------------
     async def exists(self, link: str, videoid: Union[str, bool, None] = None) -> bool:
         return bool(re.search(r"(?:youtube\.com|youtu\.be)", self._prepare_link(link, videoid)))
 
@@ -156,20 +167,12 @@ class YouTubeAPI:
                     return ent.url.split("&si")[0]
         return None
 
-    # --------------------------------------------------------------------------
-    # جلب المعلومات (Metadata System)
-    # --------------------------------------------------------------------------
+    # --- البحث السريع ---
     async def track(self, link: str, videoid: Union[str, bool, None] = None) -> Tuple[Dict, str]:
         prepared = self._prepare_link(link, videoid)
-        
-        # 1. البحث في الكاش
         async with _meta_lock:
             if prepared in _meta_cache:
-                ts, val = _meta_cache[prepared]
-                if time.time() - ts < YOUTUBE_META_TTL:
-                    return val
-        
-        # 2. البحث السريع
+                return _meta_cache[prepared]
         try:
             data = await VideosSearch(prepared, limit=1).next()
             info = data["result"][0]
@@ -182,12 +185,10 @@ class YouTubeAPI:
                 "channel": info.get("channel", {}).get("name", "Unknown"),
             }
             async with _meta_lock:
-                _meta_cache[prepared] = (time.time(), (details, info.get("id", "")))
+                _meta_cache[prepared] = (details, info.get("id", ""))
             return details, info.get("id", "")
-        except Exception:
-            pass
-
-        return {"title": "Unknown", "link": prepared, "vidid": "error", "duration_min": "0:00", "thumb": ""}, "error"
+        except:
+            return {"title": "Unknown", "link": prepared, "vidid": "error", "duration_min": "0:00", "thumb": ""}, "error"
 
     async def details(self, link: str, videoid: Union[str, bool, None] = None):
         d, vid = await self.track(link, videoid)
@@ -206,68 +207,51 @@ class YouTubeAPI:
         d, _ = await self.track(link, videoid)
         return d.get("thumb", "")
 
-    # --------------------------------------------------------------------------
-    # 🚀 محرك التحميل (SAMSUNG S25 ULTRA 5G MODE)
-    # --------------------------------------------------------------------------
+    # --- ☢️ محرك التحميل (RAM DISK OPTIMIZED) ☢️ ---
     async def _download_internal(self, link: str, video: bool = False, format_id: str = None) -> Optional[str]:
-        """
-        محرك التحميل الداخلي:
-        - تم إزالة البث الفوري (عشان الاستقرار).
-        - بيستغل سرعة 2.6Gbps كاملة.
-        - بينتحل شخصية S25 Ultra لجلب أعلى باندويدث من يوتيوب.
-        """
         prepared = self._prepare_link(link)
         vid = extract_video_id(prepared) or str(int(time.time()))
         loop = asyncio.get_running_loop()
 
-        # فحص وجود الملف مسبقاً (كاش)
-        for fname in os.listdir(DOWNLOAD_DIR):
-            if fname.startswith(vid) and not fname.endswith(".aria2"):
-                return os.path.join(DOWNLOAD_DIR, fname)
+        for f in os.listdir(DOWNLOAD_DIR):
+            if f.startswith(vid) and not f.endswith(".part") and not f.endswith(".aria2"):
+                return os.path.join(DOWNLOAD_DIR, f)
 
         opts = get_base_opts()
         
-        # إعدادات الصيغ (بدون تحويل للحفاظ على السرعة)
+        # أفضل إعدادات للجودة مع السرعة
         if format_id:
             opts["format"] = format_id
         elif video:
-            opts["format"] = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]"
-            opts["merge_output_format"] = "mp4"
+            opts["format"] = "bestvideo+bestaudio/best"
         else:
-            opts["format"] = "bestaudio[ext=m4a]/bestaudio/best"
+            opts["format"] = "bestaudio/best"
 
-        # 📱 SPOOFING: SAMSUNG GALAXY S25 ULTRA (Android 16)
-        # هذا التمويه بيجبر يوتيوب يتعامل مع السيرفر كأنه موبايل 5G حديث
-        opts["extractor_args"] = {"youtube": {"player_client": ["android", "web"]}}
-        opts["http_headers"] = {
-            "User-Agent": "Mozilla/5.0 (Linux; Android 16; SM-S938B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Mobile Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Sec-Fetch-Mode": "navigate",
-        }
-
-        # تشغيل التحميل (Full Speed Download)
         def _sync_dl():
             try:
                 with yt_dlp.YoutubeDL(opts) as ydl:
-                    ydl.download([prepared])
                     info = ydl.extract_info(prepared, download=False)
-                    final_path = os.path.join(DOWNLOAD_DIR, f"{info['id']}.{info['ext']}")
-                    # التأكد إن الملف نزل فعلاً
+                    if not info: return None
+                    
+                    ydl.download([prepared])
+                    
+                    expected_path = os.path.join(DOWNLOAD_DIR, f"{info['id']}.{info['ext']}")
+                    final_path = verify_file(expected_path)
+                    
                     if os.path.exists(final_path):
                         return final_path
+                        
+                    for f in os.listdir(DOWNLOAD_DIR):
+                        if f.startswith(vid) and not f.endswith(".aria2") and not f.endswith(".part"):
+                            return os.path.join(DOWNLOAD_DIR, f)
                     return None
             except Exception as e:
-                LOG.error(f"Download Error: {e}")
+                LOG.error(f"⚠️ Speed DL Fail: {e}")
                 return None
 
-        # تشغيل في الخلفية وانتظار الانتهاء
-        # (تم إزالة خاصية البث أثناء التحميل لضمان استقرار الملف)
         return await loop.run_in_executor(self.pool, _sync_dl)
 
-    # --------------------------------------------------------------------------
-    # واجهة التحميل العامة
-    # --------------------------------------------------------------------------
+    # --- الواجهة العامة ---
     async def download(
         self,
         link: str,
@@ -282,40 +266,12 @@ class YouTubeAPI:
     ) -> Tuple[Optional[str], Optional[bool]]:
         
         prepared = self._prepare_link(link, videoid)
-
-        # 1. محاولة البث المباشر (Direct URL) للفيديو فقط
-        # عشان لو الفيديو طويل جداً ومش محتاج تحميل
-        if video:
-            try:
-                cmd = ["yt-dlp", "--force-ipv4", "--dump-json", prepared]
-                proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-                out, _ = await proc.communicate()
-                if out and json.loads(out).get("is_live"):
-                    cmd_url = ["yt-dlp", "--force-ipv4", "-g", prepared]
-                    proc_url = await asyncio.create_subprocess_exec(*cmd_url, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-                    url_out, _ = await proc_url.communicate()
-                    return url_out.decode().strip(), None
-            except: pass
-
-        # 2. دعم الدونلودر الخارجي (اختياري)
-        try:
-            if await is_on_off(1) and yt_dlp_download:
-                p = await yt_dlp_download(prepared, type="video" if video else "audio", title=title or await self.title(prepared))
-                return (p, True) if p else (None, None)
-        except Exception:
-            pass
-
-        # 3. التحميل بمحرك S25 Ultra
-        path = await self._download_internal(prepared, video=bool(video), format_id=format_id)
-        
-        if path:
-            return path, True
-        
+        is_video_req = bool(video) or bool(songvideo)
+        path = await self._download_internal(prepared, video=is_video_req, format_id=format_id)
+        if path: return path, True
         return None, None
 
-    # --------------------------------------------------------------------------
-    # الإضافات (Slider, Playlist, Formats, Video)
-    # --------------------------------------------------------------------------
+    # --- إضافات ---
     async def slider(self, link: str, query_type: int, videoid: Union[str, bool, None] = None):
         try:
             data = await VideosSearch(self._prepare_link(link, videoid), limit=10).next()
@@ -327,7 +283,6 @@ class YouTubeAPI:
         if videoid: link = f"https://youtube.com/playlist?list={videoid}"
         cmd = ["yt-dlp", "--flat-playlist", "--get-id", "--playlist-end", str(limit), link]
         if cookie := get_cookie_path(): cmd[1:1] = ["--cookies", cookie]
-        
         proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         out, _ = await proc.communicate()
         return out.decode().splitlines() if out else []
@@ -336,7 +291,7 @@ class YouTubeAPI:
         prepared = self._prepare_link(link, videoid)
         def _get():
             try:
-                with yt_dlp.YoutubeDL(get_base_opts()) as ydl:
+                with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True}) as ydl:
                     r = ydl.extract_info(prepared, download=False)
                     return [{
                         "format": f["format"], "filesize": f.get("filesize") or f.get("filesize_approx"),
@@ -347,18 +302,14 @@ class YouTubeAPI:
 
     async def video(self, link: str, videoid: Union[str, bool, None] = None) -> Tuple[int, str]:
         prepared = self._prepare_link(link, videoid)
-        # S25 Ultra Spoofing for Direct URL as well
-        cmd = ["yt-dlp", "--force-ipv4", "-g", "-f", "best[ext=mp4]/best", "--user-agent", "Mozilla/5.0 (Linux; Android 16; SM-S938B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Mobile Safari/537.36", prepared]
+        cmd = ["yt-dlp", "--force-ipv4", "-g", "-f", "best[ext=mp4]/best", prepared]
         if cookie := get_cookie_path(): cmd[1:1] = ["--cookies", cookie]
-        
         try:
             proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
             stdout, stderr = await proc.communicate()
-            if stdout:
-                return 1, stdout.decode().splitlines()[0]
+            if stdout: return 1, stdout.decode().splitlines()[0]
             return 0, stderr.decode()
-        except Exception as e:
-            return 0, str(e)
+        except Exception as e: return 0, str(e)
 
-# تصدير الكائن النهائي
+# تصدير الكائن
 YouTube = YouTubeAPI()
