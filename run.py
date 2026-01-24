@@ -1,57 +1,63 @@
 # Authored By Certified Coders © 2025
-# TitanOS Ultimate Engine: Loop Mismatch Fix 🛡️
+# TitanOS Ultimate Engine: Force Loop Patch 🛡️
 
 import asyncio
 import logging
 import sys
-import os
 
-# 1. تفعيل uvloop وإنشاء المحرك (أول خطوة إجبارية)
+# 1. تفعيل uvloop فوراً
 try:
     import uvloop
     uvloop.install()
 except ImportError:
-    print("⚠️ uvloop not installed, using default asyncio")
-
-# 2. إنشاء الـ Loop يدوياً وتعيينه كـ Global
-# الخطوة دي بتجبر أي كود يجي بعدها إنه يستخدم الـ Loop ده
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
-
-# 3. استيراد البوت (لاحظ: الاستيراد لازم يكون هنا بعد إنشاء الـ Loop)
-# لو حطيت السطر ده فوق، المشكلة هتتكرر
-from AnnieXMedia.__main__ import init
-from AnnieXMedia import LOGGER
+    pass
 
 # إعدادات اللوج
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s - %(levelname)s] - %(name)s - %(message)s",
     datefmt="%d-%b-%y %H:%M:%S",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("log.txt")
-    ]
+    handlers=[logging.StreamHandler()]
 )
+LOGGER = logging.getLogger("TitanOS")
+
+async def main():
+    # استيراد ملفات البوت
+    # بنستوردهم جوه الدالة عشان نضمن إنهم تحت سيطرتنا
+    from AnnieXMedia import app, userbot
+    from AnnieXMedia.core.call import StreamController
+    from AnnieXMedia.__main__ import init
+    
+    LOGGER.info("⚡ Injecting correct Event Loop...")
+    
+    # الحصول على الـ Loop الحالي الشغال
+    current_loop = asyncio.get_running_loop()
+    
+    # --- بداية الجراحة (Patching) ---
+    # بنجبر البوت الأساسي والمساعد إنهم يستخدموا الـ Loop ده
+    
+    # 1. تعديل البوت الأساسي
+    app.loop = current_loop
+    userbot.loop = current_loop
+    
+    # 2. تعديل بوت الموسيقى (PyTgCalls) - ده سبب المشكلة عندك
+    if hasattr(StreamController, 'one'):
+        # تعديل العميل الداخلي للمساعد
+        if hasattr(StreamController.one, '_app'):
+            StreamController.one._app.loop = current_loop
+        if hasattr(StreamController.one, '_bind_client'):
+            StreamController.one._bind_client.loop = current_loop
+            
+    LOGGER.info("✅ Loop Injection Complete. Starting System...")
+    
+    # تشغيل البوت
+    await init()
 
 if __name__ == "__main__":
-    LOGGER("TitanOS").info("✅ System Loop configured successfully.")
-    LOGGER("TitanOS").info("⚡ Starting AnnieXMedia Core...")
-
     try:
-        # تشغيل البوت باستخدام الـ Loop اللي عملناه فوق
-        loop.run_until_complete(init())
+        # استخدام asyncio.run هو الطريقة الوحيدة الصحيحة
+        asyncio.run(main())
     except KeyboardInterrupt:
-        LOGGER("TitanOS").info("🛑 Bot Process Stopped by User.")
+        LOGGER.info("🛑 Stopped by user")
     except Exception as e:
-        LOGGER("TitanOS").error(f"❌ Fatal Error: {e}", exc_info=True)
-    finally:
-        # تنظيف الذاكرة عند الإغلاق
-        try:
-            tasks = asyncio.all_tasks(loop)
-            for task in tasks:
-                task.cancel()
-            loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
-            loop.close()
-        except:
-            pass
+        LOGGER.error(f"❌ Fatal Error: {e}", exc_info=True)
