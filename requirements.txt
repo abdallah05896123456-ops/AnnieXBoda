@@ -48,6 +48,6 @@ uvicorn
 uvloop==0.21.0
 wget
 pymongo
-git+https://github.com/KurimuzonAkuma/kurigram.git
+kurigram
 git+https://github.com/CertifiedCoders/youtube-search-python.git
-git+https://github.com/yt-dlp/yt-dlp
+yt-dlp
