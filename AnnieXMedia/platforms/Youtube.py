@@ -1,12 +1,11 @@
 # Authored By Certified Coders © 2025
 # Fixed for platforms/Youtube.py
-# MERGED SOLUTION: Fixed List Format + Force MP4 + Auto-Delete WebM + Ultra Aria2
+# DEBUG MODE: Logs Enabled + Force IPv4 + High Speed Aria2
 
 import asyncio
 import os
 import re
 import logging
-import traceback
 from typing import Union, List, Dict, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor
 import time
@@ -16,7 +15,21 @@ from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
 from youtubesearchpython.aio import VideosSearch
 
-# --- استيراد الإعدادات مع حماية من الأخطاء ---
+# --- إعدادات اللوجز (عشان نشوف السرعة) ---
+# بنعمل Logger مخصص يطبع الكلام في التيرمينال
+class MyLogger:
+    def debug(self, msg):
+        # تصفية الرسائل عشان نظهر المهم بس (السرعة والنسبة)
+        if "download]" in msg or "ETA" in msg or "MiB/s" in msg:
+            print(msg, flush=True)
+    def info(self, msg):
+        pass
+    def warning(self, msg):
+        pass
+    def error(self, msg):
+        print(f"❌ ERROR: {msg}", flush=True)
+
+# استيراد الإعدادات
 try:
     from AnnieXMedia.utils.formatters import time_to_seconds
     from AnnieXMedia import LOGGER
@@ -24,10 +37,6 @@ except ImportError:
     logging.basicConfig(level=logging.ERROR)
     def LOGGER(name): return logging.getLogger(name)
     def time_to_seconds(t): return 0
-
-# تقليل إزعاج السجلات
-logging.getLogger("yt_dlp").setLevel(logging.ERROR)
-logging.getLogger("urllib3").setLevel(logging.ERROR)
 
 class Config:
     DOWNLOAD_PATH = "downloads"
@@ -163,20 +172,17 @@ class YouTubeAPI:
              vid_id = str(int(time.time()))
 
         def _run_download_attempt(fmt_option, use_aria=True):
-            # 🔥 1. تنظيف الملفات القديمة المعطوبة (WebM)
-            # هذا الجزء مهم جداً لحل مشكلة NoVideoSourceFound
+            # تنظيف القديم
             bad_path = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.webm")
             if os.path.exists(bad_path):
-                try: 
-                    os.remove(bad_path)
-                    LOGGER(__name__).info(f"🗑️ Deleted bad WebM file: {bad_path}")
+                try: os.remove(bad_path)
                 except: pass
 
-            # 2. البحث عن ملف MP4/M4A سليم موجود مسبقاً
+            # الكاش
             for ext in ['mp4', 'm4a', 'mkv']:
                 p = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
-                # التأكد من أن حجم الملف أكبر من 1 كيلو بايت
                 if os.path.exists(p) and os.path.getsize(p) > 1024:
+                    print(f"✅ Found cached file: {p}", flush=True)
                     return p
 
             ydl_opts = {
@@ -184,53 +190,66 @@ class YouTubeAPI:
                 "cookiefile": get_cookie_file(),
                 "geo_bypass": True,
                 "nocheckcertificate": True,
-                "quiet": True,
+                
+                # 🔥 تفعيل اللوجز 🔥
+                "quiet": False, 
+                "logger": MyLogger(), # استخدام اللوجر المخصص
+                "verbose": True,      # تفاصيل أكثر
+
                 "ignoreerrors": True,
                 "format": fmt_option,
-                # 🔥 القائمة الصحيحة لفك التشفير
                 "remote_components": ["ejs:github"],
-                # 🔥 إجبار الدمج إلى MP4 لتجنب مشاكل WebM نهائياً
                 "merge_output_format": "mp4",
+                
+                # 🔥 إجبار IPv4 (الحل السحري للسرعة في السيرفرات) 🔥
+                "force_ipv4": True,
+
+                # خداع يوتيوب لتجنب الخنق
+                "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
             }
 
-            # تفعيل Aria2 إذا كان متاحاً في النظام ومطلوباً
             if self.has_aria2 and use_aria:
                 ydl_opts["external_downloader"] = "aria2c"
-                # إعدادات السرعة القصوى (16 Connection)
+                # إعدادات سرعة عالية وآمنة
                 ydl_opts["external_downloader_args"] = [
-                    "-x", "16", "-s", "16", "-j", "16", "-k", "1M"
+                    "-x", "16", 
+                    "-s", "16", 
+                    "-j", "16", 
+                    "-k", "10M", # كبرنا حجم القطعة عشان السرعات العالية
+                    "--file-allocation=none"
                 ]
 
             try:
+                print(f"⬇️ Starting download for {link} ...", flush=True)
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([link])
             except Exception as e:
+                print(f"❌ Download Error: {e}", flush=True)
                 return None
             
-            # التحقق النهائي من وجود الملف وسلامته
             for ext in ['mp4', 'm4a', 'mkv']:
                 final_path = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
                 if os.path.exists(final_path):
                     if os.path.getsize(final_path) > 1024:
+                        print(f"✅ Download complete: {final_path}", flush=True)
                         return final_path
                     else:
-                        # حذف الملف الفارغ
                         try: os.remove(final_path)
                         except: pass
             return None
 
         def _execute():
-            # محاولة 1: جودة عالية + دمج MP4 (الأفضل)
+            # المحاولة 1
             file = _run_download_attempt("bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best", use_aria=True)
             if file: return file
             
-            # محاولة 2: صوت فقط M4A (احتياطي)
-            LOGGER(__name__).warning(f"⚠️ Retrying download (Attempt 2) for: {link}")
+            # المحاولة 2
+            print("⚠️ Switching to fallback mode (Audio only)...", flush=True)
             file = _run_download_attempt("bestaudio[ext=m4a]", use_aria=True)
             if file: return file
 
-            # محاولة 3: المحاولة الأخيرة (أي جودة بدون Aria2)
-            LOGGER(__name__).warning(f"⚠️ Retrying download (Final) for: {link}")
+            # المحاولة 3
+            print("⚠️ Switching to Native Downloader (No Aria2)...", flush=True)
             file = _run_download_attempt("best", use_aria=False)
             return file
 
