@@ -29,11 +29,6 @@ async def check_stream(
     before_commands: Optional[List[str]] = None,
     headers: Optional[Dict[str, str]] = None,
 ):
-    # ======================================================
-    # [TitanOS Fix] كشف المسار في السجلات لمعرفة سبب المشكلة
-    print(f"[TitanOS DEBUG] FFmpeg is checking path: {path}")
-    # ======================================================
-
     try:
         ffprobe = await asyncio.create_subprocess_exec(
             *await cleanup_commands(
@@ -61,14 +56,8 @@ async def check_stream(
         result = loads(stdout.decode('utf-8')) or {}
         stream_list = result.get('streams', [])
         format_content = result.get('format', [])
-        
-        stderr_decoded = stderr.decode('utf-8')
-        if 'No such file' in stderr_decoded:
-            # [TitanOS Fix] تحسين رسالة الخطأ
-            print(f"[TitanOS ERROR] FFmpeg returned 'No such file' for: {path}")
-            print(f"[TitanOS FFPROBE LOG]: {stderr_decoded}")
-            raise FileNotFoundError(f"Could not find file or URL: {path}")
-            
+        if 'No such file' in stderr.decode('utf-8'):
+            raise FileNotFoundError()
     except (subprocess.TimeoutExpired, JSONDecodeError):
         ffprobe.terminate()
         raise
@@ -137,7 +126,7 @@ async def cleanup_commands(
         proc_res = await asyncio.create_subprocess_exec(
             commands[0] if not process_name else process_name,
             '-h',
-            'full',  # [Fixed] Updated from 2.2.9
+            'full',
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -226,7 +215,6 @@ def build_command(
             ffmpeg_command.append(f'{i}: {headers[i]}')
 
     ffmpeg_command += [
-        # '-nostdin',  <-- [Removed] This flag causes issues in old versions (Fixed in 2.2.9)
         '-i',
         f'{path}' if name == 'ffmpeg' else path,
     ]
