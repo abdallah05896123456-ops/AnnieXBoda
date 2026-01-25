@@ -1,4 +1,6 @@
 # Authored By Certified Coders © 2025
+# Optimized by TitanOS for Stability (Fix Audio Stutter)
+
 import asyncio
 import os
 from datetime import datetime, timedelta
@@ -46,24 +48,32 @@ from AnnieXMedia.utils.errors import capture_internal_err
 autoend = {}
 counter = {}
 
-# --- Helper Function for Streams (Optimized for TitanOS) ---
+# --- 🔥 دالة إنشاء البث المحسنة (الحل الجذري للتقطيع) 🔥 ---
 def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
+    # إعدادات FFmpeg إضافية لزيادة استقرار البث (Buffering)
+    # هذا يمنع التقطيع في بداية التشغيل
+    base_ffmpeg = "-probesize 20M -analyzeduration 20M"
+    if ffmpeg_params:
+        base_ffmpeg += f" {ffmpeg_params}"
+
     if video:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.STUDIO, # Alexa uses better quality
-            video_parameters=VideoQuality.HD_720p,
+            # STUDIO بتعمل تقطيع، HIGH هي الأفضل والأكثر استقراراً لتيليجرام
+            audio_parameters=AudioQuality.HIGH, 
+            # 480p أخف وأسرع ومناسبة جداً للمكالمات وتمنع اللاغ
+            video_parameters=VideoQuality.SD_480p,
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.REQUIRED,
-            ffmpeg_parameters=ffmpeg_params,
+            ffmpeg_parameters=base_ffmpeg,
         )
     else:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.STUDIO, # Alexa uses better quality
+            audio_parameters=AudioQuality.HIGH,
             audio_flags=MediaStream.Flags.REQUIRED,
-            video_flags=MediaStream.Flags.IGNORE,
-            ffmpeg_parameters=ffmpeg_params,
+            video_flags=MediaStream.Flags.IGNORE, # تجاهل الفيديو تماماً لتوفير الموارد
+            ffmpeg_parameters=base_ffmpeg,
         )
 
 async def _clear_(chat_id: int) -> None:
@@ -77,34 +87,33 @@ async def _clear_(chat_id: int) -> None:
 
 class Call:
     def __init__(self):
-        # 🔥 TitanOS Update: Cache maintained at 100 for stability
+        # قللنا الكاش لـ 20 ثانية عشان الاستجابة تكون أسرع لو حصل دروب
         self.userbot1 = Client(
             "AnnieXAssis1", config.API_ID, config.API_HASH, session_string=config.STRING1
         ) if config.STRING1 else None
-        self.one = PyTgCalls(self.userbot1, cache_duration=100) if self.userbot1 else None
+        self.one = PyTgCalls(self.userbot1, cache_duration=20) if self.userbot1 else None
 
         self.userbot2 = Client(
             "AnnieXAssis2", config.API_ID, config.API_HASH, session_string=config.STRING2
         ) if config.STRING2 else None
-        self.two = PyTgCalls(self.userbot2, cache_duration=100) if self.userbot2 else None
+        self.two = PyTgCalls(self.userbot2, cache_duration=20) if self.userbot2 else None
 
         self.userbot3 = Client(
             "AnnieXAssis3", config.API_ID, config.API_HASH, session_string=config.STRING3
         ) if config.STRING3 else None
-        self.three = PyTgCalls(self.userbot3, cache_duration=100) if self.userbot3 else None
+        self.three = PyTgCalls(self.userbot3, cache_duration=20) if self.userbot3 else None
 
         self.userbot4 = Client(
             "AnnieXAssis4", config.API_ID, config.API_HASH, session_string=config.STRING4
         ) if config.STRING4 else None
-        self.four = PyTgCalls(self.userbot4, cache_duration=100) if self.userbot4 else None
+        self.four = PyTgCalls(self.userbot4, cache_duration=20) if self.userbot4 else None
 
         self.userbot5 = Client(
             "AnnieXAssis5", config.API_ID, config.API_HASH, session_string=config.STRING5
         ) if config.STRING5 else None
-        self.five = PyTgCalls(self.userbot5, cache_duration=100) if self.userbot5 else None
+        self.five = PyTgCalls(self.userbot5, cache_duration=20) if self.userbot5 else None
 
         self.active_calls: set[int] = set()
-        # 🔥 TitanOS: Turbo Variable added for Web Control
         self.turbo_mode = {} 
 
     @capture_internal_err
@@ -115,7 +124,6 @@ class Call:
     @capture_internal_err
     async def resume_stream(self, chat_id: int) -> None:
         assistant = await group_assistant(self, chat_id)
-        # 🔥 TitanOS Fix: Force Resume (If resume fails, unmute)
         try:
             await assistant.resume(chat_id)
         except:
@@ -168,7 +176,6 @@ class Call:
     @capture_internal_err
     async def skip_stream(self, chat_id: int, link: str, video: Union[bool, str] = None, image: Union[bool, str] = None) -> None:
         assistant = await group_assistant(self, chat_id)
-        # 🔥 ALEXA OPTIMIZATION: Using GroupCallConfig
         ksk = GroupCallConfig(auto_start=False)
         stream = dynamic_media_stream(path=link, video=bool(video))
         await assistant.play(chat_id, stream, config=ksk)
@@ -189,7 +196,6 @@ class Call:
 
     @capture_internal_err
     async def speedup_stream(self, chat_id: int, file_path: str, speed: float, playing: list) -> None:
-        # Code kept from Annie for compatibility
         if not isinstance(playing, list) or not playing or not isinstance(playing[0], dict):
             raise AssistantErr("Invalid stream info for speedup.")
 
@@ -256,7 +262,6 @@ class Call:
         _ = get_string(lang)
         stream = dynamic_media_stream(path=link, video=bool(video))
         
-        # 🔥 ALEXA OPTIMIZATION: Config added here
         ksk = GroupCallConfig(auto_start=False)
 
         try:
@@ -270,7 +275,6 @@ class Call:
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
         except Exception as e:
-             # Retry logic
             try:
                  await asyncio.sleep(1)
                  await assistant.play(chat_id, stream, config=ksk)
@@ -294,7 +298,6 @@ class Call:
 
     @capture_internal_err
     async def play(self, client, chat_id: int) -> None:
-        # 🔥 Refactored to match Alexa's `change_stream` logic but with Annie's vars
         check = db.get(chat_id)
         popped = None
         loop = await get_loop(chat_id)
@@ -305,7 +308,6 @@ class Call:
                 loop = loop - 1
                 await set_loop(chat_id, loop)
             
-            # Using auto_clean from Alexa's logic context (if config allows)
             await auto_clean(popped)
             
             if not check:
@@ -343,9 +345,6 @@ class Call:
                 db[chat_id][0]["speed"] = 1.0
 
             video = True if str(streamtype) == "video" else False
-            
-            # 🔥 ALEXA OPTIMIZATION: Pre-calculate stream to save time
-            # Note: We use the dynamic helper to keep code clean, but it uses Alexa's params inside
             
             if "live_" in queued:
                 n, link = await YouTube.video(videoid, True)
