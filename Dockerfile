@@ -9,15 +9,17 @@ ENV PATH="${DENO_INSTALL}/bin:${PATH}"
 
 WORKDIR /app
 
-# 1. تحديث النظام وتثبيت الأساسيات (Git + Node.js)
+# 1. تحديث النظام وتثبيت الأساسيات
+# 🔥 أهم تعديل: إضافة aria2 للقائمة 🔥
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         git ffmpeg curl unzip build-essential python3-dev \
-        libffi-dev libxml2-dev libxslt-dev zlib1g-dev gcc && \
-    # تثبيت Node.js (مهم)
+        libffi-dev libxml2-dev libxslt-dev zlib1g-dev gcc \
+        aria2 && \
+    # تثبيت Node.js (عشان يوتيوب)
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs && \
-    # تثبيت Deno (مهم لفك تشفير يوتيوب)
+    # تثبيت Deno (احتياطي)
     curl -fsSL https://deno.land/install.sh | sh && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
@@ -32,11 +34,10 @@ COPY requirements.txt .
 RUN grep -v -i '^py-tgcalls\|pytgcalls' requirements.txt > filtered.txt && \
     pip install --no-cache-dir -r filtered.txt
 
-# 🔥 5. (الحل النهائي) إنشاء ملف إعدادات يجبر yt-dlp على التحميل 🔥
-# هذا السطر يكتب الإعداد "--remote-components ejs:github" داخل ملف الكونفيج
+# 5. ملف إعدادات yt-dlp الإجباري
 RUN echo "--remote-components ejs:github" > /etc/yt-dlp.conf
 
-# 6. نسخ باقي ملفات المشروع
+# 6. نسخ باقي الملفات
 COPY . .
 
 # 7. التشغيل
