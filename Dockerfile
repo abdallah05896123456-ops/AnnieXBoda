@@ -1,43 +1,41 @@
-# Python 3.12 معتمدة على نسخة pytgcalls المحلية
+# استخدام نسخة slim فقط
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PIP_NO_CACHE_DIR=1
+ENV DENO_INSTALL="/root/.deno"
+ENV PATH="${DENO_INSTALL}/bin:${PATH}"
 
 WORKDIR /app
 
-# تنظيف أي ملفات قديمة في حالة إعادة build
-RUN rm -rf /app/*
-
-# تثبيت المتطلبات النظامية + deno
+# 1. تحديث النظام وتثبيت الأساسيات + Node.js
+# (Node.js ضروري عشان يوتيوب يشتغل، حتى لو الرابط معاك في المكتبات)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends git ffmpeg curl unzip build-essential && \
-    rm -rf /var/lib/apt/lists/* && \
+    apt-get install -y --no-install-recommends \
+        git ffmpeg curl unzip build-essential python3-dev \
+        libffi-dev libxml2-dev libxslt-dev zlib1g-dev gcc && \
+    # تثبيت Node.js الإصدار 20
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
+    # تثبيت Deno
     curl -fsSL https://deno.land/install.sh | sh && \
-    ln -s /root/.deno/bin/deno /usr/local/bin/deno
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# نسخ مكتبة pytgcalls المحلية أولاً
+# 2. تحديث pip
+RUN pip install --upgrade pip setuptools wheel
+
+# 3. نسخ مجلد pytgcalls المحلي
 COPY pytgcalls /app/pytgcalls
 
-# نسخ requirements.txt مع فلترة py-tgcalls
-COPY requirements.txt /app/requirements.txt
-RUN if [ -f /app/requirements.txt ]; then \
-      grep -v -i '^py-tgcalls' /app/requirements.txt > /app/filtered-requirements.txt || true; \
-    fi
+# 4. تثبيت المكتبات من requirements.txt
+# (سيتم تحميل ntgcalls و yt-dlp من الروابط الموجودة في ملفك)
+COPY requirements.txt .
+RUN grep -v -i '^py-tgcalls\|pytgcalls' requirements.txt > filtered.txt && \
+    pip install --no-cache-dir -r filtered.txt
 
-# تثبيت باقي المكتبات
-RUN pip install --upgrade pip setuptools wheel && \
-    if [ -f /app/filtered-requirements.txt ]; then pip install --no-cache-dir -r /app/filtered-requirements.txt; fi
+# 5. نسخ باقي ملفات المشروع
+COPY . .
 
-# نسخ باقي سورس AnnieXMedia
-COPY . /app
-
-# تأكيد ان Python بيستخدم النسخة المحلية من pytgcalls
-RUN python - <<'PY'
-import pytgcalls, sys
-print('PYTGCALLS_FROM=', getattr(pytgcalls,'__file__','<not found>'))
-PY
-
-# نقطة الدخول
+# 6. التشغيل
 CMD ["python3", "run.py"]
