@@ -8,8 +8,9 @@ class AudioParameters(PyObject):
     def __init__(
         self,
         bitrate: int = 48000,
-        channels: int = 1,
+        channels: int = 2, # 🔥 تعديل: خلينا الافتراضي 2 (ستيريو) بدل 1 (مونو)
     ):
-        max_bit, max_chan = max(AudioQuality, key=lambda x: x.value[0]).value
-        self.bitrate: int = min(bitrate, max_bit)
-        self.channels: int = min(channels, max_chan)
+        # 🔥 إلغاء القيود: مسحنا كود الـ min و max عشان المكتبة متقللش الجودة غصب عننا
+        # دلوقتي هيقبل الـ 48000 والـ 2 Channels زي ما هم
+        self.bitrate: int = bitrate
+        self.channels: int = channels
