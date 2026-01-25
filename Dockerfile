@@ -1,5 +1,5 @@
 # استخدام أحدث وأخف نسخة مستقرة من بايثون
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim
 
 # تحسينات الأداء للبيئة
 ENV PYTHONDONTWRITEBYTECODE=1
