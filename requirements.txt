@@ -1,4 +1,5 @@
-httpsohttp
+aiofiles
+aiohttp
 argon2
 apscheduler
 bing_image_downloader
@@ -21,7 +22,7 @@ lexica-api
 lyricsgenius
 motor
 nekosbest
-ntgcalls>=2.0.7
+ntgcalls>=2.0.6
 numpy
 opencv-python
 pillow>=12.0.0
