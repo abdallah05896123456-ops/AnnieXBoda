@@ -1,6 +1,6 @@
 # Authored By Certified Coders © 2025
 # Fixed for core/call.py
-# ULTRA STABLE MODE: 16-Core Processing + Network Reconnect + Smart Buffering
+# TITAN EDITION: 16-Cores + 100MB Buffer + Stereo Audio Support
 
 import asyncio
 import os
@@ -49,19 +49,19 @@ from AnnieXMedia.utils.errors import capture_internal_err
 autoend = {}
 counter = {}
 
-# 🔥🔥🔥 المحرك النووي (FFmpeg Engine) 🔥🔥🔥
+# 🔥🔥🔥 المحرك المخصص لسيرفرك الجبار 🔥🔥🔥
 def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
-    # 1. أوامر استخدام الـ 16 كور كاملة (-threads auto/16)
-    # 2. أوامر الـ Reconnect لضمان عدم فصل البث
-    # 3. تكبير الـ Buffer لمنع التقطيع
     
-    cpu_cores = os.cpu_count() or 16  # يكتشف عدد الكورات أو يستخدم 16
+    # 1. استغلال الـ 16 كور في المعالجة
+    # 2. استغلال الرام الكبيرة (88 جيجا) لعمل Buffer ضخم (100MB) لمنع التقطيع نهائياً
+    # 3. إجبار الصوت على Stereo (قناتين) بتردد 48000 هرتز
     
     live_flags = (
-        f"-threads {cpu_cores} -filter_threads {cpu_cores} "  # استغلال المعالج بالكامل
-        "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 "  # إعادة اتصال ذكي
-        "-probesize 50M -analyzeduration 100M "  # تخزين مؤقت ضخم (Buffer)
-        "-preset ultrafast "  # سرعة معالجة قصوى
+        "-threads 16 -filter_threads 16 "  # 16 Cores for decoding
+        "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 "  # Network stability
+        "-probesize 100M -analyzeduration 100M "  # Huge Buffer (Zero Stutter)
+        "-ac 2 -ar 48000 " # Force High Quality Stereo
+        "-preset ultrafast -tune zerolatency "  # Low Latency
     )
     
     final_params = live_flags + (ffmpeg_params if ffmpeg_params else "")
@@ -69,10 +69,10 @@ def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = No
     if video:
         return MediaStream(
             media_path=path,
-            # HIGH أفضل من STUDIO في البث المباشر لأنها أقل استهلاكاً للنت
-            audio_parameters=AudioQuality.HIGH, 
-            # 480p هي المعيار الذهبي لتيليجرام (جودة جيدة + صفر تقطيع)
-            video_parameters=VideoQuality.SD_480p,
+            # استخدام جودة STUDIO لأن السيرفر يتحمل والنت سريع
+            audio_parameters=AudioQuality.STUDIO, 
+            # 720p لأن النت عندك 3.7 جيجا، حرام نشغل 480p
+            video_parameters=VideoQuality.HD_720p,
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.REQUIRED,
             ffmpeg_parameters=final_params,
@@ -80,9 +80,9 @@ def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = No
     else:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.HIGH,
+            audio_parameters=AudioQuality.STUDIO,
             audio_flags=MediaStream.Flags.REQUIRED,
-            video_flags=MediaStream.Flags.IGNORE, # تجاهل الفيديو لتوفير الموارد للصوت
+            video_flags=MediaStream.Flags.IGNORE,
             ffmpeg_parameters=final_params,
         )
 
@@ -97,31 +97,31 @@ async def _clear_(chat_id: int) -> None:
 
 class Call:
     def __init__(self):
-        # زيادة الكاش لـ 30 ثانية لضمان الاستقرار
+        # Cache 60 seconds because RAM is huge
         self.userbot1 = Client(
             "AnnieXAssis1", config.API_ID, config.API_HASH, session_string=config.STRING1
         ) if config.STRING1 else None
-        self.one = PyTgCalls(self.userbot1, cache_duration=30) if self.userbot1 else None
+        self.one = PyTgCalls(self.userbot1, cache_duration=60) if self.userbot1 else None
 
         self.userbot2 = Client(
             "AnnieXAssis2", config.API_ID, config.API_HASH, session_string=config.STRING2
         ) if config.STRING2 else None
-        self.two = PyTgCalls(self.userbot2, cache_duration=30) if self.userbot2 else None
+        self.two = PyTgCalls(self.userbot2, cache_duration=60) if self.userbot2 else None
 
         self.userbot3 = Client(
             "AnnieXAssis3", config.API_ID, config.API_HASH, session_string=config.STRING3
         ) if config.STRING3 else None
-        self.three = PyTgCalls(self.userbot3, cache_duration=30) if self.userbot3 else None
+        self.three = PyTgCalls(self.userbot3, cache_duration=60) if self.userbot3 else None
 
         self.userbot4 = Client(
             "AnnieXAssis4", config.API_ID, config.API_HASH, session_string=config.STRING4
         ) if config.STRING4 else None
-        self.four = PyTgCalls(self.userbot4, cache_duration=30) if self.userbot4 else None
+        self.four = PyTgCalls(self.userbot4, cache_duration=60) if self.userbot4 else None
 
         self.userbot5 = Client(
             "AnnieXAssis5", config.API_ID, config.API_HASH, session_string=config.STRING5
         ) if config.STRING5 else None
-        self.five = PyTgCalls(self.userbot5, cache_duration=30) if self.userbot5 else None
+        self.five = PyTgCalls(self.userbot5, cache_duration=60) if self.userbot5 else None
 
         self.active_calls: set[int] = set()
 
