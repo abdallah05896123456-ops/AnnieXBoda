@@ -1,6 +1,6 @@
 # Authored By Certified Coders © 2025
 # Fixed for platforms/Youtube.py
-# SOLUTION: Forced Remote Components for New YouTube Protection
+# SOLUTION: Fixed List Format for Remote Components
 
 import asyncio
 import os
@@ -175,8 +175,8 @@ class YouTubeAPI:
                 "quiet": True,
                 "ignoreerrors": True,
                 "format": fmt_option,
-                # 🔥🔥 هذا السطر هو الحل الجذري لمشكلة التشفير 🔥🔥
-                "remote_components": "ejs:github",
+                # 🔥🔥 التعديل هنا: وضعنا القيمة داخل قوسين [] لتصبح قائمة 🔥🔥
+                "remote_components": ["ejs:github"],
             }
 
             if self.has_aria2 and use_aria:
@@ -196,11 +196,11 @@ class YouTubeAPI:
             return None
 
         def _execute():
-            # محاولة 1: أفضل جودة (قد تفشل بسبب aria2 أو الحماية)
+            # محاولة 1: أفضل جودة
             file = _run_download_attempt("bestaudio/best", use_aria=True)
             if file: return file
             
-            # محاولة 2: بدون aria2 (أكثر استقراراً مع الحماية)
+            # محاولة 2: بدون aria2 (أحياناً يحل المشكلة)
             LOGGER(__name__).warning(f"⚠️ Retrying download with Fallback for: {link}")
             file = _run_download_attempt("bestaudio", use_aria=False)
             if file: return file
