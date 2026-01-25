@@ -1,6 +1,6 @@
 # Authored By Certified Coders © 2025
 # Fixed for platforms/Youtube.py
-# SMART HYBRID MODE: Fixed NameError + Direct Stream + Background Cache
+# GOLDEN EDITION: Real Direct Video/Audio Stream + Background Cache
 
 import asyncio
 import os
@@ -129,11 +129,12 @@ class YouTubeAPI:
         d, _ = await self.track(link, videoid)
         return d.get("thumb")
 
-    # دالة التحميل في الخلفية (لتخزين الملف في الرام للمرة القادمة)
-    def _background_download(self, link, final_path):
+    def _background_download(self, link, final_path, is_video):
         try:
+            # تحميل نسخة خفيفة في الخلفية عشان المرة الجاية
+            fmt = "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]" if is_video else "bestaudio[ext=m4a]/bestaudio/best"
             ydl_opts = {
-                "format": "bestaudio[ext=m4a]/bestaudio/best",
+                "format": fmt,
                 "outtmpl": final_path,
                 "cookiefile": get_cookie_file(),
                 "geo_bypass": True,
@@ -163,21 +164,35 @@ class YouTubeAPI:
 
         try:
             if "v=" in link: vid_id = link.split("v=")[1].split("&")[0]
+            elif "youtu.be/" in link: vid_id = link.split("youtu.be/")[1].split("?")[0]
             else: vid_id = str(int(time.time()))
         except: vid_id = str(int(time.time()))
 
-        # 1. فحص الكاش في الرام
-        # لو الملف موجود، رجعه فوراً (تشغيل من الرام)
-        ram_path = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.m4a")
+        # تحديد المسار في الرام
+        ext = "mp4" if video else "m4a"
+        ram_path = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
+
+        # 1. فحص الكاش (RAM Cache Check)
         if os.path.exists(ram_path) and os.path.getsize(ram_path) > 1024:
             print(f"⚡ RAM Cache Hit: {vid_id}", flush=True)
             return ram_path, False
 
-        # 2. لو مش موجود، هات رابط مباشر فوراً (Direct Stream)
-        print(f"🚀 Fetching Direct Link for: {vid_id}", flush=True)
+        # 2. جلب الرابط المباشر (Direct Stream Fetch)
+        print(f"🚀 Fetching Direct Link for: {vid_id} (Video={video})", flush=True)
         
         try:
-            cmd = ["yt-dlp", "-g", "-f", "bestaudio[ext=m4a]/bestaudio", "--cookies", get_cookie_file() or "", link]
+            cmd = ["yt-dlp", "-g", "--cookies", get_cookie_file() or ""]
+            
+            # 🔥 الحل الجذري لمشكلة NoVideoSourceFound 🔥
+            if video:
+                # لو فيديو، لازم نجيب رابط فيه صورة وصوت
+                cmd.extend(["-f", "best[height<=480]"])
+            else:
+                # لو صوت، هات رابط صوت بس
+                cmd.extend(["-f", "bestaudio[ext=m4a]/bestaudio"])
+            
+            cmd.append(link)
+
             process = await asyncio.create_subprocess_exec(
                 *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
@@ -186,21 +201,23 @@ class YouTubeAPI:
             if stdout:
                 direct_link = stdout.decode().split("\n")[0].strip()
                 
-                # 3. شغل تحميل في الخلفية (عشان المرة الجاية يبقى كاش)
-                loop.run_in_executor(self.pool, self._background_download, link, ram_path)
+                # 3. تشغيل التحميل في الخلفية (Background Cache)
+                loop.run_in_executor(self.pool, self._background_download, link, ram_path, video)
 
-                # 4. رجع الرابط المباشر (Direct = True)
+                # 4. إرجاع الرابط المباشر فوراً
+                print(f"✅ Got Direct Link", flush=True)
                 return direct_link, True
             else:
-                print(f"❌ Direct Link Failed", flush=True)
+                print(f"❌ Direct Link Failed: {stderr.decode()}", flush=True)
         except Exception as e:
             print(f"❌ Error fetching direct link: {e}", flush=True)
 
-        # Fallback: لو الرابط المباشر فشل، حمل الملف عادي
+        # Fallback: لو فشل الرابط المباشر، حمل الملف (مضطرين)
         def _fallback_download():
             try:
+                fmt = "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]" if video else "bestaudio[ext=m4a]"
                 ydl_opts = {
-                    "format": "bestaudio[ext=m4a]",
+                    "format": fmt,
                     "outtmpl": ram_path,
                     "cookiefile": get_cookie_file(),
                     "quiet": True
@@ -210,6 +227,7 @@ class YouTubeAPI:
                 return ram_path
             except: return None
 
+        print("⚠️ Direct Link Failed, Fallback to Download...", flush=True)
         downloaded_file = await loop.run_in_executor(self.pool, _fallback_download)
         if downloaded_file:
             return downloaded_file, False
