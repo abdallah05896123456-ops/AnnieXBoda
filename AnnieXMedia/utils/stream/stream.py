@@ -1,7 +1,9 @@
 # Authored By Certified Coders © 2025
-import os
+# Fixed for utils/stream/stream.py
+# DIRECT STREAM SUPPORT: Handles URLs properly without disk checks
+
 import asyncio
-from random import randint
+import os
 from typing import Union
 
 from pyrogram.types import InlineKeyboardMarkup
@@ -9,7 +11,6 @@ from pyrogram.errors import FloodWait
 
 import config
 from AnnieXMedia import Carbon, YouTube, app
-# استخدمنا StreamController لأنه الأساس في سورس Annie
 from AnnieXMedia.core.call import StreamController
 from AnnieXMedia.misc import db
 from AnnieXMedia.utils.database import (
@@ -20,11 +21,9 @@ from AnnieXMedia.utils.exceptions import AssistantErr
 from AnnieXMedia.utils.inline import aq_markup, close_markup, stream_markup
 from AnnieXMedia.utils.pastebin import ANNIEBIN
 from AnnieXMedia.utils.stream.queue import put_queue, put_queue_index
-# استخدمنا get_thumb الخاصة بـ Annie لضمان التوافق
 from AnnieXMedia.utils.thumbnails import get_thumb
 from AnnieXMedia.utils.errors import capture_internal_err
 
-# --- دالة الحذف الآمن (مقتبسة من Brandrd) ---
 async def safe_delete(message):
     try:
         await message.delete()
@@ -48,7 +47,6 @@ async def stream(
     if not result:
         return
 
-    # توحيد المتغيرات لسرعة المعالجة
     forceplay = bool(forceplay)
     is_video = True if video else False
 
@@ -56,17 +54,15 @@ async def stream(
         await StreamController.force_stop_stream(chat_id)
 
     # ==========================
-    # 1. PLAYLIST MODE (منطق Alexa السريع)
+    # 1. PLAYLIST MODE
     # ==========================
     if streamtype == "playlist":
         msg = f"{_['play_19']}\n\n"
         count = 0
-        
         for search in result:
             if int(count) == config.PLAYLIST_FETCH_LIMIT:
                 continue
             try:
-                # استخدام دالة Annie للتفاصيل
                 title, duration_min, duration_sec, thumbnail, vidid = await YouTube.details(
                     search, videoid=search
                 )
@@ -98,7 +94,7 @@ async def stream(
                 if not forceplay:
                     db[chat_id] = []
                 try:
-                    # منطق Alexa في التنزيل (سريع)
+                    # جلب الرابط المباشر
                     file_path, direct = await YouTube.download(
                         vidid, mystic, video=is_video, videoid=vidid
                     )
@@ -106,6 +102,7 @@ async def stream(
                     await safe_delete(mystic)
                     raise AssistantErr(_["play_14"])
 
+                # تمرير الرابط للمكالمة مباشرة
                 await StreamController.join_call(
                     chat_id,
                     original_chat_id,
@@ -113,6 +110,8 @@ async def stream(
                     video=is_video,
                     image=thumbnail,
                 )
+                
+                # حفظ الرابط في الكيو لتجنب إعادة السحب
                 await put_queue(
                     chat_id,
                     original_chat_id,
@@ -126,14 +125,10 @@ async def stream(
                     forceplay=forceplay,
                 )
                 
-                # جلب الصورة والزر
                 img = await get_thumb(vidid)
                 button = stream_markup(_, chat_id)
-                
-                # حذف رسالة "جاري البحث" (ميزة Brandrd)
                 await safe_delete(mystic)
-
-                # إرسال الرسالة مع حماية FloodWait وتنسيق Alexa
+                
                 caption_text = "🧚 " + _["stream_1"].format(
                     f"https://t.me/{app.username}?start=info_{vidid}",
                     title[:23],
@@ -149,30 +144,17 @@ async def stream(
                     )
                     db[chat_id][0]["mystic"] = run
                     db[chat_id][0]["markup"] = "stream"
-                except FloodWait as e:
-                    await asyncio.sleep(e.value)
-                    run = await app.send_photo(
-                        original_chat_id,
-                        photo=img,
-                        caption=caption_text,
-                        reply_markup=InlineKeyboardMarkup(button),
-                    )
-                    db[chat_id][0]["mystic"] = run
-                    db[chat_id][0]["markup"] = "stream"
                 except Exception:
                     pass
 
         if count == 0:
             return
         
-        # إنشاء رابط للقائمة الطويلة
         link = await ANNIEBIN(msg)
-        lines = msg.count("\n")
-        car = os.linesep.join(msg.split(os.linesep)[:17]) if lines >= 17 else msg
         try:
-            carbon = await Carbon.generate(car, randint(100, 10000000))
+            carbon = await Carbon.generate(msg, randint(100, 10000000))
             playlist_photo = carbon
-        except Exception:
+        except:
             playlist_photo = config.PLAYLIST_IMG_URL
             
         upl = close_markup(_)
@@ -185,10 +167,9 @@ async def stream(
         )
 
     # ==========================
-    # 2. YOUTUBE MODE (الأكثر استخداماً - محسن)
+    # 2. YOUTUBE MODE (DIRECT STREAM FIX)
     # ==========================
     elif streamtype == "youtube":
-        # استخدام .get للحماية من الأخطاء (Brandrd Style)
         link = result.get("link")
         vidid = result.get("vidid")
         title = (result.get("title")).title()
@@ -196,6 +177,7 @@ async def stream(
         thumbnail = result.get("thumb")
 
         try:
+            # هنا السحر: الدالة هترجع رابط مباشر (Direct=True)
             file_path, direct = await YouTube.download(
                 vidid, mystic, video=is_video, videoid=vidid
             )
@@ -203,10 +185,16 @@ async def stream(
             await safe_delete(mystic)
             raise AssistantErr(_["play_14"])
 
+        # تأكيد أن المسار ليس فارغاً
+        if not file_path:
+             await safe_delete(mystic)
+             raise AssistantErr("فشل في استخراج رابط التشغيل المباشر.")
+
         if await is_active_chat(chat_id):
             await put_queue(
                 chat_id,
                 original_chat_id,
+                # لو رابط مباشر نحفظ الرابط، لو تحميل نحفظ المعرف
                 file_path if direct else f"vid_{vidid}",
                 title,
                 duration_min,
@@ -226,6 +214,8 @@ async def stream(
         else:
             if not forceplay:
                 db[chat_id] = []
+            
+            # تشغيل الرابط فوراً بدون فحص وجود ملف
             await StreamController.join_call(
                 chat_id,
                 original_chat_id,
@@ -257,16 +247,6 @@ async def stream(
                 user_name,
             )
             try:
-                run = await app.send_photo(
-                    original_chat_id,
-                    photo=img,
-                    caption=caption_text,
-                    reply_markup=InlineKeyboardMarkup(button),
-                )
-                db[chat_id][0]["mystic"] = run
-                db[chat_id][0]["markup"] = "stream"
-            except FloodWait as e:
-                await asyncio.sleep(e.value)
                 run = await app.send_photo(
                     original_chat_id,
                     photo=img,
@@ -336,13 +316,12 @@ async def stream(
             db[chat_id][0]["markup"] = "tg"
 
     # ==========================
-    # 4. TELEGRAM FILES MODE
+    # 4. TELEGRAM FILES
     # ==========================
     elif streamtype == "telegram":
         file_path = result.get("path")
         link = result.get("link")
         title = (result.get("title")).title()
-        # تصحيح مشكلة dur من ملف Brandrd
         duration_min = result.get("dur", result.get("duration_min", "00:00"))
 
         if await is_active_chat(chat_id):
@@ -396,7 +375,7 @@ async def stream(
             db[chat_id][0]["markup"] = "tg"
 
     # ==========================
-    # 5. LIVE MODE
+    # 5. LIVE / INDEX MODE
     # ==========================
     elif streamtype == "live":
         link = result.get("link")
@@ -427,11 +406,11 @@ async def stream(
         else:
             if not forceplay:
                 db[chat_id] = []
+            
+            # في اللايف بنستخدم الرابط مباشرة بدون تحميل
             n, file_path = await YouTube.video(link)
             if n == 0:
                 raise AssistantErr(_["str_3"])
-            if not file_path:
-                raise AssistantErr(_["play_14"])
 
             await StreamController.join_call(
                 chat_id,
@@ -470,12 +449,9 @@ async def stream(
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
 
-    # ==========================
-    # 6. INDEX / URL MODE
-    # ==========================
     elif streamtype == "index":
         link = result
-        title = "رابط خارجي أو M3u8"
+        title = "رابط خارجي"
         duration_min = "00:00"
 
         if await is_active_chat(chat_id):
