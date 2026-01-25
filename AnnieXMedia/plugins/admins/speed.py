@@ -1,4 +1,4 @@
-﻿# Authored By Certified Coders © 2025
+# Authored By Certified Coders © 2025
 from pyrogram import filters
 from pyrogram.types import Message
 
@@ -24,12 +24,10 @@ async def playback(cli, message: Message, _, chat_id):
     playing = db.get(chat_id)
     if not playing:
         return await message.reply_text(_["queue_2"])
-    duration_seconds = int(playing[0]["seconds"])
-    if duration_seconds == 0:
-        return await message.reply_text(_["admin_27"])
+    
+    # 🔥 تم فتح التحكم بالسرعة للروابط المباشرة والبثوث
     file_path = playing[0]["file"]
-    if "downloads" not in file_path:
-        return await message.reply_text(_["admin_27"])
+    
     upl = speed_markup(_, chat_id)
     return await message.reply_text(
         text=_["admin_28"].format(app.mention),
@@ -58,12 +56,10 @@ async def manage_callback(client, CallbackQuery, _):
     playing = db.get(chat_id)
     if not playing:
         return await CallbackQuery.answer(_["queue_2"], show_alert=True)
-    duration_seconds = int(playing[0]["seconds"])
-    if duration_seconds == 0:
-        return await CallbackQuery.answer(_["admin_27"], show_alert=True)
+
+    # 🔥 تم إلغاء شروط المنع لتعمل السرعة مع أي ملف أو رابط
     file_path = playing[0]["file"]
-    if "downloads" not in file_path:
-        return await CallbackQuery.answer(_["admin_27"], show_alert=True)
+    
     checkspeed = (playing[0]).get("speed")
     if checkspeed:
         if str(checkspeed) == str(speed):
