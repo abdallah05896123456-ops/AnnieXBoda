@@ -1,6 +1,6 @@
 # Authored By Certified Coders © 2025
 # Fixed for platforms/Youtube.py
-# DEBUG MODE: Logs Enabled + Force IPv4 + High Speed Aria2
+# FINAL ARIA2 BEAST MODE: Force IPv4 + Chrome Spoofing + 16x Connections
 
 import asyncio
 import os
@@ -15,21 +15,16 @@ from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
 from youtubesearchpython.aio import VideosSearch
 
-# --- إعدادات اللوجز (عشان نشوف السرعة) ---
-# بنعمل Logger مخصص يطبع الكلام في التيرمينال
+# --- Logger كاشف السرعة ---
 class MyLogger:
     def debug(self, msg):
-        # تصفية الرسائل عشان نظهر المهم بس (السرعة والنسبة)
-        if "download]" in msg or "ETA" in msg or "MiB/s" in msg:
-            print(msg, flush=True)
-    def info(self, msg):
-        pass
-    def warning(self, msg):
-        pass
-    def error(self, msg):
-        print(f"❌ ERROR: {msg}", flush=True)
+        # تصفية الرسائل لإظهار معلومات التحميل فقط
+        if "MiB/s" in msg or "ETA" in msg or "download" in msg:
+            print(f"🚀 {msg}", flush=True)
+    def info(self, msg): pass
+    def warning(self, msg): pass
+    def error(self, msg): print(f"❌ ERROR: {msg}", flush=True)
 
-# استيراد الإعدادات
 try:
     from AnnieXMedia.utils.formatters import time_to_seconds
     from AnnieXMedia import LOGGER
@@ -52,11 +47,8 @@ YOUTUBE_META_TTL = 3600
 
 def get_cookie_file():
     possible_paths = [
-        Config.COOKIE_PATH,
-        "cookies.txt",
-        "AnnieXMedia/cookies.txt",
-        "assets/cookies.txt",
-        "platforms/cookies.txt"
+        Config.COOKIE_PATH, "cookies.txt", "AnnieXMedia/cookies.txt",
+        "assets/cookies.txt", "platforms/cookies.txt"
     ]
     for path in possible_paths:
         if os.path.exists(path) and os.path.getsize(path) > 0:
@@ -156,12 +148,7 @@ class YouTubeAPI:
         title: Union[bool, str] = None,
     ) -> Tuple[Optional[str], bool]:
         
-        if videoid: 
-            link = self.base + link
-        
-        if "youtube.com/0" in link or link.endswith("="):
-            return None, False
-
+        if videoid: link = self.base + link
         loop = asyncio.get_running_loop()
 
         try:
@@ -171,19 +158,32 @@ class YouTubeAPI:
         except:
              vid_id = str(int(time.time()))
 
-        def _run_download_attempt(fmt_option, use_aria=True):
-            # تنظيف القديم
+        def _run_download_attempt(fmt_option):
+            # 1. تنظيف أي ملف WebM قديم (عشان ميحصلش Error)
             bad_path = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.webm")
             if os.path.exists(bad_path):
                 try: os.remove(bad_path)
                 except: pass
 
-            # الكاش
+            # 2. لو الملف MP4/M4A موجود وسليم، استخدمه فوراً
             for ext in ['mp4', 'm4a', 'mkv']:
                 p = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
                 if os.path.exists(p) and os.path.getsize(p) > 1024:
                     print(f"✅ Found cached file: {p}", flush=True)
                     return p
+
+            # إعدادات Aria2 للسرعة القصوى
+            # User-Agent هو السر هنا عشان يوتيوب ميعرفش إنه Aria2
+            ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            
+            aria2_args = [
+                "-x", "16",       # 16 اتصال
+                "-s", "16",       # تقسيم الملف
+                "-j", "16",       # تحميل متوازي
+                "-k", "1M",       # حجم القطعة
+                "--file-allocation=none",
+                f"--user-agent={ua}" # انتحال شخصية كروم
+            ]
 
             ydl_opts = {
                 "outtmpl": f"{Config.DOWNLOAD_PATH}/{vid_id}.%(ext)s",
@@ -191,36 +191,25 @@ class YouTubeAPI:
                 "geo_bypass": True,
                 "nocheckcertificate": True,
                 
-                # 🔥 تفعيل اللوجز 🔥
+                # إظهار اللوجز
                 "quiet": False, 
-                "logger": MyLogger(), # استخدام اللوجر المخصص
-                "verbose": True,      # تفاصيل أكثر
-
+                "logger": MyLogger(),
+                
                 "ignoreerrors": True,
                 "format": fmt_option,
                 "remote_components": ["ejs:github"],
-                "merge_output_format": "mp4",
+                "merge_output_format": "mp4", # إجبار MP4
                 
-                # 🔥 إجبار IPv4 (الحل السحري للسرعة في السيرفرات) 🔥
+                # 🔥 إجبار IPv4 (أهم سطر للسرعة) 🔥
                 "force_ipv4": True,
-
-                # خداع يوتيوب لتجنب الخنق
-                "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+                
+                # إعدادات Aria2
+                "external_downloader": "aria2c",
+                "external_downloader_args": aria2_args,
             }
 
-            if self.has_aria2 and use_aria:
-                ydl_opts["external_downloader"] = "aria2c"
-                # إعدادات سرعة عالية وآمنة
-                ydl_opts["external_downloader_args"] = [
-                    "-x", "16", 
-                    "-s", "16", 
-                    "-j", "16", 
-                    "-k", "10M", # كبرنا حجم القطعة عشان السرعات العالية
-                    "--file-allocation=none"
-                ]
-
             try:
-                print(f"⬇️ Starting download for {link} ...", flush=True)
+                print(f"⬇️ Starting download with Aria2...", flush=True)
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([link])
             except Exception as e:
@@ -229,28 +218,21 @@ class YouTubeAPI:
             
             for ext in ['mp4', 'm4a', 'mkv']:
                 final_path = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
-                if os.path.exists(final_path):
-                    if os.path.getsize(final_path) > 1024:
-                        print(f"✅ Download complete: {final_path}", flush=True)
-                        return final_path
-                    else:
-                        try: os.remove(final_path)
-                        except: pass
+                if os.path.exists(final_path) and os.path.getsize(final_path) > 1024:
+                     return final_path
             return None
 
         def _execute():
-            # المحاولة 1
-            file = _run_download_attempt("bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best", use_aria=True)
+            # المحاولة 1: Aria2 + Best Quality + IPv4
+            file = _run_download_attempt("bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best")
             if file: return file
             
-            # المحاولة 2
-            print("⚠️ Switching to fallback mode (Audio only)...", flush=True)
-            file = _run_download_attempt("bestaudio[ext=m4a]", use_aria=True)
+            # المحاولة 2: Aria2 + Audio Only
+            file = _run_download_attempt("bestaudio[ext=m4a]")
             if file: return file
 
-            # المحاولة 3
-            print("⚠️ Switching to Native Downloader (No Aria2)...", flush=True)
-            file = _run_download_attempt("best", use_aria=False)
+            # المحاولة 3: بدون Aria2 (طوارئ)
+            file = _run_download_attempt("best")
             return file
 
         downloaded_file = await loop.run_in_executor(self.pool, _execute)
@@ -258,7 +240,7 @@ class YouTubeAPI:
         if downloaded_file:
             return downloaded_file, True
         
-        LOGGER(__name__).error(f"❌ ALL Download attempts failed for: {link}")
+        LOGGER(__name__).error(f"❌ ALL attempts failed for: {link}")
         return None, False
 
     async def playlist(self, link, limit, user_id, videoid: Union[bool, str] = None):
