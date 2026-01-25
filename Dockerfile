@@ -1,43 +1,43 @@
-# 1. استخدام صورة مستقرة
-FROM python:3.12-slim-bookworm
+# Python 3.12 معتمدة على نسخة pytgcalls المحلية
+FROM python:3.12-slim
 
-# 2. إعدادات البيئة
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PIP_NO_CACHE_DIR=1
-ENV DENO_INSTALL="/root/.deno"
-ENV PATH="${DENO_INSTALL}/bin:${PATH}"
 
 WORKDIR /app
 
-# 3. تحديث النظام وتثبيت Node.js والملحقات
+# تنظيف أي ملفات قديمة في حالة إعادة build
+RUN rm -rf /app/*
+
+# تثبيت المتطلبات النظامية + deno
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        curl git ffmpeg aria2 unzip build-essential python3-dev \
-        libffi-dev libxml2-dev libxslt-dev zlib1g-dev gcc && \
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs && \
+    apt-get install -y --no-install-recommends git ffmpeg curl unzip build-essential && \
+    rm -rf /var/lib/apt/lists/* && \
     curl -fsSL https://deno.land/install.sh | sh && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+    ln -s /root/.deno/bin/deno /usr/local/bin/deno
 
-# 4. تحديث pip
-RUN pip install --upgrade pip setuptools wheel
+# نسخ مكتبة pytgcalls المحلية أولاً
+COPY pytgcalls /app/pytgcalls
 
-# 5. تثبيت المتطلبات (مع تجاهل pytgcalls لأننا نملكه محلياً)
-COPY requirements.txt .
-RUN sed -i '/pytgcalls/d' requirements.txt && \
-    sed -i '/py-tgcalls/d' requirements.txt && \
-    pip install --no-cache-dir -r requirements.txt
+# نسخ requirements.txt مع فلترة py-tgcalls
+COPY requirements.txt /app/requirements.txt
+RUN if [ -f /app/requirements.txt ]; then \
+      grep -v -i '^py-tgcalls' /app/requirements.txt > /app/filtered-requirements.txt || true; \
+    fi
 
-# 6. تثبيت المكاتب المساعدة للكود المحلي
-RUN pip install --no-cache-dir ntgcalls>=1.2.2 jinja2 pyrogram
+# تثبيت باقي المكتبات
+RUN pip install --upgrade pip setuptools wheel && \
+    if [ -f /app/filtered-requirements.txt ]; then pip install --no-cache-dir -r /app/filtered-requirements.txt; fi
 
-# 7. نسخ ملفات المشروع
-COPY . .
+# نسخ باقي سورس AnnieXMedia
+COPY . /app
 
-# 🔥 8. الإصلاح السحري: تعديل كود pytgcalls المحلي ليتوافق مع Pyrogram الجديد 🔥
-# هذا الأمر يستبدل الخطأ المحذوف (GroupcallForbidden) بالخطأ العام (Forbidden)
-RUN sed -i 's/from pyrogram.errors import GroupcallForbidden/from pyrogram.errors import Forbidden as GroupcallForbidden/g' /app/pytgcalls/mtproto/pyrogram_client.py
+# تأكيد ان Python بيستخدم النسخة المحلية من pytgcalls
+RUN python - <<'PY'
+import pytgcalls, sys
+print('PYTGCALLS_FROM=', getattr(pytgcalls,'__file__','<not found>'))
+PY
 
-# 9. تشغيل البوت
+# نقطة الدخول
 CMD ["python3", "run.py"]
