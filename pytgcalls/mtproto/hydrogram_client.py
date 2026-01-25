@@ -212,7 +212,7 @@ class HydrogramClient(BridgedClient):
                 chat_id: Optional[int] = None
                 if update.chat_id:
                     chat_id = self.chat_id(
-                        chats[update.chat_id]
+                        chats[update.chat_id],
                     )
                 elif self._cache.get_chat_id(update.call.id) is not None:
                     chat_id = self._cache.get_chat_id(update.call.id)
