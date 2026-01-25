@@ -1,11 +1,12 @@
 # Authored By Certified Coders © 2025
 # Fixed for platforms/Youtube.py
-# INSTANT STREAM MODE: Direct URL Injection (No Download) - 0 Latency
+# SMART HYBRID MODE: Play Direct Stream NOW + Download to RAM in Background
 
 import asyncio
 import os
 import re
 import logging
+import shutil
 from typing import Union, List, Dict, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor
 import time
@@ -13,13 +14,6 @@ import yt_dlp
 from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
 from youtubesearchpython.aio import VideosSearch
-
-# --- Logger ---
-class MyLogger:
-    def debug(self, msg): pass
-    def info(self, msg): pass
-    def warning(self, msg): pass
-    def error(self, msg): print(f"❌ {msg}", flush=True)
 
 try:
     from AnnieXMedia.utils.formatters import time_to_seconds
@@ -30,8 +24,7 @@ except ImportError:
     def time_to_seconds(t): return 0
 
 class Config:
-    # مش محتاجين مسار تحميل للفيديو لأنه مش هيتحمل أصلاً!
-    # بس هنسيبه عشان ملفات الصوت الصغيرة
+    # مكان الكاش (الرام)
     if os.path.exists("/dev/shm"):
         DOWNLOAD_PATH = "/dev/shm/AnnieDownloads"
     else:
@@ -63,7 +56,11 @@ class YouTubeAPI:
         self.regex = r"(?:youtube\.com|youtu\.be)"
         self.listbase = "https://www.youtube.com/playlist?list="
         self.pool = ThreadPoolExecutor(max_workers=Config.MAX_WORKERS)
+        
+        # تنظيف الرام عند البدء (اختياري)
+        pass
 
+    # ... (دوال البحث والتحقق كما هي) ...
     async def exists(self, link: str, videoid: Union[bool, str] = None):
         if videoid: link = self.base + link
         return bool(re.search(self.regex, link))
@@ -137,6 +134,27 @@ class YouTubeAPI:
         d, _ = await self.track(link, videoid)
         return d.get("thumb")
 
+    # 🔥🔥🔥 دالة الخلفية (Background Downloader) 🔥🔥🔥
+    # دي بتشتغل في الخفاء ومبتعطلش البوت
+    def _background_download(self, link, final_path):
+        try:
+            ydl_opts = {
+                "format": "bestaudio[ext=m4a]/bestaudio/best",
+                "outtmpl": final_path,
+                "cookiefile": get_cookie_file(),
+                "geo_bypass": True,
+                "nocheckcertificate": True,
+                "quiet": True,
+                "force_ipv4": True,
+            }
+            print(f"🔄 Background Caching Started: {final_path}", flush=True)
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([link])
+            print(f"✅ Background Caching Done: {final_path}", flush=True)
+        except Exception as e:
+            print(f"⚠️ Background Cache Failed: {e}", flush=True)
+
+    # 🔥🔥🔥 الدالة الرئيسية 🔥🔥🔥
     async def download(
         self,
         link: str,
@@ -150,72 +168,71 @@ class YouTubeAPI:
     ) -> Tuple[Optional[str], bool]:
         
         if videoid: link = self.base + link
-        
-        # 🔥🔥🔥 السحر هنا (Direct Stream Mode) 🔥🔥🔥
-        # لو الطلب فيديو، هنجيب الرابط المباشر فوراً زي AlexaMusic
-        if video:
-            try:
-                # الأمر ده (-g) بيجيب الرابط بس من غير تحميل
-                # وبنحدد الجودة 480p عشان تكون خفيفة في البث المباشر
-                cmd = [
-                    "yt-dlp",
-                    "-g",
-                    "-f", "best[height<=480]",
-                    "--cookies", get_cookie_file() or "",
-                    link
-                ]
-                
-                # تشغيل الأمر في الخلفية
-                process = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                stdout, stderr = await process.communicate()
-                
-                if stdout:
-                    direct_link = stdout.decode().split("\n")[0].strip()
-                    print(f"🚀 Direct Link Fetched: {link}", flush=True)
-                    # بنرجع الرابط المباشر، والـ True التانية دي عشان نقول للبوت "ده مش ملف، ده رابط"
-                    return direct_link, True
-            except Exception as e:
-                print(f"❌ Direct Link Failed: {e}", flush=True)
-
-        # -----------------------------------------------------
-        # لو فشل الرابط المباشر أو كان الطلب صوت (Audio)، هنحمل في الرام
-        # الصوت لازم يتحمل عشان FFmpeg يعرف يعالجه صح وميقطعش
-        
         loop = asyncio.get_running_loop()
+
         try:
             if "v=" in link: vid_id = link.split("v=")[1].split("&")[0]
             else: vid_id = str(int(time.time()))
         except: vid_id = str(int(time.time()))
 
-        def _run_download():
-            # تنظيف الرام
-            path = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.m4a")
-            if os.path.exists(path): return path
+        # 1. فحص الكاش (RAM Check)
+        # لو الملف موجود، هنشغله فوراً من الرام (Cache Hit)
+        # هنا بنرجع False عشان نقول للبوت "ده ملف"
+        ram_path = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.m4a")
+        if os.path.exists(ram_path) and os.path.getsize(ram_path) > 1024:
+            print(f"⚡ RAM Cache Hit: {vidid}", flush=True)
+            return ram_path, False
 
-            ydl_opts = {
-                "format": "bestaudio[ext=m4a]/bestaudio/best",
-                "outtmpl": path,
-                "cookiefile": get_cookie_file(),
-                "geo_bypass": True,
-                "nocheckcertificate": True,
-                "quiet": True,
-            }
+        # 2. لو مش موجود: هات رابط مباشر فوراً (Direct Stream)
+        # عشان المستخدم مايستناش
+        print(f"🚀 Fetching Direct Link for: {vidid}", flush=True)
+        
+        try:
+            # هنجيب الرابط المباشر
+            cmd = ["yt-dlp", "-g", "-f", "bestaudio[ext=m4a]/bestaudio", "--cookies", get_cookie_file() or "", link]
+            process = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+
+            if stdout:
+                direct_link = stdout.decode().split("\n")[0].strip()
+                
+                # 3. تشغيل التحميل في الخلفية (Fire and Forget)
+                # بنرمي المهمة للـ executor ومنستناش النتيجة
+                # ده هيحمل الملف للرام عشان المرة الجاية
+                loop.run_in_executor(self.pool, self._background_download, link, ram_path)
+
+                # 4. إرجاع الرابط المباشر للمستخدم فوراً
+                # هنا بنرجع True عشان نقول للبوت "ده رابط مباشر"
+                return direct_link, True
+            else:
+                # لو فشل الرابط المباشر، جرب الطريقة التقليدية (تحميل عادي)
+                print(f"❌ Direct Link Failed, Fallback to Download", flush=True)
+        except Exception as e:
+            print(f"❌ Error fetching direct link: {e}", flush=True)
+
+        # Fallback (لو كل حاجة فشلت، حمل الملف بالطريقة العادية)
+        def _fallback_download():
             try:
+                ydl_opts = {
+                    "format": "bestaudio[ext=m4a]",
+                    "outtmpl": ram_path,
+                    "cookiefile": get_cookie_file(),
+                    "quiet": True
+                }
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([link])
-                return path
+                return ram_path
             except: return None
 
-        downloaded_file = await loop.run_in_executor(self.pool, _run_download)
+        downloaded_file = await loop.run_in_executor(self.pool, _fallback_download)
         if downloaded_file:
-            return downloaded_file, True
+            return downloaded_file, False
         
         return None, False
 
+    # ... (باقي الدوال: playlist, formats, slider كما هي) ...
     async def playlist(self, link, limit, user_id, videoid: Union[bool, str] = None):
         if videoid: link = self.listbase + link
         if "&" in link: link = link.split("&")[0]
