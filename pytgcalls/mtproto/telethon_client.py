@@ -204,14 +204,17 @@ class TelethonClient(BridgedClient):
                 update,
                 UpdateGroupCall,
             ):
-                chat_id: Optional[int] = None
-                if update.chat_id:
+                if getattr(update, 'chat_id', None) is not None:
+                    # noinspection PyUnresolvedReferences
                     chat_id = self.chat_id(
                         await self._get_entity_group(
                             update.chat_id,
                         ),
                     )
-                elif self._cache.get_chat_id(update.call.id) is not None:
+                elif getattr(update, 'peer', None) is not None:
+                    # noinspection PyUnresolvedReferences
+                    chat_id = self.chat_id(update.peer)
+                else:
                     chat_id = self._cache.get_chat_id(update.call.id)
 
                 if chat_id is not None:
