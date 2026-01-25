@@ -198,7 +198,6 @@ class Call:
 
     @capture_internal_err
     async def speedup_stream(self, chat_id: int, file_path: str, speed: float, playing: list) -> None:
-        # Code kept from Annie for compatibility
         if not isinstance(playing, list) or not playing or not isinstance(playing[0], dict):
             raise AssistantErr("Invalid stream info for speedup.")
 
@@ -210,7 +209,8 @@ class Call:
 
         if not os.path.exists(out):
             vs = str(2.0 / float(speed))
-            cmd = f'ffmpeg -i "{file_path}" -filter:v "setpts={vs}*PTS" -filter:a atempo={speed} -y "{out}"'
+            # استخدام الـ 16 كور لضغط الملف المسرع بسرعة الصاروخ
+            cmd = f'ffmpeg -threads 16 -i "{file_path}" -filter:v "setpts={vs}*PTS" -filter:a atempo={speed} -ac 2 -y "{out}"'
             proc = await asyncio.create_subprocess_shell(
                 cmd,
                 stdin=asyncio.subprocess.PIPE,
@@ -218,7 +218,13 @@ class Call:
             )
             await proc.communicate()
 
-        dur = int(await asyncio.get_event_loop().run_in_executor(None, check_duration, out))
+        # 🛠️ حل المشكلة (Unknown Fix): صمام أمان لمنع الكراش
+        try:
+            dur_raw = await asyncio.get_event_loop().run_in_executor(None, check_duration, out)
+            dur = int(dur_raw) if str(dur_raw).isdigit() else int(playing[0]["seconds"])
+        except:
+            dur = int(playing[0]["seconds"])
+
         played, con_seconds = speed_converter(playing[0]["played"], speed)
         duration_min = seconds_to_min(dur)
         is_video = playing[0]["streamtype"] == "video"
@@ -264,8 +270,6 @@ class Call:
         lang = await get_lang(chat_id)
         _ = get_string(lang)
         stream = dynamic_media_stream(path=link, video=bool(video))
-        
-        # 🔥 ALEXA OPTIMIZATION: Config added here
         ksk = GroupCallConfig(auto_start=False)
 
         try:
@@ -279,7 +283,6 @@ class Call:
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
         except Exception as e:
-            # 🚨 Watchdog: طباعة الخطأ الكامل في اللوجز لو حصل فشل
             LOGGER(__name__).error(f"💣 [JOIN ERROR] Chat: {chat_id}\n{traceback.format_exc()}")
             try:
                  await asyncio.sleep(1)
@@ -304,7 +307,6 @@ class Call:
 
     @capture_internal_err
     async def play(self, client, chat_id: int) -> None:
-        # 🔥 Refactored to match Alexa's `change_stream` logic but with Annie's vars
         check = db.get(chat_id)
         popped = None
         loop = await get_loop(chat_id)
@@ -315,7 +317,6 @@ class Call:
                 loop = loop - 1
                 await set_loop(chat_id, loop)
             
-            # Using auto_clean from Alexa's logic context (if config allows)
             await auto_clean(popped)
             
             if not check:
@@ -354,7 +355,6 @@ class Call:
 
             video = True if str(streamtype) == "video" else False
             
-            # 🔥 ALEXA OPTIMIZATION: Pre-calculate stream to save time
             try:
                 if "live_" in queued:
                     n, link = await YouTube.video(videoid, True)
@@ -503,7 +503,6 @@ class Call:
                         db[chat_id][0]["mystic"] = run
                         db[chat_id][0]["markup"] = "stream"
             except Exception:
-                # 🚨 Watchdog: طباعة الخطأ الكامل لو حصل كراش أثناء التشغيل
                 LOGGER(__name__).error(f"💣 [PLAY ERROR] Chat: {chat_id}\n{traceback.format_exc()}")
                 return await app.send_message(original_chat_id, text=_["call_6"])
 
