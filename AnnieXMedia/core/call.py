@@ -1,5 +1,4 @@
 # Authored By Certified Coders © 2025
-# TITANOS CORE + DEEP WATCHDOG (VERBATIM EDITION)
 import asyncio
 import os
 import traceback
@@ -48,24 +47,20 @@ from AnnieXMedia.utils.errors import capture_internal_err
 autoend = {}
 counter = {}
 
-# --- 🔥 Helper Function for Streams (Optimized for TitanOS 16-Cores & Stereo) ---
+# --- Helper Function for Streams (Optimized for TitanOS) ---
 def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
-    # إجبار 16 كور واستريو وحماية البث المباشر
-    cpu_cores = os.cpu_count() or 16
-    titan_flags = f"-threads {cpu_cores} -ac 2 -ar 48000 -preset ultrafast "
+    # إجبار الاستيريو واستغلال الـ 16 كور وتقليل التقطيع
+    titan_flags = "-threads 16 -ac 2"
+    if str(path).startswith("http"):
+        titan_flags += " -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
     
-    if str(path).startswith("http") or "live" in str(path):
-        titan_flags += "-reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 20M -analyzeduration 20M "
-    else:
-        titan_flags += "-probesize 10M -analyzeduration 10M "
-
     if ffmpeg_params:
         titan_flags += f" {ffmpeg_params}"
 
     if video:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.STUDIO,
+            audio_parameters=AudioQuality.STUDIO, # Alexa uses better quality
             video_parameters=VideoQuality.HD_720p,
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.REQUIRED,
@@ -74,7 +69,7 @@ def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = No
     else:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.STUDIO,
+            audio_parameters=AudioQuality.STUDIO, # Alexa uses better quality
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.IGNORE,
             ffmpeg_parameters=titan_flags,
@@ -185,10 +180,7 @@ class Call:
         # 🔥 ALEXA OPTIMIZATION: Using GroupCallConfig
         ksk = GroupCallConfig(auto_start=False)
         stream = dynamic_media_stream(path=link, video=bool(video))
-        try:
-            await assistant.play(chat_id, stream, config=ksk)
-        except Exception:
-            LOGGER(__name__).error(f"💣 [SKIP ERROR] Traceback:\n{traceback.format_exc()}")
+        await assistant.play(chat_id, stream, config=ksk)
 
     @capture_internal_err
     async def vc_users(self, chat_id: int) -> list:
@@ -277,7 +269,6 @@ class Call:
         ksk = GroupCallConfig(auto_start=False)
 
         try:
-            # 🕵️ Watchdog Join Monitor
             await assistant.play(chat_id, stream, config=ksk)
         except (NoActiveGroupCall, ChatAdminRequired):
             raise AssistantErr(_["call_8"])
@@ -288,8 +279,8 @@ class Call:
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
         except Exception as e:
-            # 🚨 الكود الخبيث: طبع الخطأ بالكامل في اللوجز
-            LOGGER(__name__).error(f"💣 [JOIN CRASH DETECTED] Chat: {chat_id}\nTraceback:\n{traceback.format_exc()}")
+            # 🚨 Watchdog: طباعة الخطأ الكامل في اللوجز لو حصل فشل
+            LOGGER(__name__).error(f"💣 [JOIN ERROR] Chat: {chat_id}\n{traceback.format_exc()}")
             try:
                  await asyncio.sleep(1)
                  await assistant.play(chat_id, stream, config=ksk)
@@ -364,7 +355,6 @@ class Call:
             video = True if str(streamtype) == "video" else False
             
             # 🔥 ALEXA OPTIMIZATION: Pre-calculate stream to save time
-            # 🕵️ Watchdog Deep Monitor inside play
             try:
                 if "live_" in queued:
                     n, link = await YouTube.video(videoid, True)
@@ -373,7 +363,7 @@ class Call:
                     stream = dynamic_media_stream(path=link, video=video)
                     
                     try:
-                        await client.play(chat_id, stream, config=GroupCallConfig(auto_start=False))
+                        await client.play(chat_id, stream)
                     except Exception:
                         return await app.send_message(original_chat_id, text=_["call_6"])
 
@@ -407,7 +397,7 @@ class Call:
 
                     stream = dynamic_media_stream(path=file_path, video=video)
                     try:
-                        await client.play(chat_id, stream, config=GroupCallConfig(auto_start=False))
+                        await client.play(chat_id, stream)
                     except:
                         return await app.send_message(original_chat_id, text=_["call_6"])
 
@@ -431,7 +421,7 @@ class Call:
                 elif "index_" in queued:
                     stream = dynamic_media_stream(path=videoid, video=video)
                     try:
-                        await client.play(chat_id, stream, config=GroupCallConfig(auto_start=False))
+                        await client.play(chat_id, stream)
                     except:
                         return await app.send_message(original_chat_id, text=_["call_6"])
 
@@ -448,7 +438,7 @@ class Call:
                 else:
                     stream = dynamic_media_stream(path=queued, video=video)
                     try:
-                        await client.play(chat_id, stream, config=GroupCallConfig(auto_start=False))
+                        await client.play(chat_id, stream)
                     except:
                         return await app.send_message(original_chat_id, text=_["call_6"])
 
@@ -513,7 +503,8 @@ class Call:
                         db[chat_id][0]["mystic"] = run
                         db[chat_id][0]["markup"] = "stream"
             except Exception:
-                LOGGER(__name__).error(f"💣 [PLAY CRASH DETECTED] Chat: {chat_id}\nTraceback:\n{traceback.format_exc()}")
+                # 🚨 Watchdog: طباعة الخطأ الكامل لو حصل كراش أثناء التشغيل
+                LOGGER(__name__).error(f"💣 [PLAY ERROR] Chat: {chat_id}\n{traceback.format_exc()}")
                 return await app.send_message(original_chat_id, text=_["call_6"])
 
     async def start(self) -> None:
