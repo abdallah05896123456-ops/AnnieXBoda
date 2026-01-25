@@ -1,6 +1,6 @@
 # Authored By Certified Coders © 2025
 # Fixed for platforms/Youtube.py
-# GOLDEN EDITION: Real Direct Video/Audio Stream + Background Cache
+# NUCLEAR EDITION: 16-Core Aria2c Download + Instant Direct Stream + RAM Disk
 
 import asyncio
 import os
@@ -23,14 +23,15 @@ except ImportError:
     def time_to_seconds(t): return 0
 
 class Config:
-    # استخدام الرام للكاش السريع
+    # بما أن الرام 88 جيجا، سنستخدم الرام للتخزين المؤقت للحصول على سرعة قراءة وكتابة خرافية
     if os.path.exists("/dev/shm"):
         DOWNLOAD_PATH = "/dev/shm/AnnieDownloads"
     else:
         DOWNLOAD_PATH = os.path.abspath("downloads")
     
     COOKIE_PATH = "AnnieXMedia/assets/cookies.txt"
-    MAX_WORKERS = 10
+    # استغلال الـ 16 كور بالكامل
+    MAX_WORKERS = 16
 
 if not os.path.exists(Config.DOWNLOAD_PATH):
     os.makedirs(Config.DOWNLOAD_PATH, exist_ok=True)
@@ -129,10 +130,18 @@ class YouTubeAPI:
         d, _ = await self.track(link, videoid)
         return d.get("thumb")
 
+    # 🔥 التحميل الخلفي باستخدام Aria2c لاستغلال سرعة الـ 3 جيجا 🔥
     def _background_download(self, link, final_path, is_video):
         try:
-            # تحميل نسخة خفيفة في الخلفية عشان المرة الجاية
-            fmt = "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]" if is_video else "bestaudio[ext=m4a]/bestaudio/best"
+            # استخدام 16 اتصال متوازي للتحميل بسرعة الضوء
+            aria2_args = [
+                "-x", "16", "-s", "16", "-j", "16", "-k", "1M",
+                "--file-allocation=none",
+                "--disable-ipv6=true" # IPv4 أسرع غالباً في السيرفرات
+            ]
+            
+            fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]" if is_video else "bestaudio[ext=m4a]/bestaudio/best"
+            
             ydl_opts = {
                 "format": fmt,
                 "outtmpl": final_path,
@@ -140,7 +149,8 @@ class YouTubeAPI:
                 "geo_bypass": True,
                 "nocheckcertificate": True,
                 "quiet": True,
-                "force_ipv4": True,
+                "external_downloader": "aria2c",
+                "external_downloader_args": aria2_args,
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([link])
@@ -178,17 +188,15 @@ class YouTubeAPI:
             return ram_path, False
 
         # 2. جلب الرابط المباشر (Direct Stream Fetch)
-        print(f"🚀 Fetching Direct Link for: {vid_id} (Video={video})", flush=True)
+        print(f"🚀 Fetching Direct Link for: {vid_id}", flush=True)
         
         try:
             cmd = ["yt-dlp", "-g", "--cookies", get_cookie_file() or ""]
             
-            # 🔥 الحل الجذري لمشكلة NoVideoSourceFound 🔥
+            # رفع الجودة لأن النت عندك قوي (720p بدلاً من 480p)
             if video:
-                # لو فيديو، لازم نجيب رابط فيه صورة وصوت
-                cmd.extend(["-f", "best[height<=480]"])
+                cmd.extend(["-f", "best[height<=720]"])
             else:
-                # لو صوت، هات رابط صوت بس
                 cmd.extend(["-f", "bestaudio[ext=m4a]/bestaudio"])
             
             cmd.append(link)
@@ -205,17 +213,16 @@ class YouTubeAPI:
                 loop.run_in_executor(self.pool, self._background_download, link, ram_path, video)
 
                 # 4. إرجاع الرابط المباشر فوراً
-                print(f"✅ Got Direct Link", flush=True)
                 return direct_link, True
             else:
-                print(f"❌ Direct Link Failed: {stderr.decode()}", flush=True)
+                print(f"❌ Direct Link Failed", flush=True)
         except Exception as e:
             print(f"❌ Error fetching direct link: {e}", flush=True)
 
-        # Fallback: لو فشل الرابط المباشر، حمل الملف (مضطرين)
+        # Fallback
         def _fallback_download():
             try:
-                fmt = "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]" if video else "bestaudio[ext=m4a]"
+                fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]" if video else "bestaudio[ext=m4a]"
                 ydl_opts = {
                     "format": fmt,
                     "outtmpl": ram_path,
