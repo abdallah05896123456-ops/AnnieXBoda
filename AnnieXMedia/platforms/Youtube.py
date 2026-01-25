@@ -1,6 +1,6 @@
 # Authored By Certified Coders © 2025
 # Fixed for platforms/Youtube.py
-# SOLUTION: Fixed List Format for Remote Components
+# MERGED SOLUTION: Fixed List Format + Force MP4 + Auto-Delete WebM + Ultra Aria2
 
 import asyncio
 import os
@@ -163,9 +163,21 @@ class YouTubeAPI:
              vid_id = str(int(time.time()))
 
         def _run_download_attempt(fmt_option, use_aria=True):
-            for ext in ['m4a', 'mp4', 'webm', 'opus', 'mp3']:
+            # 🔥 1. تنظيف الملفات القديمة المعطوبة (WebM)
+            # هذا الجزء مهم جداً لحل مشكلة NoVideoSourceFound
+            bad_path = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.webm")
+            if os.path.exists(bad_path):
+                try: 
+                    os.remove(bad_path)
+                    LOGGER(__name__).info(f"🗑️ Deleted bad WebM file: {bad_path}")
+                except: pass
+
+            # 2. البحث عن ملف MP4/M4A سليم موجود مسبقاً
+            for ext in ['mp4', 'm4a', 'mkv']:
                 p = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
-                if os.path.exists(p): return p
+                # التأكد من أن حجم الملف أكبر من 1 كيلو بايت
+                if os.path.exists(p) and os.path.getsize(p) > 1024:
+                    return p
 
             ydl_opts = {
                 "outtmpl": f"{Config.DOWNLOAD_PATH}/{vid_id}.%(ext)s",
@@ -175,13 +187,19 @@ class YouTubeAPI:
                 "quiet": True,
                 "ignoreerrors": True,
                 "format": fmt_option,
-                # 🔥🔥 التعديل هنا: وضعنا القيمة داخل قوسين [] لتصبح قائمة 🔥🔥
+                # 🔥 القائمة الصحيحة لفك التشفير
                 "remote_components": ["ejs:github"],
+                # 🔥 إجبار الدمج إلى MP4 لتجنب مشاكل WebM نهائياً
+                "merge_output_format": "mp4",
             }
 
+            # تفعيل Aria2 إذا كان متاحاً في النظام ومطلوباً
             if self.has_aria2 and use_aria:
                 ydl_opts["external_downloader"] = "aria2c"
-                ydl_opts["external_downloader_args"] = ["-x", "16", "-s", "16", "-k", "1M"]
+                # إعدادات السرعة القصوى (16 Connection)
+                ydl_opts["external_downloader_args"] = [
+                    "-x", "16", "-s", "16", "-j", "16", "-k", "1M"
+                ]
 
             try:
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -189,24 +207,30 @@ class YouTubeAPI:
             except Exception as e:
                 return None
             
-            for ext in ['m4a', 'mp4', 'webm', 'opus', 'mp3', 'mkv']:
+            # التحقق النهائي من وجود الملف وسلامته
+            for ext in ['mp4', 'm4a', 'mkv']:
                 final_path = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
                 if os.path.exists(final_path):
-                    return final_path
+                    if os.path.getsize(final_path) > 1024:
+                        return final_path
+                    else:
+                        # حذف الملف الفارغ
+                        try: os.remove(final_path)
+                        except: pass
             return None
 
         def _execute():
-            # محاولة 1: أفضل جودة
-            file = _run_download_attempt("bestaudio/best", use_aria=True)
+            # محاولة 1: جودة عالية + دمج MP4 (الأفضل)
+            file = _run_download_attempt("bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best", use_aria=True)
             if file: return file
             
-            # محاولة 2: بدون aria2 (أحياناً يحل المشكلة)
-            LOGGER(__name__).warning(f"⚠️ Retrying download with Fallback for: {link}")
-            file = _run_download_attempt("bestaudio", use_aria=False)
+            # محاولة 2: صوت فقط M4A (احتياطي)
+            LOGGER(__name__).warning(f"⚠️ Retrying download (Attempt 2) for: {link}")
+            file = _run_download_attempt("bestaudio[ext=m4a]", use_aria=True)
             if file: return file
 
-            # محاولة 3: أي جودة متاحة
-            LOGGER(__name__).warning(f"⚠️ Retrying download with FINAL option for: {link}")
+            # محاولة 3: المحاولة الأخيرة (أي جودة بدون Aria2)
+            LOGGER(__name__).warning(f"⚠️ Retrying download (Final) for: {link}")
             file = _run_download_attempt("best", use_aria=False)
             return file
 
