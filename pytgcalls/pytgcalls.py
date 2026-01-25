@@ -3,6 +3,13 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+# 🔥 محاولة تفعيل UVLoop لسرعة استجابة جنونية على لينكس
+try:
+    import uvloop
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+except ImportError:
+    pass
+
 from ntgcalls import NTgCalls
 
 from .chat_lock import ChatLock
@@ -15,8 +22,16 @@ from .types import Cache
 
 
 class PyTgCalls(Methods, Scaffold):
-    WORKERS = min(32, (os.cpu_count() or 0) + 4)
-    CACHE_DURATION = 60 * 60
+    # 🔥 NUCLEAR WORKERS CONFIGURATION 🔥
+    # المعادلة القديمة كانت بتحط سقف 32 عامل، وده قليل على سيرفر 16 كور.
+    # الجديد: (عدد الكورات * 4). يعني 16 * 4 = 64 عامل في نفس اللحظة!
+    # ده هيخلي معالجة التحديثات (Updates) فورية.
+    WORKERS = (os.cpu_count() or 1) * 4
+    
+    # 🔥 MASSIVE CACHE: 24 Hours 🔥
+    # الرام 88 جيجا، مش محتاجين نمسح الكاش كل ساعة.
+    # خليته يحفظ بيانات المستخدمين ليوم كامل عشان يقلل طلبات الـ API لتيليجرام.
+    CACHE_DURATION = 86400 
 
     @statictypes
     def __init__(
@@ -40,12 +55,21 @@ class PyTgCalls(Methods, Scaffold):
         )
         self._cache_user_peer = Cache()
         self._binding = NTgCalls()
-        self.loop = asyncio.get_event_loop()
+        
+        # التأكد من استخدام اللوب الحالي أو إنشاء واحد جديد ومحسن
+        try:
+            self.loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+            
         self.workers = workers
         self._chat_lock = ChatLock()
+        
+        # استخدام ThreadPool بعدد العمال الجديد (64+)
         self.executor = ThreadPoolExecutor(
-            self.workers,
-            thread_name_prefix='Handler',
+            max_workers=self.workers,
+            thread_name_prefix='Titan_Handler', # اسم مميز للعمليات
         )
 
     @property
