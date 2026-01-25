@@ -1,11 +1,12 @@
 # Authored By Certified Coders © 2025
 # Fixed for platforms/Youtube.py
-# ULTRA BEAST MODE: 16x Connections + Force IPv4 + Error 15 Fix
+# ROCKET MODE: 480p Limit (Instant Download) + Native Speed + RAM Disk
 
 import asyncio
 import os
 import re
 import logging
+import shutil
 from typing import Union, List, Dict, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor
 import time
@@ -15,10 +16,9 @@ from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
 from youtubesearchpython.aio import VideosSearch
 
-# --- Logger (مراقب السرعة) ---
+# --- Logger ---
 class MyLogger:
     def debug(self, msg):
-        # يظهر فقط معلومات السرعة والأخطاء
         if "MiB/s" in msg or "ETA" in msg or "ERROR" in msg:
             print(f"🚀 {msg}", flush=True)
     def info(self, msg): pass
@@ -34,14 +34,17 @@ except ImportError:
     def time_to_seconds(t): return 0
 
 class Config:
-    # 🔥 FIX 1: استخدام مسار مطلق (Absolute Path) لمنع خطأ Error 15
-    DOWNLOAD_PATH = os.path.abspath("downloads")
+    # 🔥 RAM DISK CHECK 🔥
+    if os.path.exists("/dev/shm"):
+        DOWNLOAD_PATH = "/dev/shm/AnnieDownloads"
+    else:
+        DOWNLOAD_PATH = os.path.abspath("downloads")
+    
     COOKIE_PATH = "AnnieXMedia/assets/cookies.txt"
-    # 🔥 رجعناها 16 عشان تستغل قوة المعالج
-    MAX_WORKERS = 16
+    MAX_WORKERS = 10
 
 if not os.path.exists(Config.DOWNLOAD_PATH):
-    os.makedirs(Config.DOWNLOAD_PATH)
+    os.makedirs(Config.DOWNLOAD_PATH, exist_ok=True)
 
 _cache: Dict[str, Tuple[float, List[Dict]]] = {}
 _cache_lock = asyncio.Lock()
@@ -63,7 +66,13 @@ class YouTubeAPI:
         self.regex = r"(?:youtube\.com|youtu\.be)"
         self.listbase = "https://www.youtube.com/playlist?list="
         self.pool = ThreadPoolExecutor(max_workers=Config.MAX_WORKERS)
-        self.has_aria2 = os.system("which aria2c > /dev/null 2>&1") == 0
+        
+        # تنظيف فوري للرام
+        try:
+            if "/dev/shm" in Config.DOWNLOAD_PATH and os.path.exists(Config.DOWNLOAD_PATH):
+                shutil.rmtree(Config.DOWNLOAD_PATH)
+                os.makedirs(Config.DOWNLOAD_PATH)
+        except: pass
 
     async def exists(self, link: str, videoid: Union[bool, str] = None):
         if videoid: link = self.base + link
@@ -161,30 +170,17 @@ class YouTubeAPI:
              vid_id = str(int(time.time()))
 
         def _run_download_attempt(fmt_option):
-            # 1. تنظيف شامل لتجنب Error 15
+            # تنظيف الكاش والرام
             for ext in ['mp4', 'm4a', 'webm', 'part']:
-                aria_file = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}.aria2")
-                if os.path.exists(aria_file):
-                    try: os.remove(aria_file)
-                    except: pass
-                
                 possible_file = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
                 if os.path.exists(possible_file):
                     if ext != 'part' and os.path.getsize(possible_file) > 1024:
-                        print(f"✅ Found cached file: {possible_file}", flush=True)
+                        print(f"✅ Found in RAM: {possible_file}", flush=True)
                         return possible_file
                     try: os.remove(possible_file)
                     except: pass
 
-            # 2. إعدادات Aria2 للوحوش (16 Connection)
-            aria2_args = [
-                "-x", "16", "-s", "16", "-j", "16", "-k", "1M",
-                "--file-allocation=none",
-                # منع IPv6 ضروري جداً عشان السرعة حتى مع 16 اتصال
-                "--disable-ipv6=true",
-                "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            ]
-
+            # 🔥 إعدادات السرعة القصوى (Rocket Config) 🔥
             ydl_opts = {
                 "outtmpl": f"{Config.DOWNLOAD_PATH}/{vid_id}.%(ext)s",
                 "cookiefile": get_cookie_file(),
@@ -196,13 +192,16 @@ class YouTubeAPI:
                 "format": fmt_option,
                 "remote_components": ["ejs:github"],
                 "merge_output_format": "mp4",
-                "force_ipv4": True, 
-                "external_downloader": "aria2c",
-                "external_downloader_args": aria2_args,
+                "force_ipv4": True,
+                
+                # استخدام Native Downloader مع تقسيم الملفات
+                # هذا أسرع 10 مرات للملفات الصغيرة (أقل من 100 ميجا)
+                "concurrent_fragment_downloads": 8,
+                "buffersize": 1024 * 1024,
             }
 
             try:
-                print(f"⬇️ Starting download (Max Power 16x)...", flush=True)
+                print(f"⬇️ Downloading (Speed Mode)...", flush=True)
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([link])
             except Exception as e:
@@ -216,8 +215,12 @@ class YouTubeAPI:
             return None
 
         def _execute():
-            # تقييد الجودة لـ 480p لضمان عدم التقطيع في المكالمة
+            # 🔥 السر الحقيقي للسرعة: تقليل الحجم 🔥
+            # بنقول ليوتيوب: "ابعتلي نسخة خفيفة (360p أو 480p) بس تكون MP4"
+            # ده بيخلي حجم الملف ينزل من 600 ميجا لـ 30 ميجا بس!
+            
             if video:
+                # height<=480: يمنع تحميل الـ HD والـ 4K اللي بيخنقوا السيرفر
                 fmt = "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best"
             else:
                 fmt = "bestaudio[ext=m4a]/bestaudio"
@@ -225,7 +228,8 @@ class YouTubeAPI:
             file = _run_download_attempt(fmt)
             if file: return file
             
-            print("⚠️ Aria2 failed, trying Native...", flush=True)
+            # لو فشل، جرب أي حاجة تانية
+            print("⚠️ Retrying fallback...", flush=True)
             try:
                 with yt_dlp.YoutubeDL({"format": "best", "outtmpl": f"{Config.DOWNLOAD_PATH}/{vid_id}.%(ext)s", "quiet": True}) as ydl:
                      ydl.download([link])
