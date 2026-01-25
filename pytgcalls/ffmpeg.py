@@ -4,15 +4,25 @@ import os.path
 import re
 import shlex
 import subprocess
-from json import JSONDecodeError, loads
-from typing import Dict, List, Optional, Union
+from json import JSONDecodeError
+from json import loads
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Union
 
 from ntgcalls import FFmpegError
 
-from .exceptions import ImageSourceFound, InvalidVideoProportion, LiveStreamFound, NoAudioSourceFound, NoVideoSourceFound
-from .types.raw import AudioParameters, VideoParameters
+from .exceptions import ImageSourceFound
+from .exceptions import InvalidVideoProportion
+from .exceptions import LiveStreamFound
+from .exceptions import NoAudioSourceFound
+from .exceptions import NoVideoSourceFound
+from .types.raw import AudioParameters
+from .types.raw import VideoParameters
 
 py_logger = logging.getLogger('pytgcalls')
+
 
 async def check_stream(
     ffmpeg_parameters: Optional[str],
@@ -22,18 +32,18 @@ async def check_stream(
     headers: Optional[Dict[str, str]] = None,
 ):
     try:
-        # بناء أمر ffprobe
-        # ملاحظة: نستخدم build_command مباشرة بدون cleanup_commands لضمان النظافة
-        cmd = build_command(
-            'ffprobe',
-            ffmpeg_parameters,
-            path,
-            stream_parameters,
-            before_commands,
-            headers,
-            False,
+        # بناء أمر ffprobe مع ضمان تنظيفه من الأوامر التي لا يدعمها
+        cmd = await cleanup_commands(
+            build_command(
+                'ffprobe',
+                ffmpeg_parameters,
+                path,
+                stream_parameters,
+                before_commands,
+                headers,
+                False,
+            ),
         )
-
         ffprobe = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -45,13 +55,12 @@ async def check_stream(
     try:
         stdout, stderr = await asyncio.wait_for(
             ffprobe.communicate(),
-            timeout=20, 
+            timeout=25, # زيادة المهلة لضمان فحص الروابط الثقيلة
         )
         
-        # 🔥 الحل السحري: فحص المخرجات قبل التحويل لـ JSON
+        # 🔥 TitanOS Fix: منع انهيار البوت إذا كان رد ffprobe غير صالح
         out_raw = stdout.decode('utf-8').strip()
         if not out_raw:
-            # لو ffprobe فشل، بنحط قيم افتراضية عشان البوت ميكراش ويكمل تشغيل
             py_logger.warning(f"ffprobe returned empty for {path}. Using safe defaults.")
             if isinstance(stream_parameters, VideoParameters):
                 stream_parameters.width = 1280
@@ -61,13 +70,16 @@ async def check_stream(
         result = loads(out_raw) or {}
         stream_list = result.get('streams', [])
         format_content = result.get('format', {})
+        
+        if 'No such file' in stderr.decode('utf-8'):
+            raise FileNotFoundError()
             
-    except (subprocess.TimeoutExpired, JSONDecodeError) as e:
+    except (subprocess.TimeoutExpired, JSONDecodeError):
         try:
             ffprobe.terminate()
         except:
             pass
-        # في حالة الخطأ، نمرر العملية لإعطاء فرصة للمشغل الأساسي
+        # في حالة فشل الفحص، نتجاوز الخطأ لضمان دخول المساعد للمكالمة وعدم خروجه فوراً
         return
 
     have_video = False
@@ -94,19 +106,25 @@ async def check_stream(
     if isinstance(stream_parameters, VideoParameters):
         if not have_video:
             raise NoVideoSourceFound(path)
-            
-        if original_height > 0:
-            ratio = float(original_width) / original_height
-            new_w = min(original_width, stream_parameters.width)
-            new_h = int(new_w / ratio)
-            if new_h > stream_parameters.height and stream_parameters.adjust_by_height:
-                new_h = stream_parameters.height
-                new_w = int(new_h * ratio)
-            new_w = new_w - 1 if new_w % 2 else new_w
-            new_h = new_h - 1 if new_h % 2 else new_h
-            stream_parameters.height = new_h
-            stream_parameters.width = new_w
+        if not have_valid_video:
+            # نتجاوز هذا الخطأ لضمان استمرار البث حتى لو لم نجد الأبعاد بدقة
+            return
 
+        ratio = float(original_width) / original_height
+        new_w = min(original_width, stream_parameters.width)
+        new_h = int(new_w / ratio)
+
+        if (
+            new_h > stream_parameters.height and
+            stream_parameters.adjust_by_height
+        ):
+            new_h = stream_parameters.height
+            new_w = int(new_h * ratio)
+
+        new_w = new_w - 1 if new_w % 2 else new_w
+        new_h = new_h - 1 if new_h % 2 else new_h
+        stream_parameters.height = new_h
+        stream_parameters.width = new_w
         if is_image:
             stream_parameters.frame_rate = 10
             raise ImageSourceFound(path)
@@ -114,13 +132,53 @@ async def check_stream(
     if isinstance(stream_parameters, AudioParameters) and not have_audio:
         raise NoAudioSourceFound(path)
 
+    # التحقق من أن الملف ليس بثاً مباشراً إلا إذا كان رابط HTTP
+    if 'duration' not in format_content and not str(path).startswith('http'):
+        raise LiveStreamFound(path)
+
+
 async def cleanup_commands(
     commands: List[str],
     process_name: Optional[str] = None,
     blacklist: Optional[List[str]] = None,
 ) -> List[str]:
-    # للمحافظة على الأداء العالي لـ ffmpeg
-    return commands
+    try:
+        proc_res = await asyncio.create_subprocess_exec(
+            commands[0] if not process_name else process_name,
+            '-h',
+            'full',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, _ = await asyncio.wait_for(
+                proc_res.communicate(),
+                timeout=20,
+            )
+            result = stdout.decode('utf-8')
+        except (subprocess.TimeoutExpired, Exception):
+            try: proc_res.terminate()
+            except: pass
+            return commands # نمرر الأوامر كما هي في حالة الفشل
+
+        supported = re.findall(r'(?m)^ *(-\w+).*?\s+', result)
+        supported += ['-i']
+        new_commands = []
+        ignore_next = False
+
+        for v in commands:
+            if len(v) > 0:
+                if v[0] == '-':
+                    ignore_next = v not in supported or \
+                        blacklist is not None and v in blacklist
+
+                if not ignore_next:
+                    new_commands += [v]
+                elif v[0] != '-':
+                    ignore_next = False
+        return new_commands
+    except FileNotFoundError:
+        raise FFmpegError(f'{commands[0]} not installed')
 
 
 def build_command(
@@ -134,24 +192,35 @@ def build_command(
 ) -> List[str]:
     if not path:
         return []
+    command = _get_stream_params(ffmpeg_parameters)
 
-    # 🔥 تعديل جوهري: لو المطلوب ffprobe، بنبني أمر بسيط جداً
+    if isinstance(stream_parameters, VideoParameters):
+        command = command['video']
+    else:
+        command = command['audio']
+
+    ffmpeg_command: List = [name]
+
+    ffmpeg_command += command['start']
+
+    # 🔥 Reconnect Logic: منع التقطيع في روابط يوتيوب والروابط الخارجية
+    if not os.path.exists(path) \
+            and not is_livestream\
+            and name == 'ffmpeg':
+        ffmpeg_command += [
+            '-reconnect', '1',
+            '-reconnect_at_eof', '1',
+            '-reconnect_streamed', '1',
+            '-reconnect_delay_max', '5', # زيادة مهلة إعادة الاتصال للاستقرار
+        ]
+
     if name == 'ffprobe':
-        return [
-            name,
+        ffmpeg_command += [
             '-v', 'error',
             '-show_entries', 'stream=width,height,codec_type,codec_name',
             '-show_format',
             '-of', 'json',
-            path
         ]
-
-    # لو المطلوب ffmpeg، نستخدم القوة الكاملة
-    command = _get_stream_params(ffmpeg_parameters)
-    command = command['video'] if isinstance(stream_parameters, VideoParameters) else command['audio']
-
-    ffmpeg_command: List = [name]
-    ffmpeg_command += command['start']
 
     if before_commands:
         ffmpeg_command += before_commands
@@ -161,11 +230,17 @@ def build_command(
             ffmpeg_command.append('-headers')
             ffmpeg_command.append(f'{i}: {headers[i]}')
 
-    ffmpeg_command += ['-i', path]
+    ffmpeg_command += [
+        f'{path}' if name == 'ffmpeg' else path,
+    ]
     ffmpeg_command += command['mid']
-    ffmpeg_command += _build_ffmpeg_options(stream_parameters)
+
+    if name == 'ffmpeg':
+        ffmpeg_command += _build_ffmpeg_options(stream_parameters)
+
     ffmpeg_command += command['end']
-    ffmpeg_command.append('pipe:1')
+    if name == 'ffmpeg':
+        ffmpeg_command.append('pipe:1')
 
     return ffmpeg_command
 
@@ -177,18 +252,27 @@ def _get_stream_params(command: Optional[str]):
 
     if command:
         for part in shlex.split(command):
-            if part.startswith("-:-"):
-                arg_name = part[3:]
+            # الكود الأصلي الصحيح الذي يبحث عن العلم بعد الحرفين الأولين (--)
+            if part.startswith('--'):
+                arg_name = part[2:]
                 if arg_name in arg_names:
                     current_arg = arg_name
                     continue
             command_args[current_arg].append(part)
-            
-    final_args = {
-        'audio': _extract_stream_params(command_args['base'] + command_args['audio']),
-        'video': _extract_stream_params(command_args['base'] + command_args['video'])
+
+    command_args = {
+        command: _extract_stream_params(command_args[command])
+        for command in command_args
     }
-    return final_args
+
+    # دمج الأوامر الأساسية (Base) مع إعدادات الصوت والفيديو
+    for arg in arg_names[1:]:
+        for x in command_args[arg_names[0]]:
+            command_args[arg][x] += command_args[arg_names[0]][x]
+
+    del command_args[arg_names[0]]
+
+    return command_args
 
 
 def _extract_stream_params(command: List[str]):
@@ -197,7 +281,7 @@ def _extract_stream_params(command: List[str]):
     current_arg = arg_names[0]
 
     for part in command:
-        if part.startswith("-:-"):
+        if part.startswith('-:-'):
             arg_name = part[3:]
             if arg_name in arg_names:
                 current_arg = arg_name
@@ -210,12 +294,18 @@ def _extract_stream_params(command: List[str]):
 def _build_ffmpeg_options(
         stream_parameters: Union[AudioParameters, VideoParameters],
 ) -> List[str]:
+    # جعل اللوج صامت لتوفير الأداء (أو info للتدقيق)
     options = ['-v', 'quiet', '-f']
+
+    # 🔥 TitanOS Injection: إجبار الستيريو واستغلال الـ 16 كور
+    # threads 16: لاستغلال كامل قدرة المعالج
+    # ac 2: لضمان صوت Stereo في جميع الظروف
+    options.extend(['-threads', '16'])
 
     if isinstance(stream_parameters, AudioParameters):
         options.extend([
             's16le',
-            '-ac', str(stream_parameters.channels),
+            '-ac', '2', # Force Stereo
             '-ar', str(stream_parameters.bitrate),
         ])
     elif isinstance(stream_parameters, VideoParameters):
