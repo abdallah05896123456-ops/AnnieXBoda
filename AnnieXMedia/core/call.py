@@ -1,6 +1,6 @@
 # Authored By Certified Coders © 2025
 # Fixed for core/call.py
-# TITAN EDITION: 16-Cores + 100MB Buffer + Stereo Audio Support
+# SMART ENGINE: Auto-Detects Local vs Network Stream to prevent FFmpeg Crash
 
 import asyncio
 import os
@@ -49,29 +49,36 @@ from AnnieXMedia.utils.errors import capture_internal_err
 autoend = {}
 counter = {}
 
-# 🔥🔥🔥 المحرك المخصص لسيرفرك الجبار 🔥🔥🔥
+# 🔥🔥🔥 المحرك الذكي (Smart Engine) 🔥🔥🔥
 def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
+    # اكتشاف عدد الكورات لاستخدامها
+    cpu_cores = os.cpu_count() or 16
     
-    # 1. استغلال الـ 16 كور في المعالجة
-    # 2. استغلال الرام الكبيرة (88 جيجا) لعمل Buffer ضخم (100MB) لمنع التقطيع نهائياً
-    # 3. إجبار الصوت على Stereo (قناتين) بتردد 48000 هرتز
-    
-    live_flags = (
-        "-threads 16 -filter_threads 16 "  # 16 Cores for decoding
-        "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 "  # Network stability
-        "-probesize 100M -analyzeduration 100M "  # Huge Buffer (Zero Stutter)
-        "-ac 2 -ar 48000 " # Force High Quality Stereo
-        "-preset ultrafast -tune zerolatency "  # Low Latency
-    )
-    
-    final_params = live_flags + (ffmpeg_params if ffmpeg_params else "")
+    # إعدادات المعالج والصوت الأساسية (تعمل مع الكل)
+    # -ac 2: إجبار ستيريو
+    # -ar 48000: جودة صوت نقية
+    base_flags = f"-threads {cpu_cores} -filter_threads {cpu_cores} -ac 2 -ar 48000 -preset ultrafast "
+
+    # 🔥 الفحص الذكي: هل هو رابط أم ملف؟ 🔥
+    if path.startswith("http"):
+        # إعدادات الرابط المباشر (Direct Stream)
+        # Reconnect + Buffer لمنع التقطيع
+        stream_flags = (
+            "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 "
+            "-probesize 15M -analyzeduration 15M " # حجم مناسب للبدء السريع
+        )
+    else:
+        # إعدادات الملف المحلي (Downloaded File)
+        # لا نستخدم reconnect هنا لأنه يسبب كراش مع الملفات المحلية
+        stream_flags = "-probesize 10M -analyzeduration 10M "
+
+    final_params = base_flags + stream_flags + (ffmpeg_params if ffmpeg_params else "")
 
     if video:
         return MediaStream(
             media_path=path,
-            # استخدام جودة STUDIO لأن السيرفر يتحمل والنت سريع
             audio_parameters=AudioQuality.STUDIO, 
-            # 720p لأن النت عندك 3.7 جيجا، حرام نشغل 480p
+            # 720p مناسبة جداً لسيرفرك القوي
             video_parameters=VideoQuality.HD_720p,
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.REQUIRED,
@@ -97,31 +104,30 @@ async def _clear_(chat_id: int) -> None:
 
 class Call:
     def __init__(self):
-        # Cache 60 seconds because RAM is huge
         self.userbot1 = Client(
             "AnnieXAssis1", config.API_ID, config.API_HASH, session_string=config.STRING1
         ) if config.STRING1 else None
-        self.one = PyTgCalls(self.userbot1, cache_duration=60) if self.userbot1 else None
+        self.one = PyTgCalls(self.userbot1, cache_duration=40) if self.userbot1 else None
 
         self.userbot2 = Client(
             "AnnieXAssis2", config.API_ID, config.API_HASH, session_string=config.STRING2
         ) if config.STRING2 else None
-        self.two = PyTgCalls(self.userbot2, cache_duration=60) if self.userbot2 else None
+        self.two = PyTgCalls(self.userbot2, cache_duration=40) if self.userbot2 else None
 
         self.userbot3 = Client(
             "AnnieXAssis3", config.API_ID, config.API_HASH, session_string=config.STRING3
         ) if config.STRING3 else None
-        self.three = PyTgCalls(self.userbot3, cache_duration=60) if self.userbot3 else None
+        self.three = PyTgCalls(self.userbot3, cache_duration=40) if self.userbot3 else None
 
         self.userbot4 = Client(
             "AnnieXAssis4", config.API_ID, config.API_HASH, session_string=config.STRING4
         ) if config.STRING4 else None
-        self.four = PyTgCalls(self.userbot4, cache_duration=60) if self.userbot4 else None
+        self.four = PyTgCalls(self.userbot4, cache_duration=40) if self.userbot4 else None
 
         self.userbot5 = Client(
             "AnnieXAssis5", config.API_ID, config.API_HASH, session_string=config.STRING5
         ) if config.STRING5 else None
-        self.five = PyTgCalls(self.userbot5, cache_duration=60) if self.userbot5 else None
+        self.five = PyTgCalls(self.userbot5, cache_duration=40) if self.userbot5 else None
 
         self.active_calls: set[int] = set()
 
