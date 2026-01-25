@@ -1,6 +1,6 @@
 # Authored By Certified Coders © 2025
 # Fixed for utils/stream/stream.py
-# DIRECT STREAM SUPPORT: Handles URLs properly without disk checks
+# CRASH FIX: Removed safe_delete from exception blocks to prevent MessageIdInvalid
 
 import asyncio
 import os
@@ -94,15 +94,13 @@ async def stream(
                 if not forceplay:
                     db[chat_id] = []
                 try:
-                    # جلب الرابط المباشر
                     file_path, direct = await YouTube.download(
                         vidid, mystic, video=is_video, videoid=vidid
                     )
                 except Exception:
-                    await safe_delete(mystic)
+                    # ❌ REMOVED safe_delete here to prevent crash
                     raise AssistantErr(_["play_14"])
 
-                # تمرير الرابط للمكالمة مباشرة
                 await StreamController.join_call(
                     chat_id,
                     original_chat_id,
@@ -111,7 +109,6 @@ async def stream(
                     image=thumbnail,
                 )
                 
-                # حفظ الرابط في الكيو لتجنب إعادة السحب
                 await put_queue(
                     chat_id,
                     original_chat_id,
@@ -127,6 +124,8 @@ async def stream(
                 
                 img = await get_thumb(vidid)
                 button = stream_markup(_, chat_id)
+                
+                # الحذف هنا آمن لأننا نجحنا وسنرسل رسالة جديدة
                 await safe_delete(mystic)
                 
                 caption_text = "🧚 " + _["stream_1"].format(
@@ -167,7 +166,7 @@ async def stream(
         )
 
     # ==========================
-    # 2. YOUTUBE MODE (DIRECT STREAM FIX)
+    # 2. YOUTUBE MODE (DIRECT STREAM + HYBRID)
     # ==========================
     elif streamtype == "youtube":
         link = result.get("link")
@@ -177,24 +176,21 @@ async def stream(
         thumbnail = result.get("thumb")
 
         try:
-            # هنا السحر: الدالة هترجع رابط مباشر (Direct=True)
             file_path, direct = await YouTube.download(
                 vidid, mystic, video=is_video, videoid=vidid
             )
         except Exception:
-            await safe_delete(mystic)
+            # ❌ REMOVED safe_delete here to prevent crash
             raise AssistantErr(_["play_14"])
 
-        # تأكيد أن المسار ليس فارغاً
         if not file_path:
-             await safe_delete(mystic)
-             raise AssistantErr("فشل في استخراج رابط التشغيل المباشر.")
+             # ❌ REMOVED safe_delete here to prevent crash
+             raise AssistantErr(_["play_14"])
 
         if await is_active_chat(chat_id):
             await put_queue(
                 chat_id,
                 original_chat_id,
-                # لو رابط مباشر نحفظ الرابط، لو تحميل نحفظ المعرف
                 file_path if direct else f"vid_{vidid}",
                 title,
                 duration_min,
@@ -215,7 +211,6 @@ async def stream(
             if not forceplay:
                 db[chat_id] = []
             
-            # تشغيل الرابط فوراً بدون فحص وجود ملف
             await StreamController.join_call(
                 chat_id,
                 original_chat_id,
@@ -238,6 +233,8 @@ async def stream(
             
             img = await get_thumb(vidid)
             button = stream_markup(_, chat_id)
+            
+            # الحذف هنا آمن فقط عند النجاح
             await safe_delete(mystic)
             
             caption_text = "🧚 " + _["stream_1"].format(
@@ -407,7 +404,6 @@ async def stream(
             if not forceplay:
                 db[chat_id] = []
             
-            # في اللايف بنستخدم الرابط مباشرة بدون تحميل
             n, file_path = await YouTube.video(link)
             if n == 0:
                 raise AssistantErr(_["str_3"])
