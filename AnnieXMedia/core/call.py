@@ -1,7 +1,4 @@
 # Authored By Certified Coders © 2025
-# TITANOS CORE: Optimized for Stereo & High-Performance Streaming
-# Note: auto_start remains False as requested.
-
 import asyncio
 import os
 from datetime import datetime, timedelta
@@ -49,42 +46,24 @@ from AnnieXMedia.utils.errors import capture_internal_err
 autoend = {}
 counter = {}
 
-# 🔥🔥🔥 المحرك المطور (Stereo & Anti-Lag Engine) 🔥🔥🔥
+# --- Helper Function for Streams (Optimized for TitanOS) ---
 def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
-    # 1. استغلال الـ 16 كور بالكامل
-    cpu_cores = os.cpu_count() or 16
-    
-    # 2. إعدادات الصوت الاستريو (Stereo) والجودة العالية
-    # -ac 2: إجبار ستيريو | -ar 48000: تردد نقي
-    base_flags = f"-threads {cpu_cores} -filter_threads {cpu_cores} -ac 2 -ar 48000 -preset ultrafast "
-
-    # 3. حماية الروابط المباشرة من التقطيع (No Cutting)
-    if str(path).startswith("http"):
-        stream_flags = (
-            "-reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1 -reconnect_delay_max 5 "
-            "-probesize 15M -analyzeduration 15M "
-        )
-    else:
-        stream_flags = "-probesize 10M -analyzeduration 10M "
-
-    final_params = base_flags + stream_flags + (ffmpeg_params if ffmpeg_params else "")
-
     if video:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.STUDIO,
+            audio_parameters=AudioQuality.STUDIO, # Alexa uses better quality
             video_parameters=VideoQuality.HD_720p,
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.REQUIRED,
-            ffmpeg_parameters=final_params,
+            ffmpeg_parameters=ffmpeg_params,
         )
     else:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.STUDIO,
+            audio_parameters=AudioQuality.STUDIO, # Alexa uses better quality
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.IGNORE,
-            ffmpeg_parameters=final_params,
+            ffmpeg_parameters=ffmpeg_params,
         )
 
 async def _clear_(chat_id: int) -> None:
@@ -98,23 +77,34 @@ async def _clear_(chat_id: int) -> None:
 
 class Call:
     def __init__(self):
-        # الحفاظ على استقرار الكاش عند 100
-        self.userbot1 = Client("AnnieXAssis1", config.API_ID, config.API_HASH, session_string=config.STRING1) if config.STRING1 else None
+        # 🔥 TitanOS Update: Cache maintained at 100 for stability
+        self.userbot1 = Client(
+            "AnnieXAssis1", config.API_ID, config.API_HASH, session_string=config.STRING1
+        ) if config.STRING1 else None
         self.one = PyTgCalls(self.userbot1, cache_duration=100) if self.userbot1 else None
 
-        self.userbot2 = Client("AnnieXAssis2", config.API_ID, config.API_HASH, session_string=config.STRING2) if config.STRING2 else None
+        self.userbot2 = Client(
+            "AnnieXAssis2", config.API_ID, config.API_HASH, session_string=config.STRING2
+        ) if config.STRING2 else None
         self.two = PyTgCalls(self.userbot2, cache_duration=100) if self.userbot2 else None
 
-        self.userbot3 = Client("AnnieXAssis3", config.API_ID, config.API_HASH, session_string=config.STRING3) if config.STRING3 else None
+        self.userbot3 = Client(
+            "AnnieXAssis3", config.API_ID, config.API_HASH, session_string=config.STRING3
+        ) if config.STRING3 else None
         self.three = PyTgCalls(self.userbot3, cache_duration=100) if self.userbot3 else None
 
-        self.userbot4 = Client("AnnieXAssis4", config.API_ID, config.API_HASH, session_string=config.STRING4) if config.STRING4 else None
+        self.userbot4 = Client(
+            "AnnieXAssis4", config.API_ID, config.API_HASH, session_string=config.STRING4
+        ) if config.STRING4 else None
         self.four = PyTgCalls(self.userbot4, cache_duration=100) if self.userbot4 else None
 
-        self.userbot5 = Client("AnnieXAssis5", config.API_ID, config.API_HASH, session_string=config.STRING5) if config.STRING5 else None
+        self.userbot5 = Client(
+            "AnnieXAssis5", config.API_ID, config.API_HASH, session_string=config.STRING5
+        ) if config.STRING5 else None
         self.five = PyTgCalls(self.userbot5, cache_duration=100) if self.userbot5 else None
 
         self.active_calls: set[int] = set()
+        # 🔥 TitanOS: Turbo Variable added for Web Control
         self.turbo_mode = {} 
 
     @capture_internal_err
@@ -125,6 +115,7 @@ class Call:
     @capture_internal_err
     async def resume_stream(self, chat_id: int) -> None:
         assistant = await group_assistant(self, chat_id)
+        # 🔥 TitanOS Fix: Force Resume (If resume fails, unmute)
         try:
             await assistant.resume(chat_id)
         except:
@@ -177,7 +168,7 @@ class Call:
     @capture_internal_err
     async def skip_stream(self, chat_id: int, link: str, video: Union[bool, str] = None, image: Union[bool, str] = None) -> None:
         assistant = await group_assistant(self, chat_id)
-        # ✅ الحفاظ على auto_start=False
+        # 🔥 ALEXA OPTIMIZATION: Using GroupCallConfig
         ksk = GroupCallConfig(auto_start=False)
         stream = dynamic_media_stream(path=link, video=bool(video))
         await assistant.play(chat_id, stream, config=ksk)
@@ -198,6 +189,7 @@ class Call:
 
     @capture_internal_err
     async def speedup_stream(self, chat_id: int, file_path: str, speed: float, playing: list) -> None:
+        # Code kept from Annie for compatibility
         if not isinstance(playing, list) or not playing or not isinstance(playing[0], dict):
             raise AssistantErr("Invalid stream info for speedup.")
 
@@ -264,7 +256,7 @@ class Call:
         _ = get_string(lang)
         stream = dynamic_media_stream(path=link, video=bool(video))
         
-        # ✅ الحفاظ على auto_start=False
+        # 🔥 ALEXA OPTIMIZATION: Config added here
         ksk = GroupCallConfig(auto_start=False)
 
         try:
@@ -278,6 +270,7 @@ class Call:
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
         except Exception as e:
+             # Retry logic
             try:
                  await asyncio.sleep(1)
                  await assistant.play(chat_id, stream, config=ksk)
@@ -290,8 +283,18 @@ class Call:
         if video:
             await add_active_video_chat(chat_id)
 
+        if await is_autoend():
+            counter[chat_id] = {}
+            try:
+                users = len(await assistant.get_participants(chat_id))
+                if users == 1:
+                    autoend[chat_id] = datetime.now() + timedelta(minutes=1)
+            except:
+                pass
+
     @capture_internal_err
     async def play(self, client, chat_id: int) -> None:
+        # 🔥 Refactored to match Alexa's `change_stream` logic but with Annie's vars
         check = db.get(chat_id)
         popped = None
         loop = await get_loop(chat_id)
@@ -302,6 +305,7 @@ class Call:
                 loop = loop - 1
                 await set_loop(chat_id, loop)
             
+            # Using auto_clean from Alexa's logic context (if config allows)
             await auto_clean(popped)
             
             if not check:
@@ -340,14 +344,17 @@ class Call:
 
             video = True if str(streamtype) == "video" else False
             
+            # 🔥 ALEXA OPTIMIZATION: Pre-calculate stream to save time
+            # Note: We use the dynamic helper to keep code clean, but it uses Alexa's params inside
+            
             if "live_" in queued:
                 n, link = await YouTube.video(videoid, True)
                 if n == 0:
                     return await app.send_message(original_chat_id, text=_["call_6"])
                 stream = dynamic_media_stream(path=link, video=video)
+                
                 try:
-                    # ✅ الحفاظ على auto_start=False ضمنياً هنا أيضاً
-                    await client.play(chat_id, stream, config=GroupCallConfig(auto_start=False))
+                    await client.play(chat_id, stream)
                 except Exception:
                     return await app.send_message(original_chat_id, text=_["call_6"])
 
@@ -356,7 +363,12 @@ class Call:
                 run = await app.send_photo(
                     chat_id=original_chat_id,
                     photo=img,
-                    caption=_["stream_1"].format(f"https://t.me/{app.username}?start=info_{videoid}", title[:23], check[0]["dur"], user),
+                    caption=_["stream_1"].format(
+                        f"https://t.me/{app.username}?start=info_{videoid}",
+                        title[:23],
+                        check[0]["dur"],
+                        user,
+                    ),
                     reply_markup=InlineKeyboardMarkup(button),
                 )
                 db[chat_id][0]["mystic"] = run
@@ -365,65 +377,172 @@ class Call:
             elif "vid_" in queued:
                 mystic = await app.send_message(original_chat_id, _["call_7"])
                 try:
-                    file_path, direct = await YouTube.download(videoid, mystic, videoid=True, video=video)
+                    file_path, direct = await YouTube.download(
+                        videoid,
+                        mystic,
+                        videoid=True,
+                        video=video,
+                    )
                 except:
                     return await mystic.edit_text(_["call_6"], disable_web_page_preview=True)
+
                 stream = dynamic_media_stream(path=file_path, video=video)
                 try:
-                    await client.play(chat_id, stream, config=GroupCallConfig(auto_start=False))
+                    await client.play(chat_id, stream)
                 except:
                     return await app.send_message(original_chat_id, text=_["call_6"])
+
                 img = await get_thumb(videoid)
                 button = stream_markup(_, chat_id)
                 await mystic.delete()
                 run = await app.send_photo(
                     chat_id=original_chat_id,
                     photo=img,
-                    caption=_["stream_1"].format(f"https://t.me/{app.username}?start=info_{videoid}", title[:23], check[0]["dur"], user),
+                    caption=_["stream_1"].format(
+                        f"https://t.me/{app.username}?start=info_{videoid}",
+                        title[:23],
+                        check[0]["dur"],
+                        user,
+                    ),
                     reply_markup=InlineKeyboardMarkup(button),
                 )
                 db[chat_id][0]["mystic"] = run
                 db[chat_id][0]["markup"] = "stream"
+
+            elif "index_" in queued:
+                stream = dynamic_media_stream(path=videoid, video=video)
+                try:
+                    await client.play(chat_id, stream)
+                except:
+                    return await app.send_message(original_chat_id, text=_["call_6"])
+
+                button = stream_markup(_, chat_id)
+                run = await app.send_photo(
+                    chat_id=original_chat_id,
+                    photo=config.STREAM_IMG_URL,
+                    caption=_["stream_2"].format(user),
+                    reply_markup=InlineKeyboardMarkup(button),
+                )
+                db[chat_id][0]["mystic"] = run
+                db[chat_id][0]["markup"] = "tg"
+
             else:
                 stream = dynamic_media_stream(path=queued, video=video)
                 try:
-                    await client.play(chat_id, stream, config=GroupCallConfig(auto_start=False))
+                    await client.play(chat_id, stream)
                 except:
                     return await app.send_message(original_chat_id, text=_["call_6"])
-                # (بقية الكود المعتاد الخاص بالإشعارات)
+
+                if videoid == "telegram":
+                    button = stream_markup(_, chat_id)
+                    run = await app.send_photo(
+                        chat_id=original_chat_id,
+                        photo=(
+                            config.TELEGRAM_AUDIO_URL
+                            if str(streamtype) == "audio"
+                            else config.TELEGRAM_VIDEO_URL
+                        ),
+                        caption=_["stream_1"].format(
+                            config.SUPPORT_CHAT, title[:23], check[0]["dur"], user
+                        ),
+                        reply_markup=InlineKeyboardMarkup(button),
+                    )
+                    db[chat_id][0]["mystic"] = run
+                    db[chat_id][0]["markup"] = "tg"
+
+                elif videoid == "soundcloud":
+                    button = stream_markup(_, chat_id)
+                    run = await app.send_photo(
+                        chat_id=original_chat_id,
+                        photo=config.SOUNCLOUD_IMG_URL,
+                        caption=_["stream_1"].format(
+                            config.SUPPORT_CHAT, title[:23], check[0]["dur"], user
+                        ),
+                        reply_markup=InlineKeyboardMarkup(button),
+                    )
+                    db[chat_id][0]["mystic"] = run
+                    db[chat_id][0]["markup"] = "tg"
+
+                else:
+                    img = await get_thumb(videoid)
+                    button = stream_markup(_, chat_id)
+                    try:
+                        run = await app.send_photo(
+                            chat_id=original_chat_id,
+                            photo=img,
+                            caption=_["stream_1"].format(
+                                f"https://t.me/{app.username}?start=info_{videoid}",
+                                title[:23],
+                                check[0]["dur"],
+                                user,
+                            ),
+                            reply_markup=InlineKeyboardMarkup(button),
+                        )
+                    except FloodWait as e:
+                        await asyncio.sleep(e.value)
+                        run = await app.send_photo(
+                            chat_id=original_chat_id,
+                            photo=img,
+                            caption=_["stream_1"].format(
+                                f"https://t.me/{app.username}?start=info_{videoid}",
+                                title[:23],
+                                check[0]["dur"],
+                                user,
+                            ),
+                            reply_markup=InlineKeyboardMarkup(button),
+                        )
+                    db[chat_id][0]["mystic"] = run
+                    db[chat_id][0]["markup"] = "stream"
 
     async def start(self) -> None:
         LOGGER(__name__).info("Starting PyTgCalls Clients...")
-        if config.STRING1: await self.one.start()
-        if config.STRING2: await self.two.start()
-        if config.STRING3: await self.three.start()
-        if config.STRING4: await self.four.start()
-        if config.STRING5: await self.five.start()
+        if config.STRING1:
+            await self.one.start()
+        if config.STRING2:
+            await self.two.start()
+        if config.STRING3:
+            await self.three.start()
+        if config.STRING4:
+            await self.four.start()
+        if config.STRING5:
+            await self.five.start()
 
     @capture_internal_err
     async def ping(self) -> str:
         pings = []
-        if config.STRING1: pings.append(self.one.ping)
-        if config.STRING2: pings.append(self.two.ping)
-        if config.STRING3: pings.append(self.three.ping)
-        if config.STRING4: pings.append(self.four.ping)
-        if config.STRING5: pings.append(self.five.ping)
+        if config.STRING1:
+            pings.append(self.one.ping)
+        if config.STRING2:
+            pings.append(self.two.ping)
+        if config.STRING3:
+            pings.append(self.three.ping)
+        if config.STRING4:
+            pings.append(self.four.ping)
+        if config.STRING5:
+            pings.append(self.five.ping)
         return str(round(sum(pings) / len(pings), 3)) if pings else "0.0"
 
     @capture_internal_err
     async def decorators(self) -> None:
         assistants = list(filter(None, [self.one, self.two, self.three, self.four, self.five]))
-        CRITICAL = ChatUpdate.Status.KICKED | ChatUpdate.Status.LEFT_GROUP | ChatUpdate.Status.CLOSED_VOICE_CHAT
+
+        CRITICAL = (
+            ChatUpdate.Status.KICKED
+            | ChatUpdate.Status.LEFT_GROUP
+            | ChatUpdate.Status.CLOSED_VOICE_CHAT
+        )
 
         async def unified_update_handler(client, update: Update) -> None:
             if isinstance(update, StreamEnded):
                 if update.stream_type == StreamEnded.Type.AUDIO:
                     assistant = await group_assistant(self, update.chat_id)
                     await self.play(assistant, update.chat_id)
+            
             elif isinstance(update, ChatUpdate):
                 status = update.status
                 if (status & ChatUpdate.Status.LEFT_CALL) or (status & CRITICAL):
                     await self.stop_stream(update.chat_id)
+                    return
 
         for assistant in assistants:
             assistant.on_update()(unified_update_handler)
