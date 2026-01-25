@@ -1,4 +1,4 @@
-# 1. استخدام نسخة مستقرة ومتوافقة
+# 1. استخدام صورة مستقرة
 FROM python:3.12-slim-bookworm
 
 # 2. إعدادات البيئة
@@ -10,7 +10,7 @@ ENV PATH="${DENO_INSTALL}/bin:${PATH}"
 
 WORKDIR /app
 
-# 3. تثبيت الأدوات المساعدة و Node.js
+# 3. تحديث النظام وتثبيت Node.js والملحقات
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         curl git ffmpeg aria2 unzip build-essential python3-dev \
@@ -23,20 +23,21 @@ RUN apt-get update && \
 # 4. تحديث pip
 RUN pip install --upgrade pip setuptools wheel
 
-# 5. التعامل مع المتطلبات
+# 5. تثبيت المتطلبات (مع تجاهل pytgcalls لأننا نملكه محلياً)
 COPY requirements.txt .
-# سنحذف أي إشارة لـ pytgcalls من المتطلبات لأننا سنستخدم النسخة التي معك
 RUN sed -i '/pytgcalls/d' requirements.txt && \
     sed -i '/py-tgcalls/d' requirements.txt && \
     pip install --no-cache-dir -r requirements.txt
 
-# 6. تثبيت المكتبات الإجبارية التي يحتاجها كود pytgcalls ليعمل
-# بما أننا لن نثبته بـ pip، يجب أن نوفر مكاتبه يدوياً
+# 6. تثبيت المكاتب المساعدة للكود المحلي
 RUN pip install --no-cache-dir ntgcalls>=1.2.2 jinja2 pyrogram
 
-# 7. نسخ كل ملفات المشروع (بما فيها مجلد pytgcalls)
+# 7. نسخ ملفات المشروع
 COPY . .
 
-# 8. تشغيل البوت
-# ملاحظة: البوت سيتعرف على pytgcalls تلقائياً لأن المجلد موجود في نفس مسار run.py
+# 🔥 8. الإصلاح السحري: تعديل كود pytgcalls المحلي ليتوافق مع Pyrogram الجديد 🔥
+# هذا الأمر يستبدل الخطأ المحذوف (GroupcallForbidden) بالخطأ العام (Forbidden)
+RUN sed -i 's/from pyrogram.errors import GroupcallForbidden/from pyrogram.errors import Forbidden as GroupcallForbidden/g' /app/pytgcalls/mtproto/pyrogram_client.py
+
+# 9. تشغيل البوت
 CMD ["python3", "run.py"]
