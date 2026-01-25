@@ -1,4 +1,7 @@
 # Authored By Certified Coders © 2025
+# TITANOS CORE: Optimized for Stereo & High-Performance Streaming
+# Note: auto_start remains False as requested.
+
 import asyncio
 import os
 from datetime import datetime, timedelta
@@ -46,24 +49,42 @@ from AnnieXMedia.utils.errors import capture_internal_err
 autoend = {}
 counter = {}
 
-# --- Helper Function for Streams (Optimized for TitanOS) ---
+# 🔥🔥🔥 المحرك المطور (Stereo & Anti-Lag Engine) 🔥🔥🔥
 def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
+    # 1. استغلال الـ 16 كور بالكامل
+    cpu_cores = os.cpu_count() or 16
+    
+    # 2. إعدادات الصوت الاستريو (Stereo) والجودة العالية
+    # -ac 2: إجبار ستيريو | -ar 48000: تردد نقي | -preset ultrafast: أقل تأخير ممكن
+    base_flags = f"-threads {cpu_cores} -filter_threads {cpu_cores} -ac 2 -ar 48000 -preset ultrafast "
+
+    # 3. حماية الروابط المباشرة من التقطيع (No Cutting)
+    if str(path).startswith("http"):
+        stream_flags = (
+            "-reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1 -reconnect_delay_max 5 "
+            "-probesize 15M -analyzeduration 15M "
+        )
+    else:
+        stream_flags = "-probesize 10M -analyzeduration 10M "
+
+    final_params = base_flags + stream_flags + (ffmpeg_params if ffmpeg_params else "")
+
     if video:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.STUDIO, # Alexa uses better quality
+            audio_parameters=AudioQuality.STUDIO,
             video_parameters=VideoQuality.HD_720p,
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.REQUIRED,
-            ffmpeg_parameters=ffmpeg_params,
+            ffmpeg_parameters=final_params,
         )
     else:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.STUDIO, # Alexa uses better quality
+            audio_parameters=AudioQuality.STUDIO,
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.IGNORE,
-            ffmpeg_parameters=ffmpeg_params,
+            ffmpeg_parameters=final_params,
         )
 
 async def _clear_(chat_id: int) -> None:
@@ -104,7 +125,6 @@ class Call:
         self.five = PyTgCalls(self.userbot5, cache_duration=100) if self.userbot5 else None
 
         self.active_calls: set[int] = set()
-        # 🔥 TitanOS: Turbo Variable added for Web Control
         self.turbo_mode = {} 
 
     @capture_internal_err
@@ -168,7 +188,7 @@ class Call:
     @capture_internal_err
     async def skip_stream(self, chat_id: int, link: str, video: Union[bool, str] = None, image: Union[bool, str] = None) -> None:
         assistant = await group_assistant(self, chat_id)
-        # 🔥 ALEXA OPTIMIZATION: Using GroupCallConfig
+        # ✅ الحفاظ على auto_start=False
         ksk = GroupCallConfig(auto_start=False)
         stream = dynamic_media_stream(path=link, video=bool(video))
         await assistant.play(chat_id, stream, config=ksk)
@@ -189,7 +209,6 @@ class Call:
 
     @capture_internal_err
     async def speedup_stream(self, chat_id: int, file_path: str, speed: float, playing: list) -> None:
-        # Code kept from Annie for compatibility
         if not isinstance(playing, list) or not playing or not isinstance(playing[0], dict):
             raise AssistantErr("Invalid stream info for speedup.")
 
@@ -256,7 +275,7 @@ class Call:
         _ = get_string(lang)
         stream = dynamic_media_stream(path=link, video=bool(video))
         
-        # 🔥 ALEXA OPTIMIZATION: Config added here
+        # ✅ الحفاظ على auto_start=False
         ksk = GroupCallConfig(auto_start=False)
 
         try:
@@ -270,7 +289,6 @@ class Call:
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
         except Exception as e:
-             # Retry logic
             try:
                  await asyncio.sleep(1)
                  await assistant.play(chat_id, stream, config=ksk)
@@ -294,7 +312,6 @@ class Call:
 
     @capture_internal_err
     async def play(self, client, chat_id: int) -> None:
-        # 🔥 Refactored to match Alexa's `change_stream` logic but with Annie's vars
         check = db.get(chat_id)
         popped = None
         loop = await get_loop(chat_id)
@@ -305,7 +322,6 @@ class Call:
                 loop = loop - 1
                 await set_loop(chat_id, loop)
             
-            # Using auto_clean from Alexa's logic context (if config allows)
             await auto_clean(popped)
             
             if not check:
@@ -344,9 +360,6 @@ class Call:
 
             video = True if str(streamtype) == "video" else False
             
-            # 🔥 ALEXA OPTIMIZATION: Pre-calculate stream to save time
-            # Note: We use the dynamic helper to keep code clean, but it uses Alexa's params inside
-            
             if "live_" in queued:
                 n, link = await YouTube.video(videoid, True)
                 if n == 0:
@@ -354,7 +367,7 @@ class Call:
                 stream = dynamic_media_stream(path=link, video=video)
                 
                 try:
-                    await client.play(chat_id, stream)
+                    await client.play(chat_id, stream, config=GroupCallConfig(auto_start=False))
                 except Exception:
                     return await app.send_message(original_chat_id, text=_["call_6"])
 
@@ -388,7 +401,7 @@ class Call:
 
                 stream = dynamic_media_stream(path=file_path, video=video)
                 try:
-                    await client.play(chat_id, stream)
+                    await client.play(chat_id, stream, config=GroupCallConfig(auto_start=False))
                 except:
                     return await app.send_message(original_chat_id, text=_["call_6"])
 
@@ -412,7 +425,7 @@ class Call:
             elif "index_" in queued:
                 stream = dynamic_media_stream(path=videoid, video=video)
                 try:
-                    await client.play(chat_id, stream)
+                    await client.play(chat_id, stream, config=GroupCallConfig(auto_start=False))
                 except:
                     return await app.send_message(original_chat_id, text=_["call_6"])
 
@@ -429,7 +442,7 @@ class Call:
             else:
                 stream = dynamic_media_stream(path=queued, video=video)
                 try:
-                    await client.play(chat_id, stream)
+                    await client.play(chat_id, stream, config=GroupCallConfig(auto_start=False))
                 except:
                     return await app.send_message(original_chat_id, text=_["call_6"])
 
@@ -496,30 +509,20 @@ class Call:
 
     async def start(self) -> None:
         LOGGER(__name__).info("Starting PyTgCalls Clients...")
-        if config.STRING1:
-            await self.one.start()
-        if config.STRING2:
-            await self.two.start()
-        if config.STRING3:
-            await self.three.start()
-        if config.STRING4:
-            await self.four.start()
-        if config.STRING5:
-            await self.five.start()
+        if config.STRING1: await self.one.start()
+        if config.STRING2: await self.two.start()
+        if config.STRING3: await self.three.start()
+        if config.STRING4: await self.four.start()
+        if config.STRING5: await self.five.start()
 
     @capture_internal_err
     async def ping(self) -> str:
         pings = []
-        if config.STRING1:
-            pings.append(self.one.ping)
-        if config.STRING2:
-            pings.append(self.two.ping)
-        if config.STRING3:
-            pings.append(self.three.ping)
-        if config.STRING4:
-            pings.append(self.four.ping)
-        if config.STRING5:
-            pings.append(self.five.ping)
+        if config.STRING1: pings.append(self.one.ping)
+        if config.STRING2: pings.append(self.two.ping)
+        if config.STRING3: pings.append(self.three.ping)
+        if config.STRING4: pings.append(self.four.ping)
+        if config.STRING5: pings.append(self.five.ping)
         return str(round(sum(pings) / len(pings), 3)) if pings else "0.0"
 
     @capture_internal_err
