@@ -1,12 +1,11 @@
 # Authored By Certified Coders © 2025
 # Fixed for platforms/Youtube.py
-# SMART HYBRID MODE: Play Direct Stream NOW + Download to RAM in Background
+# SMART HYBRID MODE: Fixed NameError + Direct Stream + Background Cache
 
 import asyncio
 import os
 import re
 import logging
-import shutil
 from typing import Union, List, Dict, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor
 import time
@@ -24,7 +23,7 @@ except ImportError:
     def time_to_seconds(t): return 0
 
 class Config:
-    # مكان الكاش (الرام)
+    # استخدام الرام للكاش السريع
     if os.path.exists("/dev/shm"):
         DOWNLOAD_PATH = "/dev/shm/AnnieDownloads"
     else:
@@ -56,11 +55,7 @@ class YouTubeAPI:
         self.regex = r"(?:youtube\.com|youtu\.be)"
         self.listbase = "https://www.youtube.com/playlist?list="
         self.pool = ThreadPoolExecutor(max_workers=Config.MAX_WORKERS)
-        
-        # تنظيف الرام عند البدء (اختياري)
-        pass
 
-    # ... (دوال البحث والتحقق كما هي) ...
     async def exists(self, link: str, videoid: Union[bool, str] = None):
         if videoid: link = self.base + link
         return bool(re.search(self.regex, link))
@@ -134,8 +129,7 @@ class YouTubeAPI:
         d, _ = await self.track(link, videoid)
         return d.get("thumb")
 
-    # 🔥🔥🔥 دالة الخلفية (Background Downloader) 🔥🔥🔥
-    # دي بتشتغل في الخفاء ومبتعطلش البوت
+    # دالة التحميل في الخلفية (لتخزين الملف في الرام للمرة القادمة)
     def _background_download(self, link, final_path):
         try:
             ydl_opts = {
@@ -147,14 +141,11 @@ class YouTubeAPI:
                 "quiet": True,
                 "force_ipv4": True,
             }
-            print(f"🔄 Background Caching Started: {final_path}", flush=True)
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([link])
-            print(f"✅ Background Caching Done: {final_path}", flush=True)
-        except Exception as e:
-            print(f"⚠️ Background Cache Failed: {e}", flush=True)
+        except Exception:
+            pass
 
-    # 🔥🔥🔥 الدالة الرئيسية 🔥🔥🔥
     async def download(
         self,
         link: str,
@@ -175,20 +166,17 @@ class YouTubeAPI:
             else: vid_id = str(int(time.time()))
         except: vid_id = str(int(time.time()))
 
-        # 1. فحص الكاش (RAM Check)
-        # لو الملف موجود، هنشغله فوراً من الرام (Cache Hit)
-        # هنا بنرجع False عشان نقول للبوت "ده ملف"
+        # 1. فحص الكاش في الرام
+        # لو الملف موجود، رجعه فوراً (تشغيل من الرام)
         ram_path = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.m4a")
         if os.path.exists(ram_path) and os.path.getsize(ram_path) > 1024:
-            print(f"⚡ RAM Cache Hit: {vidid}", flush=True)
+            print(f"⚡ RAM Cache Hit: {vid_id}", flush=True)
             return ram_path, False
 
-        # 2. لو مش موجود: هات رابط مباشر فوراً (Direct Stream)
-        # عشان المستخدم مايستناش
-        print(f"🚀 Fetching Direct Link for: {vidid}", flush=True)
+        # 2. لو مش موجود، هات رابط مباشر فوراً (Direct Stream)
+        print(f"🚀 Fetching Direct Link for: {vid_id}", flush=True)
         
         try:
-            # هنجيب الرابط المباشر
             cmd = ["yt-dlp", "-g", "-f", "bestaudio[ext=m4a]/bestaudio", "--cookies", get_cookie_file() or "", link]
             process = await asyncio.create_subprocess_exec(
                 *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
@@ -198,21 +186,17 @@ class YouTubeAPI:
             if stdout:
                 direct_link = stdout.decode().split("\n")[0].strip()
                 
-                # 3. تشغيل التحميل في الخلفية (Fire and Forget)
-                # بنرمي المهمة للـ executor ومنستناش النتيجة
-                # ده هيحمل الملف للرام عشان المرة الجاية
+                # 3. شغل تحميل في الخلفية (عشان المرة الجاية يبقى كاش)
                 loop.run_in_executor(self.pool, self._background_download, link, ram_path)
 
-                # 4. إرجاع الرابط المباشر للمستخدم فوراً
-                # هنا بنرجع True عشان نقول للبوت "ده رابط مباشر"
+                # 4. رجع الرابط المباشر (Direct = True)
                 return direct_link, True
             else:
-                # لو فشل الرابط المباشر، جرب الطريقة التقليدية (تحميل عادي)
-                print(f"❌ Direct Link Failed, Fallback to Download", flush=True)
+                print(f"❌ Direct Link Failed", flush=True)
         except Exception as e:
             print(f"❌ Error fetching direct link: {e}", flush=True)
 
-        # Fallback (لو كل حاجة فشلت، حمل الملف بالطريقة العادية)
+        # Fallback: لو الرابط المباشر فشل، حمل الملف عادي
         def _fallback_download():
             try:
                 ydl_opts = {
@@ -232,7 +216,6 @@ class YouTubeAPI:
         
         return None, False
 
-    # ... (باقي الدوال: playlist, formats, slider كما هي) ...
     async def playlist(self, link, limit, user_id, videoid: Union[bool, str] = None):
         if videoid: link = self.listbase + link
         if "&" in link: link = link.split("&")[0]
