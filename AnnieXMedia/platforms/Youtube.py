@@ -1,6 +1,6 @@
 # Authored By Certified Coders © 2025
 # Fixed for platforms/Youtube.py
-# SOLUTION: Added Automatic Fallback (Retry with different format if failed)
+# SOLUTION: Forced Remote Components for New YouTube Protection
 
 import asyncio
 import os
@@ -31,7 +31,6 @@ logging.getLogger("urllib3").setLevel(logging.ERROR)
 
 class Config:
     DOWNLOAD_PATH = "downloads"
-    # مسارات الكوكيز المحتملة
     COOKIE_PATH = "AnnieXMedia/assets/cookies.txt"
     MAX_WORKERS = 16 
 
@@ -136,9 +135,6 @@ class YouTubeAPI:
         d, _ = await self.track(link, videoid)
         return d.get("thumb")
 
-    # -----------------------------------------------------------------
-    # 📥 الدالة المعدلة (The Fix)
-    # -----------------------------------------------------------------
     async def download(
         self,
         link: str,
@@ -154,7 +150,6 @@ class YouTubeAPI:
         if videoid: 
             link = self.base + link
         
-        # تنظيف الرابط
         if "youtube.com/0" in link or link.endswith("="):
             return None, False
 
@@ -168,14 +163,10 @@ class YouTubeAPI:
              vid_id = str(int(time.time()))
 
         def _run_download_attempt(fmt_option, use_aria=True):
-            """دالة داخلية للمحاولة بـ Format معين"""
-            
-            # مسح الملف القديم لو موجود عشان ميعملش تعارض
             for ext in ['m4a', 'mp4', 'webm', 'opus', 'mp3']:
                 p = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
                 if os.path.exists(p): return p
 
-            # إعدادات التنزيل
             ydl_opts = {
                 "outtmpl": f"{Config.DOWNLOAD_PATH}/{vid_id}.%(ext)s",
                 "cookiefile": get_cookie_file(),
@@ -183,10 +174,11 @@ class YouTubeAPI:
                 "nocheckcertificate": True,
                 "quiet": True,
                 "ignoreerrors": True,
-                "format": fmt_option, # هنا بنغير الـ Format حسب المحاولة
+                "format": fmt_option,
+                # 🔥🔥 هذا السطر هو الحل الجذري لمشكلة التشفير 🔥🔥
+                "remote_components": "ejs:github",
             }
 
-            # إضافة Aria2 لو متاح
             if self.has_aria2 and use_aria:
                 ydl_opts["external_downloader"] = "aria2c"
                 ydl_opts["external_downloader_args"] = ["-x", "16", "-s", "16", "-k", "1M"]
@@ -195,30 +187,25 @@ class YouTubeAPI:
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([link])
             except Exception as e:
-                # لو فشل، بنرجع None عشان نجرب المحاولة اللي بعدها
                 return None
             
-            # التحقق من الملف
             for ext in ['m4a', 'mp4', 'webm', 'opus', 'mp3', 'mkv']:
                 final_path = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
                 if os.path.exists(final_path):
                     return final_path
             return None
 
-        # --- تنفيذ المحاولات ---
         def _execute():
-            # المحاولة الأولى: أفضل جودة صوت (bestaudio/best)
-            # ده اللي كان بيعمل مشاكل، بس لازم نجربه الأول للجودة
+            # محاولة 1: أفضل جودة (قد تفشل بسبب aria2 أو الحماية)
             file = _run_download_attempt("bestaudio/best", use_aria=True)
             if file: return file
             
-            # المحاولة الثانية: (Force Fallback)
-            # لو الأولى فشلت، جرب "worst" أو أي حاجة شغالة، وشيل Aria2 ممكن يكون هو السبب
+            # محاولة 2: بدون aria2 (أكثر استقراراً مع الحماية)
             LOGGER(__name__).warning(f"⚠️ Retrying download with Fallback for: {link}")
             file = _run_download_attempt("bestaudio", use_aria=False)
             if file: return file
 
-            # المحاولة الثالثة والأخيرة: هات أي حاجة (حتى لو فيديو)
+            # محاولة 3: أي جودة متاحة
             LOGGER(__name__).warning(f"⚠️ Retrying download with FINAL option for: {link}")
             file = _run_download_attempt("best", use_aria=False)
             return file
@@ -228,7 +215,6 @@ class YouTubeAPI:
         if downloaded_file:
             return downloaded_file, True
         
-        # لو وصل هنا يبقى الملف فعلاً مش راضي يتحمل خالص
         LOGGER(__name__).error(f"❌ ALL Download attempts failed for: {link}")
         return None, False
 
