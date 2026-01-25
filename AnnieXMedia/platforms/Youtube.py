@@ -1,6 +1,6 @@
 # Authored By Certified Coders © 2025
 # Fixed for platforms/Youtube.py
-# FINAL ARIA2 BEAST MODE: Force IPv4 + Chrome Spoofing + 16x Connections
+# ULTRA BEAST MODE: 16x Connections + Force IPv4 + Error 15 Fix
 
 import asyncio
 import os
@@ -15,15 +15,15 @@ from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
 from youtubesearchpython.aio import VideosSearch
 
-# --- Logger كاشف السرعة ---
+# --- Logger (مراقب السرعة) ---
 class MyLogger:
     def debug(self, msg):
-        # تصفية الرسائل لإظهار معلومات التحميل فقط
-        if "MiB/s" in msg or "ETA" in msg or "download" in msg:
+        # يظهر فقط معلومات السرعة والأخطاء
+        if "MiB/s" in msg or "ETA" in msg or "ERROR" in msg:
             print(f"🚀 {msg}", flush=True)
     def info(self, msg): pass
     def warning(self, msg): pass
-    def error(self, msg): print(f"❌ ERROR: {msg}", flush=True)
+    def error(self, msg): print(f"❌ {msg}", flush=True)
 
 try:
     from AnnieXMedia.utils.formatters import time_to_seconds
@@ -34,9 +34,11 @@ except ImportError:
     def time_to_seconds(t): return 0
 
 class Config:
-    DOWNLOAD_PATH = "downloads"
+    # 🔥 FIX 1: استخدام مسار مطلق (Absolute Path) لمنع خطأ Error 15
+    DOWNLOAD_PATH = os.path.abspath("downloads")
     COOKIE_PATH = "AnnieXMedia/assets/cookies.txt"
-    MAX_WORKERS = 16 
+    # 🔥 رجعناها 16 عشان تستغل قوة المعالج
+    MAX_WORKERS = 16
 
 if not os.path.exists(Config.DOWNLOAD_PATH):
     os.makedirs(Config.DOWNLOAD_PATH)
@@ -159,30 +161,28 @@ class YouTubeAPI:
              vid_id = str(int(time.time()))
 
         def _run_download_attempt(fmt_option):
-            # 1. تنظيف أي ملف WebM قديم (عشان ميحصلش Error)
-            bad_path = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.webm")
-            if os.path.exists(bad_path):
-                try: os.remove(bad_path)
-                except: pass
+            # 1. تنظيف شامل لتجنب Error 15
+            for ext in ['mp4', 'm4a', 'webm', 'part']:
+                aria_file = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}.aria2")
+                if os.path.exists(aria_file):
+                    try: os.remove(aria_file)
+                    except: pass
+                
+                possible_file = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
+                if os.path.exists(possible_file):
+                    if ext != 'part' and os.path.getsize(possible_file) > 1024:
+                        print(f"✅ Found cached file: {possible_file}", flush=True)
+                        return possible_file
+                    try: os.remove(possible_file)
+                    except: pass
 
-            # 2. لو الملف MP4/M4A موجود وسليم، استخدمه فوراً
-            for ext in ['mp4', 'm4a', 'mkv']:
-                p = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
-                if os.path.exists(p) and os.path.getsize(p) > 1024:
-                    print(f"✅ Found cached file: {p}", flush=True)
-                    return p
-
-            # إعدادات Aria2 للسرعة القصوى
-            # User-Agent هو السر هنا عشان يوتيوب ميعرفش إنه Aria2
-            ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            
+            # 2. إعدادات Aria2 للوحوش (16 Connection)
             aria2_args = [
-                "-x", "16",       # 16 اتصال
-                "-s", "16",       # تقسيم الملف
-                "-j", "16",       # تحميل متوازي
-                "-k", "1M",       # حجم القطعة
+                "-x", "16", "-s", "16", "-j", "16", "-k", "1M",
                 "--file-allocation=none",
-                f"--user-agent={ua}" # انتحال شخصية كروم
+                # منع IPv6 ضروري جداً عشان السرعة حتى مع 16 اتصال
+                "--disable-ipv6=true",
+                "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             ]
 
             ydl_opts = {
@@ -190,26 +190,19 @@ class YouTubeAPI:
                 "cookiefile": get_cookie_file(),
                 "geo_bypass": True,
                 "nocheckcertificate": True,
-                
-                # إظهار اللوجز
                 "quiet": False, 
                 "logger": MyLogger(),
-                
                 "ignoreerrors": True,
                 "format": fmt_option,
                 "remote_components": ["ejs:github"],
-                "merge_output_format": "mp4", # إجبار MP4
-                
-                # 🔥 إجبار IPv4 (أهم سطر للسرعة) 🔥
-                "force_ipv4": True,
-                
-                # إعدادات Aria2
+                "merge_output_format": "mp4",
+                "force_ipv4": True, 
                 "external_downloader": "aria2c",
                 "external_downloader_args": aria2_args,
             }
 
             try:
-                print(f"⬇️ Starting download with Aria2...", flush=True)
+                print(f"⬇️ Starting download (Max Power 16x)...", flush=True)
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([link])
             except Exception as e:
@@ -223,17 +216,25 @@ class YouTubeAPI:
             return None
 
         def _execute():
-            # المحاولة 1: Aria2 + Best Quality + IPv4
-            file = _run_download_attempt("bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best")
+            # تقييد الجودة لـ 480p لضمان عدم التقطيع في المكالمة
+            if video:
+                fmt = "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best"
+            else:
+                fmt = "bestaudio[ext=m4a]/bestaudio"
+
+            file = _run_download_attempt(fmt)
             if file: return file
             
-            # المحاولة 2: Aria2 + Audio Only
-            file = _run_download_attempt("bestaudio[ext=m4a]")
-            if file: return file
+            print("⚠️ Aria2 failed, trying Native...", flush=True)
+            try:
+                with yt_dlp.YoutubeDL({"format": "best", "outtmpl": f"{Config.DOWNLOAD_PATH}/{vid_id}.%(ext)s", "quiet": True}) as ydl:
+                     ydl.download([link])
+            except: pass
 
-            # المحاولة 3: بدون Aria2 (طوارئ)
-            file = _run_download_attempt("best")
-            return file
+            for ext in ['mp4', 'm4a', 'webm']:
+                 p = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
+                 if os.path.exists(p): return p
+            return None
 
         downloaded_file = await loop.run_in_executor(self.pool, _execute)
         
