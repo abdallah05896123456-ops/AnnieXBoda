@@ -34,27 +34,21 @@ class YtDlp:
         if link is None:
             return None, None
 
+        # 🔥 NUCLEAR CONFIGURATION 🔥
         commands = [
             'yt-dlp',
-            '-g',
+            '-g',  # استخراج الرابط فقط
             '-f',
-            'bestvideo[vcodec~="(vp09|avc1)"]+m4a/best',
-            '-S',
-            'res:'
-            f'{min(video_parameters.width, video_parameters.height)}',
+            # طلب أفضل فيديو + أفضل صوت بدون قيود (Server Handles Everything)
+            'bestvideo+bestaudio/best', 
+            '--force-ipv4', # استقرار أعلى في السيرفرات
             '--no-warnings',
+            '--ignore-errors',
         ]
 
         if add_commands:
-            commands += await cleanup_commands(
-                shlex.split(add_commands),
-                'yt-dlp',
-                [
-                    '-f',
-                    '-g',
-                    '--no-warnings',
-                ],
-            )
+            # تمرير الأوامر الإضافية مباشرة
+            commands += shlex.split(add_commands)
 
         commands.append(link)
 
@@ -69,17 +63,25 @@ class YtDlp:
                 stderr=asyncio.subprocess.PIPE,
             )
             try:
+                # زيادة المهلة لـ 60 ثانية لاستيعاب دقة 4K/8K
                 stdout, stderr = await asyncio.wait_for(
                     proc.communicate(),
-                    20,
+                    60,
                 )
             except asyncio.TimeoutError:
-                proc.terminate()
+                try:
+                    proc.terminate()
+                except:
+                    pass
                 raise YtDlpError('yt-dlp process timeout')
-            if stderr:
+            
+            # تجاهل الأخطاء البسيطة والتركيز على الخرج
+            if not stdout and stderr:
                 raise YtDlpError(stderr.decode())
+            
             data = stdout.decode().strip().split('\n')
             if data:
+                # إرجاع رابط الفيديو ورابط الصوت (لأن الجودات العالية بتفصلهم)
                 return data[0], data[1] if len(data) >= 2 else data[0]
             raise YtDlpError('No video URLs found')
         except FileNotFoundError:
