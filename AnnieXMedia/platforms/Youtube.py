@@ -30,7 +30,7 @@ except ImportError:
         return 0
 
 class Config:
-    # استخدام الـ RAM Disk للسرعة المطلقة 0ms Latency
+    # استخدام الـ RAM Disk للسرعة المطلقة 0ms Latency وحماية الهارد
     if os.path.exists("/dev/shm"):
         DOWNLOAD_PATH = "/dev/shm/AnnieDownloads"
     else:
@@ -149,7 +149,7 @@ class YouTubeAPI:
                 "--file-allocation=none", "--disable-ipv6=true"
             ]
             
-            # الجودة الفائقة + الاستيريو
+            # الجودة الفائقة + الاستيريو (TitanOS Engine)
             fmt = "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]" if is_video else "bestaudio[ext=m4a]/bestaudio/best"
             
             ydl_opts = {
@@ -213,7 +213,7 @@ class YouTubeAPI:
             if stdout:
                 direct_link = stdout.decode().split("\n")[0].strip()
                 
-                # 🔥 الخطة النووية: المساعد يدخل الآن.. والتحميل يبدأ بعد 5 ثواني في صمت
+                # 🔥 الخطة النووية: المساعد يدخل الآن.. والتحميل يبدأ بعد 5 ثواني في صمت لدعم الـ Speed
                 async def smart_buffering_task():
                     await asyncio.sleep(5)
                     print(f"🛠️ [SMART-DELAY] Buffering {vid_id} to RAM Disk...", flush=True)
