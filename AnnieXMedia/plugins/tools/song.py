@@ -10,18 +10,15 @@ from pyrogram.types import (
     Message,
 )
 
-# استيراد الأدوات من سورسك AnnieXMedia
 from config import BANNED_USERS, SONG_DOWNLOAD_DURATION, SONG_DOWNLOAD_DURATION_LIMIT
 from AnnieXMedia import YouTube, app
 from AnnieXMedia.utils.formatters import convert_bytes
 from AnnieXMedia.utils.inline.song import song_markup
 
-# الأوامر المطلوبة: اغنية، هات، ابعتلي (تعمل بـ / وبدونه)
 COMMANDS = ["اغنية", "هات", "ابعتلي"]
 
 @app.on_message(filters.command(COMMANDS, prefixes=["", "/"]) & filters.private & ~BANNED_USERS)
 async def song_private_processor(client, message: Message):
-    """المرحلة الأولى: البحث عن المقطع وعرض خيارات التحميل"""
     if len(message.command) < 2:
         return await message.reply_text("يـرجى كـتـابـة اسـم الـمـقـطـع بـعـد الأمـر")
 
@@ -29,16 +26,13 @@ async def song_private_processor(client, message: Message):
     mystic = await message.reply_text("جـاري الـبـحـث فـي قـواعـد الـبـيـانـات")
 
     try:
-        # استخدام المحرك النووي لجلب التفاصيل
         title, duration_min, duration_sec, thumbnail, vidid = await YouTube.details(query)
     except Exception:
         return await mystic.edit_text("تـعـذر الـعـثـور عـلى نـتـائج لـهذا الـبـحـث")
 
-    # التحقق من طول المقطع بناءً على إعدادات الـ Config
     if int(duration_sec) > SONG_DOWNLOAD_DURATION_LIMIT:
         return await mystic.edit_text(f"الـمـقـطـع طـويـل جـداً. الـحـد الأقـصى الـمـسـمـوح بـه هـو {SONG_DOWNLOAD_DURATION} دقـيـقـة")
 
-    # استدعاء ملف الأزرار الذي أنشأته في المسار الخاص به
     buttons = song_markup(None, vidid)
     await mystic.delete()
     
@@ -50,7 +44,6 @@ async def song_private_processor(client, message: Message):
 
 @app.on_callback_query(filters.regex(pattern=r"song_helper") & ~BANNED_USERS)
 async def song_helper_callback(client, CallbackQuery):
-    """المرحلة الثانية: جلب الجودات المتاحة للمقطع المختار"""
     callback_data = CallbackQuery.data.strip()
     callback_request = callback_data.split(None, 1)[1]
     stype, vidid = callback_request.split("|")
@@ -58,7 +51,6 @@ async def song_helper_callback(client, CallbackQuery):
     await CallbackQuery.answer("جـاري جـلـب الـجـودات")
     
     try:
-        # جلب قائمة الجودات من المحرك النووي
         formats_available, link = await YouTube.formats(vidid, True)
     except Exception:
         return await CallbackQuery.edit_message_text("حـدث خـطأ أثـناء جـلـب قـائـمة الـجـودات")
@@ -77,7 +69,6 @@ async def song_helper_callback(client, CallbackQuery):
                 fom = x.get("format_id")
                 keyboard.append([InlineKeyboardButton(text=f"صـوت {form} - الـحـجم {sz}", callback_data=f"song_download {stype}|{fom}|{vidid}")])
     else:
-        # حصر الجودات لضمان التوافق التام (AVC)
         allowed_ids = [160, 133, 134, 135, 136, 137, 298, 299, 264, 304, 266]
         for x in formats_available:
             if x.get("filesize") is None: continue
@@ -93,17 +84,14 @@ async def song_helper_callback(client, CallbackQuery):
 
 @app.on_callback_query(filters.regex(pattern=r"song_download") & ~BANNED_USERS)
 async def song_download_final(client, CallbackQuery):
-    """المرحلة الثالثة: التحميل عبر Aria2c في الرام ديسك والرفع الفوري"""
     callback_data = CallbackQuery.data.strip()
     callback_request = callback_data.split(None, 1)[1]
     stype, format_id, vidid = callback_request.split("|")
     
     mystic = await CallbackQuery.edit_message_text("جـاري الـتـحـمـيـل إلـى الـرام")
-    
     yturl = f"https://www.youtube.com/watch?v={vidid}"
     
     try:
-        # المحرك النووي يرجع المسار في /dev/shm وحالة الرابط المباشر
         file_path, direct = await YouTube.download(
             yturl,
             mystic,
@@ -117,7 +105,6 @@ async def song_download_final(client, CallbackQuery):
 
     await mystic.edit_text("جـاري الـرفـع الـفـوري")
     
-    # جلب تفاصيل المقطع النهائية للرفع
     with yt_dlp.YoutubeDL({"quiet": True}) as ytdl:
         info = ytdl.extract_info(yturl, download=False)
     
@@ -148,7 +135,6 @@ async def song_download_final(client, CallbackQuery):
     except Exception:
         await mystic.edit_text("حـدث خـطأ أثـناء الـرفع إلـى تـلـيـجرام")
 
-    # تنظيف الـ RAM Disk والملفات المؤقتة
     if not direct and os.path.exists(file_path):
         os.remove(file_path)
     if thumbnail and os.path.exists(thumbnail):
@@ -156,7 +142,6 @@ async def song_download_final(client, CallbackQuery):
 
 @app.on_callback_query(filters.regex(pattern=r"song_back") & ~BANNED_USERS)
 async def song_back_callback(client, CallbackQuery):
-    """الرجوع للقائمة الرئيسية"""
     callback_data = CallbackQuery.data.strip()
     callback_request = callback_data.split(None, 1)[1]
     stype, vidid = callback_request.split("|")
@@ -165,6 +150,6 @@ async def song_back_callback(client, CallbackQuery):
 
 @app.on_message(filters.command(COMMANDS, prefixes=["", "/"]) & filters.group & ~BANNED_USERS)
 async def song_group_filter(client, message: Message):
-    """منع استخدام الأوامر في المجموعات للحفاظ على الهدوء"""
-    upl = InlineKeyboardMarkup([[InlineKeyboardButton(text="اضـغـط لـلـطـلب"، url=f"https://t.me/{app.username}?start=song")]])
+    # تم تصحيح الفاصلة هنا بالظبط لتعمل مع معايير بايثون
+    upl = InlineKeyboardMarkup([[InlineKeyboardButton(text="اضـغـط لـلـطـلب", url=f"https://t.me/{app.username}?start=song")]])
     await message.reply_text("طـلب الأغـاني مـتـاح فـي الـخـاص فـقـط", reply_markup=upl)
