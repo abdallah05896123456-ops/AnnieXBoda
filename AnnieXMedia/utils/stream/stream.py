@@ -1,7 +1,3 @@
-# Authored By Certified Coders © 2025
-# Fixed for utils/stream/stream.py
-# CRASH FIX: Removed safe_delete from exception blocks to prevent MessageIdInvalid
-
 import asyncio
 import os
 from typing import Union
