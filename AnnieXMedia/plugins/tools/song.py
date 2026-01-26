@@ -1,4 +1,4 @@
-# System: Song Plugin | MongoDB Persistence | Pyromod | No Emojis | Elongated Text
+# System: Song Plugin | MongoDB Fixed | Pyromod | No Emojis | Elongated Text
 
 import asyncio
 import os
@@ -10,32 +10,42 @@ from pyrogram.types import (
     InputMediaAudio, 
     InputMediaVideo
 )
+from motor.motor_asyncio import AsyncIOMotorClient
 
-from config import BANNED_USERS, SONG_DOWNLOAD_DURATION, SONG_DOWNLOAD_DURATION_LIMIT, OWNER_ID
+# استيراد المتغيرات الأساسية
+from config import BANNED_USERS, SONG_DOWNLOAD_DURATION, SONG_DOWNLOAD_DURATION_LIMIT, OWNER_ID, MONGO_DB_URI
 from AnnieXMedia import app
 from AnnieXMedia.platforms.Youtube import YouTube 
 from AnnieXMedia.platforms.YTProcessor import Processor 
 from AnnieXMedia.utils.inline.song import song_markup
-from AnnieXMedia.misc import dbb
 
-# --- إعـدادات قـاعـدة الـبـيـانـات (لـلـحـفـظ الـدائـم) ---
-songdb = dbb.song_settings
+# --- إصـلاح الاتـصـال بـقـاعـدة الـبـيـانـات (Direct Connection) ---
+# تـم اسـتـخـدام الاتـصـال الـمـبـاشـر لـتـجـنـب خـطـأ الـ Function
+_mongo_client_ = AsyncIOMotorClient(MONGO_DB_URI)
+mongodb = _mongo_client_.Annie
+songdb = mongodb.song_settings
 
-# دوال مساعدة للتعامل مع الداتا بيز
+# --- دوال الـتـعـامـل مـع الـقـاعـدة ---
 async def get_config(key):
-    """جلب حالة القفل من القاعدة"""
-    data = await songdb.find_one({"_id": "song_config"})
-    if not data:
+    """جلب الإعدادات من القاعدة"""
+    try:
+        data = await songdb.find_one({"_id": "song_config"})
+        if not data:
+            return False
+        return data.get(key, False)
+    except:
         return False
-    return data.get(key, False)
 
 async def set_config(key, value):
-    """حفظ حالة القفل في القاعدة"""
-    await songdb.update_one(
-        {"_id": "song_config"}, 
-        {"$set": {key: value}}, 
-        upsert=True
-    )
+    """حفظ الإعدادات في القاعدة"""
+    try:
+        await songdb.update_one(
+            {"_id": "song_config"}, 
+            {"$set": {key: value}}, 
+            upsert=True
+        )
+    except:
+        pass
 
 # --- أوامـر الـقـفـل الـعـام (لـلـقـسـم بـالـكـامـل) ---
 
