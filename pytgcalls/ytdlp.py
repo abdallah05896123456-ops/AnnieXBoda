@@ -1,5 +1,6 @@
 # Authored By Certified Coders © 2026
-# RACE MODE: Android Client Spoofing + No-Check Flags + Zero Latency Extraction
+# RACE MODE: Android/iOS Spoofing + No-Check Flags + IPv4 Force
+
 import asyncio
 import logging
 import re
@@ -36,21 +37,30 @@ class YtDlp:
         if link is None:
             return None, None
 
-        # 🔥 RACE MODE: NUCLEAR CONFIGURATION 🔥
-        # تم تعديل الأعلام لجلب الرابط بأسرع طريقة برمجية ممكنة
+        # 🔥 RACE MODE: NUCLEAR CONFIGURATION (16-Core Optimized) 🔥
         commands = [
             'yt-dlp',
             '-g',
-            # استخدام أندرويد كلينت يوفر 0.4 ثانية لأن حجم الرد أصغر
-            '--extractor-args', 'youtube:player_client=android,web',
-            '--format', 'bestaudio/best', # البحث عن الصوت أولاً أسرع من دمج الفيديو
-            '--no-playlist',              # منع الفحص الإضافي للقوائم
-            '--no-check-formats',         # تخطي فحص الصيغ (توفير وقت ضخم)
-            '--no-check-certificate',     # تخطي فحص الأمان لتسريع الـ Handshake
+            # استخدام أندرويد و iOS لأن استجابتهم أسرع (JSON أصغر)
+            '--extractor-args', 'youtube:player_client=android,ios,web',
+            
+            # تحديد الصيغ (صوت فقط للسرعة، أو فيديو خفيف)
+            '--format', 'bestaudio/best',
+            
+            # --- تحسينات الشبكة (Network Boost) ---
+            '--force-ipv4',               # يمنع تأخير DNS في IPv6
+            '--no-check-certificate',     # تجاوز SSL Handshake
+            '--socket-timeout', '10',     # لو السيرفر ماردش في 10 ثواني اقطع
+            
+            # --- تخطي الفحوصات (Skip Checks) ---
+            '--no-playlist',              
+            '--no-check-formats',         # سرعة صاروخية (يأخذ أول صيغة تقابله)
+            '--no-remote-subtitles',      # توفير HTTP Request
+            '--no-write-subs',
             '--no-warnings',
             '--ignore-errors',
-            '--no-call-home',             # منع الاتصال بسيرفرات yt-dlp للتحديث
-            '--no-cache-dir',             # عدم إضاعة الوقت في قراءة الكاش
+            '--no-call-home',             # منع التحديثات
+            '--no-cache-dir',             # عدم القراءة/الكتابة على الهارد
         ]
 
         if add_commands:
@@ -69,24 +79,27 @@ class YtDlp:
                 stderr=asyncio.subprocess.PIPE,
             )
             try:
-                # في السباق.. لو مجاش في 10 ثواني يبقى خسرنا، ملوش لزمة الـ 60
+                # المهلة الزمنية للسباق (Race Timeout)
                 stdout, stderr = await asyncio.wait_for(
                     proc.communicate(),
-                    10, 
+                    timeout=12, # 12 ثانية كحد أقصى للعملية بالكامل
                 )
             except asyncio.TimeoutError:
                 try:
-                    proc.terminate()
+                    proc.kill() # Kill أسرع من Terminate في الحالات الحرجة
                 except:
                     pass
-                raise YtDlpError('yt-dlp process timeout')
+                raise YtDlpError('yt-dlp process timeout (Race Lost)')
             
             if not stdout and stderr:
-                raise YtDlpError(stderr.decode())
+                # أحياناً yt-dlp يرمي تحذيرات في stderr بس بيجيب الرابط في stdout
+                # هنتأكد الأول إن مفيش داتا رجعت
+                if not stdout:
+                    raise YtDlpError(stderr.decode())
             
             data = stdout.decode().strip().split('\n')
             if data:
-                # إرجاع الروابط فوراً
+                # العودة بالرابط المباشر
                 return data[0], data[1] if len(data) >= 2 else data[0]
             raise YtDlpError('No video URLs found')
         except FileNotFoundError:
