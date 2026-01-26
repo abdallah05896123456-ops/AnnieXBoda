@@ -1,4 +1,4 @@
-# System: Song Plugin | No Emojis | Elongated Text | Direct Upload
+# System: Song Plugin | Full Maintenance Lock | Pyromod | No Emojis | Elongated Text
 
 import asyncio
 import os
@@ -17,10 +17,30 @@ from AnnieXMedia.platforms.Youtube import YouTube
 from AnnieXMedia.platforms.YTProcessor import Processor 
 from AnnieXMedia.utils.inline.song import song_markup
 
-# مـتـغـيـر الـتـحـكـم فـي وضـع الـبـحـث (الأزرار)
+# --- مـتـغـيـرات الـتـحـكـم ---
+# 1. قـفـل الـقـسـم بـالـكـامـل (Maintenance)
+SEARCH_SECTION_LOCKED = False
+
+# 2. قـفـل الانـلايـن (الـتـحـمـيـل الـمـبـاشـر بـدلاً مـن الأزرار)
 INLINE_SEARCH_LOCKED = False
 
-# --- أوامـر الـتـحـكـم لـلـمـطـور ---
+
+# --- أولاً: أوامـر الـقـفـل الـعـام (لـقـسـم الـبـحـث) ---
+
+@app.on_message(filters.command(["قفل البحث", "تعطيل البحث"], prefixes=["", "/"]) & filters.user(OWNER_ID))
+async def lock_whole_section(client, message):
+    global SEARCH_SECTION_LOCKED
+    SEARCH_SECTION_LOCKED = True
+    await message.reply_text("**تـم قـفـل قـسـم الـبـحـث والـتـحـمـيـل نـهـائـيـاً عـن الـأعـضـاء.**\n\n**يـمـكـنـك فـقـط اسـتـخـدام الـبـوت.**")
+
+@app.on_message(filters.command(["فتح البحث", "تفعيل البحث"], prefixes=["", "/"]) & filters.user(OWNER_ID))
+async def unlock_whole_section(client, message):
+    global SEARCH_SECTION_LOCKED
+    SEARCH_SECTION_LOCKED = False
+    await message.reply_text("**تـم فـتـح قـسـم الـبـحـث والـتـحـمـيـل لـلـجـمـيـع.**")
+
+
+# --- ثـانـيـاً: أوامـر قـفـل الانـلايـن (الأزرار vs الـمـبـاشـر) ---
 
 @app.on_message(filters.command(["قفل انلاين البحث", "قفل انلاين بحث"], prefixes=["", "/"]) & filters.user(OWNER_ID))
 async def lock_inline_search(client, message):
@@ -34,10 +54,15 @@ async def unlock_inline_search(client, message):
     INLINE_SEARCH_LOCKED = False
     await message.reply_text("**تـم فـتـح بـحـث الانـلايـن.**\n\n**سـتـظـهـر أزرار اخـتـيـار الـجـودة عـنـد الـطـلـب.**")
 
+
 # --- الـمـعـالـج الـذكـي الـمـوحـد (Regex) ---
 @app.on_message(filters.regex(r"^/?(اغنية|اغنيه|هات|هاتلي|ابعتلي|song|video|تحميل)(?:\s+(فيد|فيديو|video))?(?:\s+(.+))?$") & ~BANNED_USERS)
 async def unified_song_processor(client, message: Message):
     
+    # 1. الـتـحـقـق مـن الـقـفـل الـعـام
+    if SEARCH_SECTION_LOCKED and message.from_user.id != OWNER_ID:
+        return await message.reply_text("**عـذراً، قـسـم الـبـحـث والـتـحـمـيـل مـغـلـق حـالـيـاً لـلـصـيـانـة.**")
+
     match = re.match(r"^/?(اغنية|اغنيه|هات|هاتلي|ابعتلي|song|video|تحميل)(?:\s+(فيد|فيديو|video))?(?:\s+(.+))?$", message.text)
     if not match: return
     
@@ -49,22 +74,23 @@ async def unified_song_processor(client, message: Message):
     if command_trigger in ["video", "/video", "فيديو"] or video_trigger:
         is_video_request = True
 
-    # الـتـفـاعـل (Pyromod)
+    # 2. الـتـفـاعـل (Pyromod)
     if not query:
         if not hasattr(client, "listen"):
             return await message.reply_text("**عـذراً، حـدث خـطـأ تـقـنـي.**")
             
-        prompt = await message.reply_text("**الان ارسـل اسـم الـمـقـطـع الـمـطـلـوب...**")
+        prompt = await message.reply_text("**ارسـل الان اسـم الـمـقـطـع الـمـطـلـوب .**")
         try:
-            response = await client.listen(chat_id=message.chat.id, user_id=message.from_user.id, timeout=30)
+            # الانتظار لمدة 20 ثانية
+            response = await client.listen(chat_id=message.chat.id, user_id=message.from_user.id, timeout=20)
             if response and response.text:
                 query = response.text
                 await prompt.delete()
             else:
-                await prompt.edit_text("**تـم إلـغـاء الـطـلـب.**")
+                await prompt.edit_text("**تـم انـهـاء الانـتـظـار لـعـدم وجـود رد**")
                 return
         except:
-            await prompt.edit_text("**تـم انـتـهـاء وقـت الـطـلـب.**")
+            await prompt.edit_text("**تـم انـهـاء الانـتـظـار لـعـدم وجـود رد**")
             return
 
     mystic = await message.reply_text("**جـارٍ الـبـحـث عـن الـمـطـلـوب...**")
@@ -73,10 +99,11 @@ async def unified_song_processor(client, message: Message):
         title, duration_min, duration_sec, thumbnail, vidid = await YouTube.details(query)
         if duration_sec is None: duration_sec = 0
         
-        if int(duration_sec) > SONG_DOWNLOAD_DURATION_LIMIT:
+        # التعديل ليكون الحد 4 ساعات (14400 ثانية)
+        if int(duration_sec) > 14400:
             return await mystic.edit_text("**عـذراً، هـذا الـمـقـطـع طـويـل جـداً ولا يـمـكـن تـحـمـيـلـه.**")
         
-        # وضـع الـقـفـل (الـتـحـمـيـل الـمـبـاشـر)
+        # --- حـالـة قـفـل الانـلايـن (الـتـحـمـيـل الـمـبـاشـر) ---
         if INLINE_SEARCH_LOCKED:
              await mystic.edit_text("**جـارٍ الـتـحـمـيـل الـفـوري...**")
              
@@ -94,6 +121,7 @@ async def unified_song_processor(client, message: Message):
              )
              
              await mystic.edit_text("**جـارٍ الـرفـع إلـيـك...**")
+             
              await Processor.upload_alexa_style(
                  client, 
                  mystic, 
@@ -105,7 +133,7 @@ async def unified_song_processor(client, message: Message):
                  vidid=vidid
              )
 
-        # الـوضـع الـطـبـيـعـي (الأزرار)
+        # --- الـوضـع الـطـبـيـعـي (الأزرار) ---
         else:
             buttons = song_markup(None, vidid)
             await mystic.delete()
@@ -138,6 +166,10 @@ async def unified_song_processor(client, message: Message):
 # --- أمـر يـوت (صـوت مـبـاشـر) ---
 @app.on_message(filters.command(["يوت"], prefixes=["", "/"]) & ~BANNED_USERS)
 async def yut_direct_audio(client, message: Message):
+    # الـتـحـقـق مـن الـقـفـل الـعـام
+    if SEARCH_SECTION_LOCKED and message.from_user.id != OWNER_ID:
+        return await message.reply_text("**عـذراً، قـسـم الـبـحـث والـتـحـمـيـل مـغـلـق حـالـيـاً لـلـصـيـانـة.**")
+
     if len(message.command) > 1 and message.command[1] in ["فيد", "فيديو", "video", "vid"]:
         return 
 
@@ -169,6 +201,10 @@ async def yut_direct_audio(client, message: Message):
 # --- أمـر يـوت فـيـد (فـيـديـو مـبـاشـر) ---
 @app.on_message(filters.command(["يوت فيد", "يوت فيديو"], prefixes=["", "/"]) & ~BANNED_USERS)
 async def yut_direct_video(client, message: Message):
+    # الـتـحـقـق مـن الـقـفـل الـعـام
+    if SEARCH_SECTION_LOCKED and message.from_user.id != OWNER_ID:
+        return await message.reply_text("**عـذراً، قـسـم الـبـحـث والـتـحـمـيـل مـغـلـق حـالـيـاً لـلـصـيـانـة.**")
+
     if len(message.command) < 3: 
         return await message.reply_text("**يـرجـى كـتـابـة اسـم الـفـيـديـو.**")
     
@@ -194,9 +230,14 @@ async def yut_direct_video(client, message: Message):
     except Exception as e:
         await mystic.edit_text(f"**حـدث خـطـأ:** {e}")
 
+
 # --- مـعـالـجـة الأزرار (الـكـول بـاك) ---
 @app.on_callback_query(filters.regex(pattern=r"song_download") & ~BANNED_USERS)
 async def song_download_callback(client, CallbackQuery):
+    # الـتـحـقـق مـن الـقـفـل الـعـام أيـضـاً هـنـا
+    if SEARCH_SECTION_LOCKED and CallbackQuery.from_user.id != OWNER_ID:
+        return await CallbackQuery.answer("⚠️ قـسـم الـتـحـمـيـل مـغـلـق لـلـصـيـانـة.", show_alert=True)
+
     if INLINE_SEARCH_LOCKED and CallbackQuery.from_user.id != OWNER_ID:
          return await CallbackQuery.answer("تـم قـفـل الـتـحـمـيـل عـبـر الأزرار حـالـيـاً.", show_alert=True)
 
@@ -218,6 +259,7 @@ async def song_download_callback(client, CallbackQuery):
         )
         
         await mystic.edit_text("**جـارٍ الـرفـع...**")
+        
         await Processor.upload_alexa_style(
             client, mystic, file_path, is_video, title, duration_sec, CallbackQuery.from_user.first_name, vidid=vidid
         )
@@ -227,6 +269,9 @@ async def song_download_callback(client, CallbackQuery):
 
 @app.on_callback_query(filters.regex(pattern=r"song_helper") & ~BANNED_USERS)
 async def song_helper_callback(client, CallbackQuery):
+    if SEARCH_SECTION_LOCKED and CallbackQuery.from_user.id != OWNER_ID:
+        return await CallbackQuery.answer("⚠️ قـسـم الـتـحـمـيـل مـغـلـق لـلـصـيـانـة.", show_alert=True)
+
     stype, vidid = CallbackQuery.data.split(None, 1)[1].split("|")
     await CallbackQuery.answer("جـارٍ جـلـب الـخـيـارات...")
     buttons = await Processor.get_quality_buttons(vidid, stype)
