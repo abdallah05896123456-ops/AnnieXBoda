@@ -1,4 +1,4 @@
-# System: Song Plugin | Pyromod Interactive | No Emojis | Elongated Text
+# System: Song Plugin | No Emojis | Elongated Text | Direct Upload
 
 import asyncio
 import os
@@ -34,7 +34,7 @@ async def unlock_inline_search(client, message):
     INLINE_SEARCH_LOCKED = False
     await message.reply_text("**تـم فـتـح بـحـث الانـلايـن.**\n\n**سـتـظـهـر أزرار اخـتـيـار الـجـودة عـنـد الـطـلـب.**")
 
-# --- الـمـعـالـج الـذكـي الـمـوحـد (Regex + Interactive) ---
+# --- الـمـعـالـج الـذكـي الـمـوحـد (Regex) ---
 @app.on_message(filters.regex(r"^/?(اغنية|اغنيه|هات|هاتلي|ابعتلي|song|video|تحميل)(?:\s+(فيد|فيديو|video))?(?:\s+(.+))?$") & ~BANNED_USERS)
 async def unified_song_processor(client, message: Message):
     
@@ -42,60 +42,46 @@ async def unified_song_processor(client, message: Message):
     if not match: return
     
     command_trigger = match.group(1).lower()
-    video_trigger = match.group(2) # قد يكون None
-    query = match.group(3) # قد يكون None إذا لم يكتب الاسم
+    video_trigger = match.group(2)
+    query = match.group(3)
 
-    # 1. تـحـديـد نـوع الـطـلـب (فـيـديـو أم صـوت)
     is_video_request = False
     if command_trigger in ["video", "/video", "فيديو"] or video_trigger:
         is_video_request = True
 
-    # 2. الـتـحـقـق مـن وجـود الاسـم (Interactive Mode)
+    # الـتـفـاعـل (Pyromod)
     if not query:
-        # إذا لم يكتب الاسم، نطلب منه الإرسال (Pyromod Listen)
         if not hasattr(client, "listen"):
-            return await message.reply_text("**عـذراً، حـدث خـطـأ تـقـنـي (Pyromod Missing).**")
+            return await message.reply_text("**عـذراً، حـدث خـطـأ تـقـنـي.**")
             
         prompt = await message.reply_text("**الان ارسـل اسـم الـمـقـطـع الـمـطـلـوب...**")
-        
         try:
-            # ننتظر رد المستخدم لمدة 30 ثانية
             response = await client.listen(chat_id=message.chat.id, user_id=message.from_user.id, timeout=30)
-            
             if response and response.text:
                 query = response.text
                 await prompt.delete()
             else:
-                await prompt.edit_text("**تـم إلـغـاء الـطـلـب لـعـدم الإرسـال.**")
+                await prompt.edit_text("**تـم إلـغـاء الـطـلـب.**")
                 return
-        except asyncio.TimeoutError:
+        except:
             await prompt.edit_text("**تـم انـتـهـاء وقـت الـطـلـب.**")
             return
-        except Exception:
-            await prompt.edit_text("**حـدث خـطـأ، حـاول مـرة أخـرى.**")
-            return
 
-    # 3. بـدء الـمـعـالـجـة
     mystic = await message.reply_text("**جـارٍ الـبـحـث عـن الـمـطـلـوب...**")
 
     try:
         title, duration_min, duration_sec, thumbnail, vidid = await YouTube.details(query)
-        
         if duration_sec is None: duration_sec = 0
         
         if int(duration_sec) > SONG_DOWNLOAD_DURATION_LIMIT:
             return await mystic.edit_text("**عـذراً، هـذا الـمـقـطـع طـويـل جـداً ولا يـمـكـن تـحـمـيـلـه.**")
         
-        # --- حـالـة الـقـفـل (الـتـحـمـيـل الـمـبـاشـر) ---
+        # وضـع الـقـفـل (الـتـحـمـيـل الـمـبـاشـر)
         if INLINE_SEARCH_LOCKED:
              await mystic.edit_text("**جـارٍ الـتـحـمـيـل الـفـوري...**")
              
              is_owner = (message.from_user.id == OWNER_ID)
              yturl = f"https://www.youtube.com/watch?v={vidid}"
-             
-             # تحديد الجودة (فائقة للمطور، متوسطة للعادي)
-             # للصوت: high=320, mid=128
-             # للفيديو: high=Best, mid=720
              quality_arg = "high" if is_owner else "mid"
 
              file_path = await Processor.download_file(
@@ -108,7 +94,6 @@ async def unified_song_processor(client, message: Message):
              )
              
              await mystic.edit_text("**جـارٍ الـرفـع إلـيـك...**")
-             
              await Processor.upload_alexa_style(
                  client, 
                  mystic, 
@@ -120,7 +105,7 @@ async def unified_song_processor(client, message: Message):
                  vidid=vidid
              )
 
-        # --- الـوضـع الـطـبـيـعـي (الأزرار) ---
+        # الـوضـع الـطـبـيـعـي (الأزرار)
         else:
             buttons = song_markup(None, vidid)
             await mystic.delete()
@@ -131,39 +116,28 @@ async def unified_song_processor(client, message: Message):
             )
 
     except Exception:
-        # Fallback Search (محاولة التحميل المباشر بالنص إذا فشل جلب التفاصيل)
+        # Fallback
         if INLINE_SEARCH_LOCKED or is_video_request:
             await mystic.edit_text("**جـارٍ الـبـحـث والـتـحـمـيـل الـتـلـقـائـي...**")
             is_owner = (message.from_user.id == OWNER_ID)
             
             file_path = await Processor.download_file(
-                query, 
-                "mid", # جودة متوسطة للسرعة في حالة عدم التأكد
-                is_video_request, 
-                query, 
-                is_owner=is_owner
+                query, "mid", is_video_request, query, is_owner=is_owner
             )
             
             if file_path:
                  await mystic.edit_text("**جـارٍ الـرفـع...**")
                  await Processor.upload_alexa_style(
-                     client, 
-                     mystic, 
-                     file_path, 
-                     is_video_request, 
-                     query, 
-                     0, 
-                     message.from_user.first_name
+                     client, mystic, file_path, is_video_request, query, 0, message.from_user.first_name
                  )
             else:
                 await mystic.edit_text("**عـذراً، لـم يـتـم الـعـثـور عـلـى أي نـتـائـج.**")
         else:
              await mystic.edit_text("**عـذراً، لـم يـتـم الـعـثـور عـلـى نـتـائـج.**")
 
-# --- أمـر يـوت (صـوت مـبـاشـر سـريـع) ---
+# --- أمـر يـوت (صـوت مـبـاشـر) ---
 @app.on_message(filters.command(["يوت"], prefixes=["", "/"]) & ~BANNED_USERS)
 async def yut_direct_audio(client, message: Message):
-    # نتأكد أنه ليس "يوت فيد" لأن دالة أخرى ستعالجه
     if len(message.command) > 1 and message.command[1] in ["فيد", "فيديو", "video", "vid"]:
         return 
 
@@ -192,7 +166,7 @@ async def yut_direct_audio(client, message: Message):
     except Exception as e:
         await mystic.edit_text(f"**حـدث خـطـأ:** {e}")
 
-# --- أمـر يـوت فـيـد (فـيـديـو مـبـاشـر سـريـع) ---
+# --- أمـر يـوت فـيـد (فـيـديـو مـبـاشـر) ---
 @app.on_message(filters.command(["يوت فيد", "يوت فيديو"], prefixes=["", "/"]) & ~BANNED_USERS)
 async def yut_direct_video(client, message: Message):
     if len(message.command) < 3: 
@@ -220,7 +194,6 @@ async def yut_direct_video(client, message: Message):
     except Exception as e:
         await mystic.edit_text(f"**حـدث خـطـأ:** {e}")
 
-
 # --- مـعـالـجـة الأزرار (الـكـول بـاك) ---
 @app.on_callback_query(filters.regex(pattern=r"song_download") & ~BANNED_USERS)
 async def song_download_callback(client, CallbackQuery):
@@ -245,7 +218,6 @@ async def song_download_callback(client, CallbackQuery):
         )
         
         await mystic.edit_text("**جـارٍ الـرفـع...**")
-        
         await Processor.upload_alexa_style(
             client, mystic, file_path, is_video, title, duration_sec, CallbackQuery.from_user.first_name, vidid=vidid
         )
