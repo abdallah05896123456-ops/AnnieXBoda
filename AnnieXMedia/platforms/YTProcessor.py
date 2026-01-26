@@ -1,6 +1,6 @@
 # تم التطوير بواسطة Certified Coders 2026
-# معالج العمليات المتقدم: التحميل السريع وتجاوز قيود المنصات
-# التقنيات: 16 نواة + Aria2c + الرفع الذكي عبر المساعد
+# معالج العمليات النووي: نظام المحاولة المزدوجة (Fallback System)
+# يحل مشكلة "Sign in to confirm" عبر التبديل التلقائي بين العملاء
 
 import asyncio
 import os
@@ -16,10 +16,9 @@ from AnnieXMedia import userbot, LOGGER
 from AnnieXMedia.utils.formatters import convert_bytes
 
 class Config:
-    # استخدام الرام ديسك (50GB) لضمان سرعة معالجة خرافية
     DOWNLOAD_PATH = "/dev/shm/AnnieDownloads" if os.path.exists("/dev/shm") else "downloads"
-    # هوية متصفح حديثة لتجنب اكتشاف البوت
-    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+    # استخدام User-Agent عام جداً لتقليل الشكوك
+    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     MAX_WORKERS = 16
 
 if not os.path.exists(Config.DOWNLOAD_PATH):
@@ -30,35 +29,59 @@ class YTProcessorAPI:
         self.pool = ThreadPoolExecutor(max_workers=Config.MAX_WORKERS)
 
     def get_cookie_file(self):
-        """البحث عن الكوكيز لفك الحظر"""
-        if os.path.exists("cookies"):
-            for f in os.listdir("cookies"):
-                if f.endswith(".txt"): return os.path.join("cookies", f)
+        """البحث عن الكوكيز"""
+        paths = ["cookies.txt", "AnnieXMedia/assets/cookies.txt", "assets/cookies.txt"]
+        for p in paths:
+            if os.path.exists(p) and os.path.getsize(p) > 0:
+                return p
         return None
 
     async def get_quality_buttons(self, vidid, stype):
-        """حل مشكلة اختفاء الجودات عبر تقنية الريموت وتغيير العميل"""
+        """جلب الجودات مع نظام المحاولة المزدوجة لتجاوز الحظر"""
         yturl = f"https://www.youtube.com/watch?v={vidid}"
-        ydl_opts = {
+        cookie_file = self.get_cookie_file()
+        
+        # المحاولة الأولى: إعدادات قوية (ويب + كوكيز + ريموت)
+        ydl_opts_1 = {
             "quiet": True,
-            "cookiefile": self.get_cookie_file(),
+            "cookiefile": cookie_file,
             "user_agent": Config.USER_AGENT,
-            "remote_components": ["ejs:github"], # لفك تشفير الجودات
-            "extractor_args": {"youtube": {"player_client": ["web", "ios"]}} # تجاوز حظر أندرويد
+            "remote_components": ["ejs:github"],
+            "extractor_args": {"youtube": {"player_client": ["web", "ios"]}}
+        }
+
+        # المحاولة الثانية: وضع التخفي (أندرويد + بدون كوكيز)
+        ydl_opts_2 = {
+            "quiet": True,
+            "cookiefile": None, # إلغاء الكوكيز عمداً لتجاوز الحظر
+            "user_agent": Config.USER_AGENT,
+            "extractor_args": {"youtube": {"player_client": ["android"]}}
         }
         
         loop = asyncio.get_running_loop()
-        def _fetch():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+
+        def _fetch(opts):
+            with yt_dlp.YoutubeDL(opts) as ydl:
                 return ydl.extract_info(yturl, download=False)
         
         try:
-            info = await loop.run_in_executor(self.pool, _fetch)
-            formats = info.get("formats", [])
+            # المحاولة الأولى
+            info = await loop.run_in_executor(self.pool, lambda: _fetch(ydl_opts_1))
         except Exception as e:
-            LOGGER(__name__).error(f"خطأ في جلب الجودات: {e}")
-            return [[InlineKeyboardButton(text="فـشل جـلـب الـجـودات الـمـتاحة", callback_data="close")]]
+            err_str = str(e).lower()
+            if "sign in" in err_str or "bot" in err_str:
+                LOGGER(__name__).warning("⚠️ كشف البوت! جاري تفعيل وضع التخفي (بدون كوكيز)...")
+                try:
+                    # المحاولة الثانية (Fallback)
+                    info = await loop.run_in_executor(self.pool, lambda: _fetch(ydl_opts_2))
+                except Exception as e2:
+                    LOGGER(__name__).error(f"❌ فشلت المحاولة الثانية أيضاً: {e2}")
+                    return [[InlineKeyboardButton(text="فـشل الـجـلـب (حـظـر)", callback_data="close")]]
+            else:
+                LOGGER(__name__).error(f"❌ خطأ غير متعلق بالحظر: {e}")
+                return [[InlineKeyboardButton(text="خـطـأ فـني", callback_data="close")]]
 
+        formats = info.get("formats", [])
         keyboard = []
         if stype == "audio":
             done = []
@@ -79,17 +102,16 @@ class YTProcessorAPI:
         return keyboard
 
     async def download_file(self, url, format_id, is_video, title):
-        """التحميل السريع بـ 16 اتصال Aria2c"""
+        """تحميل مع نظام المحاولة المزدوجة"""
         vid_id = str(int(time.time()))
         ext = "mp4" if is_video else "mp3"
         final_file = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
+        cookie_file = self.get_cookie_file()
         
-        ydl_opts = {
-            "format": f"{format_id}+bestaudio/best" if is_video else format_id,
+        # إعدادات أساسية
+        base_opts = {
             "outtmpl": os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.%(ext)s"),
-            "cookiefile": self.get_cookie_file(),
             "user_agent": Config.USER_AGENT,
-            "remote_components": ["ejs:github"],
             "quiet": True,
             "nocheckcertificate": True,
             "external_downloader": "aria2c",
@@ -97,32 +119,55 @@ class YTProcessorAPI:
         }
         
         if not is_video:
-            ydl_opts["postprocessors"] = [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "320",
-            }]
+            base_opts["postprocessors"] = [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "320"}]
 
-        def _run():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        # المحاولة 1: كوكيز + ويب
+        opts_1 = base_opts.copy()
+        opts_1.update({
+            "format": f"{format_id}+bestaudio/best" if is_video else format_id,
+            "cookiefile": cookie_file,
+            "remote_components": ["ejs:github"],
+            "extractor_args": {"youtube": {"player_client": ["web", "ios"]}}
+        })
+
+        # المحاولة 2: بدون كوكيز + أندرويد
+        opts_2 = base_opts.copy()
+        opts_2.update({
+            "format": f"{format_id}+bestaudio/best" if is_video else format_id,
+            "cookiefile": None,
+            "extractor_args": {"youtube": {"player_client": ["android"]}}
+        })
+
+        loop = asyncio.get_running_loop()
+        
+        def _run(opts):
+            with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.download([url])
             return final_file
 
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(self.pool, _run)
+        try:
+            await loop.run_in_executor(self.pool, lambda: _run(opts_1))
+        except Exception as e:
+            if "Sign in" in str(e) or "bot" in str(e).lower():
+                LOGGER(__name__).warning("⚠️ فشل التحميل بالكوكيز، جاري المحاولة بدون كوكيز...")
+                try:
+                    await loop.run_in_executor(self.pool, lambda: _run(opts_2))
+                except Exception as e2:
+                    LOGGER(__name__).error(f"❌ فشل التحميل النهائي: {e2}")
+            else:
+                LOGGER(__name__).error(f"❌ خطأ تحميل: {e}")
+
+        return final_file
 
     async def send_smart_file(self, client, chat_id, file_path, is_video, title, duration, thumb, user_name):
-        """نظام الرفع الذكي: إرسال مباشر أو عبر المساعد للملفات الكبيرة"""
         if not os.path.exists(file_path):
-            LOGGER(__name__).error(f"الملف غير موجود")
+            LOGGER(__name__).error(f"الملف غير موجود للإرسال: {file_path}")
             return False
 
         from AnnieXMedia import userbot
-        caption = f"الـعنوان: {title}\nطـلب: {user_name}"
-        filesize = os.path.getsize(file_path) / (1024 * 1024)
-        
+        caption = f"الـعـنـوان: {title}\nطـلـب: {user_name}"
         try:
-            # الرفع المباشر للملفات الصغيرة
+            filesize = os.path.getsize(file_path) / (1024 * 1024)
             if filesize < 50:
                 action = ChatAction.UPLOAD_VIDEO if is_video else ChatAction.UPLOAD_AUDIO
                 await client.send_chat_action(chat_id, action)
@@ -130,8 +175,6 @@ class YTProcessorAPI:
                     await client.send_video(chat_id, video=file_path, caption=caption, duration=duration, thumb=thumb, supports_streaming=True)
                 else:
                     await client.send_audio(chat_id, audio=file_path, caption=caption, duration=duration, title=title, performer=user_name, thumb=thumb)
-            
-            # الرفع عبر المساعد للملفات الكبيرة (تكنيك خفي)
             else:
                 assistant = userbot.one
                 if is_video:
