@@ -1,4 +1,4 @@
-# System: Processor | NUCLEAR (16-Core) | Playlist Support | RAM Disk | Alexa Speed | Safe Thumb
+# System: Processor | STRICT OWNER QUALITY | Alexa Speed | RAM Disk | Playlist
 
 import asyncio
 import os
@@ -14,19 +14,15 @@ from AnnieXMedia import LOGGER
 from AnnieXMedia.utils.formatters import convert_bytes
 
 class Config:
-    # استخدام الرامات (RAM Disk) للتخزين المؤقت للسرعة القصوى
+    # استخدام الرامات (RAM Disk)
     if os.path.exists("/dev/shm"):
         DOWNLOAD_PATH = "/dev/shm/AnnieDownloads"
     else:
         DOWNLOAD_PATH = os.path.abspath("downloads")
         
-    # استغلال 16 نواة
     MAX_WORKERS = 16 
-    
-    # User-Agent يحاكي متصفح حقيقي لتجنب الحظر
     USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
 
-# انشاء المجلد
 if not os.path.exists(Config.DOWNLOAD_PATH):
     os.makedirs(Config.DOWNLOAD_PATH, exist_ok=True)
 
@@ -36,7 +32,6 @@ class YTProcessorAPI:
         self._clean_cache()
 
     def _clean_cache(self):
-        """تنظيف الكاش عند البدء"""
         try:
             for filename in os.listdir(Config.DOWNLOAD_PATH):
                 file_path = os.path.join(Config.DOWNLOAD_PATH, filename)
@@ -48,12 +43,9 @@ class YTProcessorAPI:
             pass
 
     def get_cookie_file(self):
-        """البحث عن الكوكيز في جميع المسارات المحتملة"""
         possible_paths = [
-            "cookies.txt", 
-            "AnnieXMedia/assets/cookies.txt",
-            "AnnieXMedia/cookies.txt", 
-            "assets/cookies.txt", 
+            "cookies.txt", "AnnieXMedia/cookies.txt",
+            "assets/cookies.txt", "AnnieXMedia/assets/cookies.txt",
             "platforms/cookies.txt"
         ]
         for path in possible_paths:
@@ -71,7 +63,7 @@ class YTProcessorAPI:
             "no_warnings": True,
             "ignoreerrors": True,
             "nocheckcertificate": True,
-            "remote_components": ["ejs:github"], # تحديث المكونات تلقائياً
+            "remote_components": ["ejs:github"],
         }
         
         loop = asyncio.get_running_loop()
@@ -123,11 +115,10 @@ class YTProcessorAPI:
         cookie_file = self.get_cookie_file()
         if not url.startswith("http"): url = f"https://www.youtube.com/watch?v={vidid}"
 
-        # --- إعدادات Aria2c النووية (16 كور) ---
+        # إعدادات Aria2c
         aria2_args = [
             "-x", "16", "-s", "16", "-j", "16", "-k", "1M",
-            "--file-allocation=none", 
-            "--disable-ipv6=true",
+            "--file-allocation=none", "--disable-ipv6=true",
             "--max-connection-per-server=16"
         ]
 
@@ -140,34 +131,45 @@ class YTProcessorAPI:
             "noplaylist": True,
             "external_downloader": "aria2c",
             "external_downloader_args": aria2_args,
-            "writethumbnail": True, # نكتب الغلاف كملف جانبي
+            "writethumbnail": True,
             "socket_timeout": 60,
             "retries": 10,
             "remote_components": ["ejs:github"],
         }
         
-        # --- تحديد الجودة (Alexa Style: No Transcoding for Video) ---
+        # --- نـظـام الـجـودة الـصـارم (Strict Quality Control) ---
         if is_video:
-            # نطلب MP4 حصراً لتجنب التحويل البطيء
-            if quality_arg == "high" or (is_owner and quality_arg == "best"):
-                fmt = "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
-            elif quality_arg == "mid":
-                fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best"
-            elif quality_arg == "low":
-                fmt = "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]/best"
-            else:
-                fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best"
+            # 1. إذا كان المالك (Owner)
+            if is_owner:
+                if quality_arg == "high":
+                    # أعلى جودة متاحة (4K/8K)
+                    fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+                elif quality_arg == "mid":
+                    fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best"
+                else:
+                    fmt = "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]/best"
             
-            # للفيديو: لا ندمج الغلاف (Embed) لتسريع العملية، نرسله خارجياً
+            # 2. للأعضاء العاديين (Non-Owner)
+            else:
+                # إجبار الحد الأقصى 720p حتى لو طلب High
+                if quality_arg == "low":
+                    fmt = "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]/best"
+                else:
+                    # سواء طلب High أو Mid -> يأخذ Mid
+                    fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best"
+
             base_opts["postprocessors"] = [
                 {'key': 'FFmpegMetadata', 'add_metadata': True},
-                {'key': 'FFmpegThumbnailsConvertor', 'format': 'jpg'} # ضمان أن الغلاف JPG
+                {'key': 'FFmpegThumbnailsConvertor', 'format': 'jpg'}
             ]
         else:
-            # للصوت: ندمج الغلاف
-            if is_owner or quality_arg == "high":
+            # الصوت (Audio)
+            # 1. المالك فقط يحصل على 320kbps
+            if is_owner and quality_arg == "high":
                 fmt = "bestaudio[ext=m4a]/bestaudio/best"
                 q_rate = '320'
+            
+            # 2. باقي الأعضاء (أو لو المالك طلب جودة عادية) -> 128kbps
             else:
                 fmt = "bestaudio[ext=m4a]/bestaudio/best"
                 q_rate = '128'
@@ -188,10 +190,8 @@ class YTProcessorAPI:
 
         def _run_download():
             try:
-                # نستخدم Web Client حصراً للثبات
                 opts = base_opts.copy()
                 opts['extractor_args'] = {'youtube': {'player_client': ['web']}}
-                
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     ydl.download([url])
                 
@@ -199,7 +199,6 @@ class YTProcessorAPI:
                 if os.path.exists(final_file): return final_file
                 if os.path.exists(f"{base_name}.mp4"): return f"{base_name}.mp4"
                 if os.path.exists(f"{base_name}.mp3"): return f"{base_name}.mp3"
-
             except Exception as e:
                 print(f"Download Error: {e}")
                 pass
@@ -214,11 +213,9 @@ class YTProcessorAPI:
         caption = f"**الـعـنـوان:** {title}\n**طـلـب:** {user_name}"
         chat_id = mystic_msg.chat.id
         
-        # --- استراتيجية الغلاف ---
         thumb_path = None
         base_name = os.path.splitext(file_path)[0]
         
-        # البحث عن الغلاف (JPG/WEBP)
         for ext in [".jpg", ".jpeg", ".png", ".webp"]:
             if os.path.exists(f"{base_name}{ext}"):
                 thumb_path = f"{base_name}{ext}"
@@ -233,7 +230,6 @@ class YTProcessorAPI:
 
         try:
             if is_video:
-                # للفيديو: نرسل الملف والغلاف منفصلين (أسرع)
                 media = InputMediaVideo(media=file_path, thumb=thumb_path, caption=caption, duration=duration, supports_streaming=True)
             else:
                 media = InputMediaAudio(media=file_path, thumb=thumb_path, caption=caption, duration=duration, title=title, performer=user_name)
@@ -262,7 +258,6 @@ class YTProcessorAPI:
         
         return True
 
-    # --- دالة تحميل البلاي ليست ---
     async def download_playlist(self, client, mystic_msg, playlist_url, is_video, user_name, limit=30):
         cookie_file = self.get_cookie_file()
         loop = asyncio.get_running_loop()
@@ -309,7 +304,7 @@ class YTProcessorAPI:
                 except: pass
 
             file_path = await self.download_file(
-                url, "mid" if is_video else "high", is_video, title, vidid=vid_id
+                url, "mid", is_video, title, vidid=vid_id
             )
             
             if file_path:
