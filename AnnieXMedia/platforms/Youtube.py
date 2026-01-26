@@ -132,7 +132,7 @@ class YouTubeAPI:
         return d.get("thumb")
 
     def _background_download(self, link, final_path, is_video):
-        """التحميل الخلفي مع التحويل لـ MP3 باستخدام FFmpeg"""
+        """التحميل الخلفي مع التحويل لـ MP3 باستخدام FFmpeg والـ Cookies"""
         try:
             aria2_args = ["-x", "16", "-s", "16", "-j", "16", "-k", "1M"]
             if is_video:
@@ -142,12 +142,14 @@ class YouTubeAPI:
                     "external_downloader": "aria2c",
                     "external_downloader_args": aria2_args,
                     "cookiefile": get_cookie_file(),
+                    "remote_components": ["ejs:github"],
                 }
             else:
                 ydl_opts = {
                     "format": "bestaudio/best",
                     "outtmpl": final_path.replace(".mp3", ""),
                     "cookiefile": get_cookie_file(),
+                    "remote_components": ["ejs:github"],
                     "postprocessors": [{
                         "key": "FFmpegExtractAudio",
                         "preferredcodec": "mp3",
@@ -187,6 +189,7 @@ class YouTubeAPI:
             return ram_path, False
 
         try:
+            # استخدام الكوكيز والمكونات البعيدة في جلب الرابط المباشر
             cmd = ["yt-dlp", "-g", "--cookies", get_cookie_file() or "", "--remote-components", "ejs:github"]
             cmd.extend(["-f", "best[height<=720]" if is_vid else "bestaudio"])
             cmd.append(link)
@@ -204,7 +207,13 @@ class YouTubeAPI:
         def _fallback_download():
             try:
                 fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]" if is_vid else "bestaudio/best"
-                ydl_opts = {"format": fmt, "outtmpl": ram_path, "cookiefile": get_cookie_file(), "quiet": True}
+                ydl_opts = {
+                    "format": fmt, 
+                    "outtmpl": ram_path, 
+                    "cookiefile": get_cookie_file(), 
+                    "quiet": True,
+                    "remote_components": ["ejs:github"],
+                }
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([link])
                 return ram_path
@@ -215,7 +224,11 @@ class YouTubeAPI:
 
     async def formats(self, link: str, videoid: Union[bool, str] = None):
         if videoid: link = self.base + link
-        ytdl_opts = {"quiet": True, "cookiefile": get_cookie_file(), "remote_components": "ejs:github"}
+        ytdl_opts = {
+            "quiet": True, 
+            "cookiefile": get_cookie_file(), 
+            "remote_components": ["ejs:github"],
+        }
         with yt_dlp.YoutubeDL(ytdl_opts) as ydl:
             formats_available = []
             try:
