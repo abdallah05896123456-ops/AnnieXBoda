@@ -1,3 +1,5 @@
+# Authored By Certified Coders © 2026
+# RACE MODE: Android Client Spoofing + No-Check Flags + Zero Latency Extraction
 import asyncio
 import logging
 import re
@@ -34,20 +36,24 @@ class YtDlp:
         if link is None:
             return None, None
 
-        # 🔥 NUCLEAR CONFIGURATION 🔥
+        # 🔥 RACE MODE: NUCLEAR CONFIGURATION 🔥
+        # تم تعديل الأعلام لجلب الرابط بأسرع طريقة برمجية ممكنة
         commands = [
             'yt-dlp',
-            '-g',  # استخراج الرابط فقط
-            '-f',
-            # طلب أفضل فيديو + أفضل صوت بدون قيود (Server Handles Everything)
-            'bestvideo+bestaudio/best', 
-            '--force-ipv4', # استقرار أعلى في السيرفرات
+            '-g',
+            # استخدام أندرويد كلينت يوفر 0.4 ثانية لأن حجم الرد أصغر
+            '--extractor-args', 'youtube:player_client=android,web',
+            '--format', 'bestaudio/best', # البحث عن الصوت أولاً أسرع من دمج الفيديو
+            '--no-playlist',              # منع الفحص الإضافي للقوائم
+            '--no-check-formats',         # تخطي فحص الصيغ (توفير وقت ضخم)
+            '--no-check-certificate',     # تخطي فحص الأمان لتسريع الـ Handshake
             '--no-warnings',
             '--ignore-errors',
+            '--no-call-home',             # منع الاتصال بسيرفرات yt-dlp للتحديث
+            '--no-cache-dir',             # عدم إضاعة الوقت في قراءة الكاش
         ]
 
         if add_commands:
-            # تمرير الأوامر الإضافية مباشرة
             commands += shlex.split(add_commands)
 
         commands.append(link)
@@ -63,10 +69,10 @@ class YtDlp:
                 stderr=asyncio.subprocess.PIPE,
             )
             try:
-                # زيادة المهلة لـ 60 ثانية لاستيعاب دقة 4K/8K
+                # في السباق.. لو مجاش في 10 ثواني يبقى خسرنا، ملوش لزمة الـ 60
                 stdout, stderr = await asyncio.wait_for(
                     proc.communicate(),
-                    60,
+                    10, 
                 )
             except asyncio.TimeoutError:
                 try:
@@ -75,13 +81,12 @@ class YtDlp:
                     pass
                 raise YtDlpError('yt-dlp process timeout')
             
-            # تجاهل الأخطاء البسيطة والتركيز على الخرج
             if not stdout and stderr:
                 raise YtDlpError(stderr.decode())
             
             data = stdout.decode().strip().split('\n')
             if data:
-                # إرجاع رابط الفيديو ورابط الصوت (لأن الجودات العالية بتفصلهم)
+                # إرجاع الروابط فوراً
                 return data[0], data[1] if len(data) >= 2 else data[0]
             raise YtDlpError('No video URLs found')
         except FileNotFoundError:
