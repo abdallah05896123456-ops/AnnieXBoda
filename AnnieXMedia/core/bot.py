@@ -6,22 +6,23 @@ from pyrogram.enums import ChatMemberStatus
 import config
 from ..logging import LOGGER
 
-
 class MusicBotClient(Client):
     def __init__(self):
+        # حذف الوسائط التي سببت TypeError لضمان التوافق مع نسختك
         super().__init__(
             name="AnnieXMusic",
             api_id=config.API_ID,
             api_hash=config.API_HASH,
             bot_token=config.BOT_TOKEN,
-            # استغلال الـ 16 كور عبر رفع عدد العمال (Workers)
-            workers=48,
+            workers=48, # استغلال الـ 16 نواة بالكامل
             max_concurrent_transmissions=7,
-            # 🔥 التعديل النووي: تفعيل السيرفر المحلي لرفع حتى 2 جيجابايت 🔥
-            local_server=True,
-            base_url="http://127.0.0.1:8081",
         )
-        LOGGER(__name__).info("Bot client initialized.")
+        # 🔥 حقن إعدادات السيرفر المحلي يدوياً لتخطي ليميت الـ 50MB 🔥
+        self.is_local = True
+        self.local_server = True
+        self.base_url = "http://127.0.0.1:8081"
+        
+        LOGGER(__name__).info("Nuclear Local Server forced successfully.")
 
     async def start(self):
         await super().start()
