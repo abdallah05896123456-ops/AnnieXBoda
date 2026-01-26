@@ -1,12 +1,10 @@
-# تم التطوير بواسطة Certified Coders 2026
-# المحرك النووي: كاش ذكي + تخصيص الجودة حسب الرتبة + سرعة قصوى
+# System: Advanced Processor with Smart Cache & Resolution Control
 
 import asyncio
 import os
 import time
 import random
 import yt_dlp
-from typing import Union, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor
 from pyrogram.enums import ChatAction
 from pyrogram.types import InlineKeyboardButton
@@ -17,7 +15,6 @@ from AnnieXMedia.utils.formatters import convert_bytes
 
 class Config:
     DOWNLOAD_PATH = "/dev/shm/AnnieDownloads" if os.path.exists("/dev/shm") else "downloads"
-    # User-Agent حديث
     USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
     MAX_WORKERS = 16
 
@@ -29,7 +26,6 @@ class YTProcessorAPI:
         self.pool = ThreadPoolExecutor(max_workers=Config.MAX_WORKERS)
 
     def get_cookie_file(self):
-        """نظام تدوير الكوكيز"""
         paths = ["cookies.txt", "AnnieXMedia/assets/cookies.txt", "assets/cookies.txt", "AnnieXMedia/cookies.txt"]
         if os.path.exists("cookies"):
             for f in os.listdir("cookies"):
@@ -60,45 +56,54 @@ class YTProcessorAPI:
             info = await loop.run_in_executor(self.pool, _fetch)
             formats = info.get("formats", [])
         except:
-            # Fallback to Android if Web fails
             try:
                 ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android"]}}
                 ydl_opts["cookiefile"] = None
                 info = await loop.run_in_executor(self.pool, _fetch)
                 formats = info.get("formats", [])
             except:
-                return [[InlineKeyboardButton(text="جـودة تـلـقـائـيـة", callback_data=f"song_download audio|bestaudio|{vidid}")]]
+                return [[InlineKeyboardButton(text="جودة تلقائية", callback_data=f"song_download audio|best|{vidid}")]]
 
         keyboard = []
         if stype == "audio":
-            done = []
+            options = []
             for x in formats:
-                if x.get("acodec") != "none" and x.get("filesize"):
-                    form = "MP3 HQ" if x.get("abr", 0) >= 128 else "Audio"
-                    if form not in done:
-                        done.append(form)
-                        keyboard.append([InlineKeyboardButton(text=f"صـوت {form} | {convert_bytes(x['filesize'])}", callback_data=f"song_download audio|{x['format_id']}|{vidid}")])
+                if x.get("acodec") != "none" and x.get("abr"):
+                    size = convert_bytes(x.get('filesize') or 0)
+                    abr = int(x.get('abr'))
+                    if abr >= 128:
+                        q_name = "عالية" if abr >= 250 else "متوسطة"
+                        if q_name not in [o[0] for o in options]:
+                            options.append((q_name, abr, size))
+            
+            options.sort(key=lambda x: x[1], reverse=True)
+            for name, abr, size in options:
+                keyboard.append([InlineKeyboardButton(text=f"{name} ({size})", callback_data=f"song_download audio|{abr}|{vidid}")])
+
         else:
-            allowed = ["160", "133", "134", "135", "136", "137", "298", "299", "264", "304", "266"]
+            resolutions_found = {}
             for x in formats:
-                if x.get("format_id") in allowed and x.get("filesize"):
-                    res = x.get("format_note", "HD")
-                    keyboard.append([InlineKeyboardButton(text=f"فـيـديـو {res} | {convert_bytes(x['filesize'])}", callback_data=f"song_download video|{x['format_id']}|{vidid}")])
+                h = x.get("height")
+                if h and x.get("filesize"):
+                    if h not in resolutions_found or x.get("filesize") > resolutions_found[h]:
+                        resolutions_found[h] = x.get("filesize")
+
+            sorted_res = sorted(resolutions_found.items(), key=lambda item: item[0], reverse=True)
+            
+            for height, size in sorted_res:
+                if height > 1080: continue 
+                keyboard.append([InlineKeyboardButton(text=f"{height}p ({convert_bytes(size)})", callback_data=f"song_download video|{height}|{vidid}")])
         
-        keyboard.append([InlineKeyboardButton(text="إغـلاق", callback_data="close")])
+        keyboard.append([InlineKeyboardButton(text="إغلاق", callback_data="close")])
         return keyboard
 
-    async def download_file(self, url, format_id, is_video, title, vidid=None, is_owner=False):
-        """
-        التحميل الذكي:
-        - is_owner=True: تحميل بأعلى جودة (320kbps للصوت / 4K للفيديو).
-        - is_owner=False: تحميل بجودة سريعة (128kbps للصوت / 720p للفيديو).
-        """
+    async def download_file(self, url, quality_arg, is_video, title, vidid=None, is_owner=False):
+        # الكاش: اسم الملف يعتمد على المعرف لضمان عدم التكرار
         vid_id_str = vidid if vidid else str(int(time.time()))
         ext = "mp4" if is_video else "mp3"
         final_file = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id_str}.{ext}")
         
-        # ⚡⚡ الكاش: لو الملف موجود بنفس الاسم، ابعته فوراً ⚡⚡
+        # فحص الكاش
         if os.path.exists(final_file) and os.path.getsize(final_file) > 1024:
             return final_file
 
@@ -115,22 +120,23 @@ class YTProcessorAPI:
         }
         
         if is_video:
-            if is_owner:
-                # للمطور: هات أعلى جودة موجودة في اليوتيوب كله
+            if is_owner and (quality_arg == "best" or quality_arg is None):
                 fmt = f"bestvideo+bestaudio/best"
             else:
-                # للمستخدم العادي: أقصى جودة 720p عشان السرعة والنت
-                fmt = f"bestvideo[height<=720]+bestaudio/best[height<=720]/best"
+                # إذا تم تمرير رقم للدقة
+                if str(quality_arg).isdigit():
+                    height = quality_arg
+                    fmt = f"bestvideo[height<={height}]+bestaudio/best[height<={height}]/best"
+                else:
+                    # الافتراضي السريع
+                    fmt = "bestvideo[height<=720]+bestaudio/best[height<=720]/best"
         else:
-            # للصوت
             if is_owner:
-                # للمطور: 320kbps (تاخد وقت شوية في المعالجة)
-                fmt = f"{format_id if format_id else 'bestaudio'}/best"
+                fmt = "bestaudio/best"
                 quality = '320'
             else:
-                # للمستخدم العادي: 128kbps (صاروخ في التحميل والمعالجة)
-                fmt = f"{format_id if format_id else 'bestaudio'}/best"
-                quality = '128' # تقليل الجودة لزيادة السرعة حسب طلبك
+                fmt = "bestaudio/best"
+                quality = '128' # سرعة قصوى
                 
             base_opts["postprocessors"] = [
                 {'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': quality},
@@ -164,7 +170,7 @@ class YTProcessorAPI:
 
         try:
             await loop.run_in_executor(self.pool, lambda: _run(opts_1))
-        except Exception:
+        except:
             try:
                 await loop.run_in_executor(self.pool, lambda: _run(opts_2))
             except:
@@ -177,7 +183,7 @@ class YTProcessorAPI:
             return False
 
         from AnnieXMedia import userbot
-        caption = f"🏷 **الـعـنـوان:** {title}\n👤 **طـلـب:** {user_name}"
+        caption = f"العنوان: {title}\nطلب: {user_name}"
         
         try:
             filesize = os.path.getsize(file_path) / (1024 * 1024)
