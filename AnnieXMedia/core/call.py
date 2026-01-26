@@ -1,7 +1,4 @@
 # Authored By Certified Coders © 2025
-# TITANOS CORE v9: ATOMIC SPEED + COOKIE SYNC + 16-CORE TURBO
-# FIXED: Join/Leave loop + Speed Crash + Metadata Latency (Competition Ready)
-
 import asyncio
 import os
 import traceback
@@ -50,27 +47,12 @@ from AnnieXMedia.utils.errors import capture_internal_err
 autoend = {}
 counter = {}
 
-# --- Helper Function for Streams (Optimized for Competition Speed) ---
+# --- Helper Function for Streams (Optimized for TitanOS) ---
 def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
-    # الحصول على مسار الكوكيز لربطه بالـ FFmpeg لضمان استقرار البث
-    cookie_path = "AnnieXMedia/assets/cookies.txt"
-    
-    # 🏎️ أعلام سرعة الضوء (Race Mode Flags)
-    titan_flags = (
-        "-threads 16 -ac 2 -ar 48000 -preset ultrafast "
-        "-probesize 32 -analyzeduration 0 -fflags +nobuffer+fastseek+discardcorrupt"
-    )
-    
+    # إجبار الاستيريو واستغلال الـ 16 كور وتقليل التقطيع
+    titan_flags = "-threads 16 -ac 2"
     if str(path).startswith("http"):
-        # إرسال الكوكيز والـ User-Agent لليوتيوب لمنع طرد المساعد
-        if os.path.exists(cookie_path):
-            titan_flags += f' -cookies "{cookie_path}"'
-        
-        titan_flags += (
-            ' -user_agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-            'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"'
-            " -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2"
-        )
+        titan_flags += " -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
     
     if ffmpeg_params:
         titan_flags += f" {ffmpeg_params}"
@@ -78,7 +60,7 @@ def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = No
     if video:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.STUDIO,
+            audio_parameters=AudioQuality.STUDIO, # Alexa uses better quality
             video_parameters=VideoQuality.HD_720p,
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.REQUIRED,
@@ -87,7 +69,7 @@ def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = No
     else:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.STUDIO,
+            audio_parameters=AudioQuality.STUDIO, # Alexa uses better quality
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.IGNORE,
             ffmpeg_parameters=titan_flags,
@@ -131,6 +113,7 @@ class Call:
         self.five = PyTgCalls(self.userbot5, cache_duration=100) if self.userbot5 else None
 
         self.active_calls: set[int] = set()
+        # 🔥 TitanOS: Turbo Variable added for Web Control
         self.turbo_mode = {} 
 
     @capture_internal_err
@@ -141,6 +124,7 @@ class Call:
     @capture_internal_err
     async def resume_stream(self, chat_id: int) -> None:
         assistant = await group_assistant(self, chat_id)
+        # 🔥 TitanOS Fix: Force Resume (If resume fails, unmute)
         try:
             await assistant.resume(chat_id)
         except:
@@ -193,6 +177,7 @@ class Call:
     @capture_internal_err
     async def skip_stream(self, chat_id: int, link: str, video: Union[bool, str] = None, image: Union[bool, str] = None) -> None:
         assistant = await group_assistant(self, chat_id)
+        # 🔥 ALEXA OPTIMIZATION: Using GroupCallConfig
         ksk = GroupCallConfig(auto_start=False)
         stream = dynamic_media_stream(path=link, video=bool(video))
         await assistant.play(chat_id, stream, config=ksk)
@@ -213,22 +198,19 @@ class Call:
 
     @capture_internal_err
     async def speedup_stream(self, chat_id: int, file_path: str, speed: float, playing: list) -> None:
+        # Code kept from Annie for compatibility
         if not isinstance(playing, list) or not playing or not isinstance(playing[0], dict):
             raise AssistantErr("Invalid stream info for speedup.")
 
         assistant = await group_assistant(self, chat_id)
-        
-        # 🏎️ تحسين: استخدام vidid لضمان استقرار مسار الملف ومعالجته في ثانية واحدة
-        vidid = playing[0].get("vidid", "local_file")
-        ext = "mp4" if playing[0]["streamtype"] == "video" else "m4a"
+        base = os.path.basename(file_path)
         chatdir = os.path.join("playback", str(speed))
         os.makedirs(chatdir, exist_ok=True)
-        out = os.path.join(chatdir, f"{vidid}.{ext}")
+        out = os.path.join(chatdir, base)
 
         if not os.path.exists(out):
             vs = str(2.0 / float(speed))
-            # استخدام الـ 16 كور ببريسيت ultrafast للمعالجة اللحظية
-            cmd = f'ffmpeg -threads 16 -i "{file_path}" -filter:v "setpts={vs}*PTS" -filter:a atempo={speed} -ac 2 -preset ultrafast -y "{out}"'
+            cmd = f'ffmpeg -i "{file_path}" -filter:v "setpts={vs}*PTS" -filter:a atempo={speed} -y "{out}"'
             proc = await asyncio.create_subprocess_shell(
                 cmd,
                 stdin=asyncio.subprocess.PIPE,
@@ -236,13 +218,7 @@ class Call:
             )
             await proc.communicate()
 
-        # صمام أمان لليوتيوب (Unknown Duration Fix)
-        try:
-            dur_raw = await asyncio.get_event_loop().run_in_executor(None, check_duration, out)
-            dur = int(dur_raw) if str(dur_raw).isdigit() else int(playing[0]["seconds"])
-        except:
-            dur = int(playing[0]["seconds"])
-
+        dur = int(await asyncio.get_event_loop().run_in_executor(None, check_duration, out))
         played, con_seconds = speed_converter(playing[0]["played"], speed)
         duration_min = seconds_to_min(dur)
         is_video = playing[0]["streamtype"] == "video"
@@ -288,6 +264,8 @@ class Call:
         lang = await get_lang(chat_id)
         _ = get_string(lang)
         stream = dynamic_media_stream(path=link, video=bool(video))
+        
+        # 🔥 ALEXA OPTIMIZATION: Config added here
         ksk = GroupCallConfig(auto_start=False)
 
         try:
@@ -301,12 +279,13 @@ class Call:
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
         except Exception as e:
+            # 🚨 Watchdog: طباعة الخطأ الكامل في اللوجز لو حصل فشل
             LOGGER(__name__).error(f"💣 [JOIN ERROR] Chat: {chat_id}\n{traceback.format_exc()}")
             try:
                  await asyncio.sleep(1)
                  await assistant.play(chat_id, stream, config=ksk)
             except:
-                 raise AssistantErr(f"ᴜɴᴀʙʟᴇ ᴛᴏ ᴊᴏɪɴ.\nRᴇᴀsᴏɴ: {e}")
+                 raise AssistantErr(f"ᴜɴᴀʙʟᴇ ᴛᴏ ᴊᴏɪɴ ᴛʜᴇ ɢʀᴏᴜᴘ ᴄᴀʟʟ.\nRᴇᴀsᴏɴ: {e}")
                  
         self.active_calls.add(chat_id)
         await add_active_chat(chat_id)
@@ -325,6 +304,7 @@ class Call:
 
     @capture_internal_err
     async def play(self, client, chat_id: int) -> None:
+        # 🔥 Refactored to match Alexa's `change_stream` logic but with Annie's vars
         check = db.get(chat_id)
         popped = None
         loop = await get_loop(chat_id)
@@ -335,6 +315,7 @@ class Call:
                 loop = loop - 1
                 await set_loop(chat_id, loop)
             
+            # Using auto_clean from Alexa's logic context (if config allows)
             await auto_clean(popped)
             
             if not check:
@@ -373,6 +354,7 @@ class Call:
 
             video = True if str(streamtype) == "video" else False
             
+            # 🔥 ALEXA OPTIMIZATION: Pre-calculate stream to save time
             try:
                 if "live_" in queued:
                     n, link = await YouTube.video(videoid, True)
@@ -521,11 +503,12 @@ class Call:
                         db[chat_id][0]["mystic"] = run
                         db[chat_id][0]["markup"] = "stream"
             except Exception:
+                # 🚨 Watchdog: طباعة الخطأ الكامل لو حصل كراش أثناء التشغيل
                 LOGGER(__name__).error(f"💣 [PLAY ERROR] Chat: {chat_id}\n{traceback.format_exc()}")
                 return await app.send_message(original_chat_id, text=_["call_6"])
 
     async def start(self) -> None:
-        LOGGER(__name__).info("Starting Assistants...")
+        LOGGER(__name__).info("Starting PyTgCalls Clients...")
         if config.STRING1:
             await self.one.start()
         if config.STRING2:
