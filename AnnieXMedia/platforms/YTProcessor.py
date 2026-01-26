@@ -1,4 +1,4 @@
-# System: Processor | NUCLEAR (16-Core) | Playlist Support | RAM Disk | Remote Fix | Safe Thumb
+# System: Processor | NUCLEAR (16-Core) | Playlist Support | RAM Disk | Alexa Speed | Safe Thumb
 
 import asyncio
 import os
@@ -14,7 +14,7 @@ from AnnieXMedia import LOGGER
 from AnnieXMedia.utils.formatters import convert_bytes
 
 class Config:
-    # 1. استخدام الرامات (RAM Disk) للتخزين المؤقت للسرعة القصوى
+    # استخدام الرامات (RAM Disk) للتخزين المؤقت للسرعة القصوى
     if os.path.exists("/dev/shm"):
         DOWNLOAD_PATH = "/dev/shm/AnnieDownloads"
     else:
@@ -77,7 +77,6 @@ class YTProcessorAPI:
         loop = asyncio.get_running_loop()
         
         def _fetch_info():
-            # محاولة سريعة باستخدام الويب
             try:
                 opts = ydl_opts.copy()
                 opts['extractor_args'] = {'youtube': {'player_client': ['web']}}
@@ -118,7 +117,6 @@ class YTProcessorAPI:
         ext = "mp4" if is_video else "m4a" 
         final_file = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id_str}.{ext}")
         
-        # فحص الكاش
         if os.path.exists(final_file) and os.path.getsize(final_file) > 1024:
             return final_file
 
@@ -142,47 +140,43 @@ class YTProcessorAPI:
             "noplaylist": True,
             "external_downloader": "aria2c",
             "external_downloader_args": aria2_args,
-            "writethumbnail": True,
+            "writethumbnail": True, # نكتب الغلاف كملف جانبي
             "socket_timeout": 60,
             "retries": 10,
-            # إضافة الريموت لحل مشاكل التوقيع والحظر
             "remote_components": ["ejs:github"],
         }
         
-        # --- تحديد الجودة ---
+        # --- تحديد الجودة (Alexa Style: No Transcoding for Video) ---
         if is_video:
+            # نطلب MP4 حصراً لتجنب التحويل البطيء
             if quality_arg == "high" or (is_owner and quality_arg == "best"):
-                fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+                fmt = "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
             elif quality_arg == "mid":
                 fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best"
             elif quality_arg == "low":
                 fmt = "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]/best"
             else:
                 fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best"
+            
+            # للفيديو: لا ندمج الغلاف (Embed) لتسريع العملية، نرسله خارجياً
+            base_opts["postprocessors"] = [
+                {'key': 'FFmpegMetadata', 'add_metadata': True},
+                {'key': 'FFmpegThumbnailsConvertor', 'format': 'jpg'} # ضمان أن الغلاف JPG
+            ]
         else:
+            # للصوت: ندمج الغلاف
             if is_owner or quality_arg == "high":
                 fmt = "bestaudio[ext=m4a]/bestaudio/best"
                 q_rate = '320'
-            elif quality_arg == "low":
-                fmt = "bestaudio[ext=m4a]/bestaudio/best"
-                q_rate = '64'
             else:
                 fmt = "bestaudio[ext=m4a]/bestaudio/best"
                 q_rate = '128'
 
             base_opts["postprocessors"] = [
-                {
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': q_rate
-                },
-                {
-                    'key': 'FFmpegMetadata',
-                    'add_metadata': True
-                },
-                {
-                    'key': 'EmbedThumbnail'
-                }
+                {'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': q_rate},
+                {'key': 'FFmpegMetadata', 'add_metadata': True},
+                {'key': 'EmbedThumbnail'},
+                {'key': 'FFmpegThumbnailsConvertor', 'format': 'jpg'}
             ]
 
         if not is_video:
@@ -192,31 +186,26 @@ class YTProcessorAPI:
 
         loop = asyncio.get_running_loop()
 
-        # --- دالة التحميل الذكية (Client Rotation + Remote) ---
-        def _run_download_with_rotation():
-            # الترتيب: ويب (الافضل جودة) -> اندرويد (تجاوز) -> اي او اس
-            clients = ['web', 'android', 'ios', 'tv_embedded']
-            
-            for client in clients:
-                try:
-                    opts = base_opts.copy()
-                    opts['extractor_args'] = {'youtube': {'player_client': [client]}}
-                    
-                    with yt_dlp.YoutubeDL(opts) as ydl:
-                        ydl.download([url])
-                    
-                    # التحقق بمرونة من وجود الملف
-                    base_name = os.path.join(Config.DOWNLOAD_PATH, vid_id_str)
-                    if os.path.exists(final_file): return final_file
-                    if os.path.exists(f"{base_name}.mp4"): return f"{base_name}.mp4"
-                    if os.path.exists(f"{base_name}.mp3"): return f"{base_name}.mp3"
-                    
-                except Exception as e:
-                    print(f"Failed with client {client}: {e}")
-                    continue
+        def _run_download():
+            try:
+                # نستخدم Web Client حصراً للثبات
+                opts = base_opts.copy()
+                opts['extractor_args'] = {'youtube': {'player_client': ['web']}}
+                
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    ydl.download([url])
+                
+                base_name = os.path.join(Config.DOWNLOAD_PATH, vid_id_str)
+                if os.path.exists(final_file): return final_file
+                if os.path.exists(f"{base_name}.mp4"): return f"{base_name}.mp4"
+                if os.path.exists(f"{base_name}.mp3"): return f"{base_name}.mp3"
+
+            except Exception as e:
+                print(f"Download Error: {e}")
+                pass
             return None
 
-        return await loop.run_in_executor(self.pool, _run_download_with_rotation)
+        return await loop.run_in_executor(self.pool, _run_download)
 
     async def upload_alexa_style(self, client, mystic_msg, file_path, is_video, title, duration, user_name, vidid=None):
         if not file_path or not os.path.exists(file_path):
@@ -225,17 +214,16 @@ class YTProcessorAPI:
         caption = f"**الـعـنـوان:** {title}\n**طـلـب:** {user_name}"
         chat_id = mystic_msg.chat.id
         
-        # --- استراتيجية الغلاف المضمونة ---
+        # --- استراتيجية الغلاف ---
         thumb_path = None
         base_name = os.path.splitext(file_path)[0]
         
-        # البحث عن أي غلاف تم تحميله
+        # البحث عن الغلاف (JPG/WEBP)
         for ext in [".jpg", ".jpeg", ".png", ".webp"]:
             if os.path.exists(f"{base_name}{ext}"):
                 thumb_path = f"{base_name}{ext}"
                 break
         
-        # محاولة احتياطية
         if not thumb_path and vidid:
              possible_files = glob.glob(os.path.join(Config.DOWNLOAD_PATH, f"*{vidid}*"))
              for f in possible_files:
@@ -245,6 +233,7 @@ class YTProcessorAPI:
 
         try:
             if is_video:
+                # للفيديو: نرسل الملف والغلاف منفصلين (أسرع)
                 media = InputMediaVideo(media=file_path, thumb=thumb_path, caption=caption, duration=duration, supports_streaming=True)
             else:
                 media = InputMediaAudio(media=file_path, thumb=thumb_path, caption=caption, duration=duration, title=title, performer=user_name)
@@ -252,7 +241,6 @@ class YTProcessorAPI:
             await mystic_msg.edit_media(media=media)
             
         except (MessageIdInvalid, MessageNotModified):
-            # محاولة ارسال رسالة جديدة في حالة فشل التعديل
             try:
                 try: await mystic_msg.delete()
                 except: pass
@@ -274,7 +262,7 @@ class YTProcessorAPI:
         
         return True
 
-    # --- دالة تحميل البلاي ليست (الـجـديـدة) ---
+    # --- دالة تحميل البلاي ليست ---
     async def download_playlist(self, client, mystic_msg, playlist_url, is_video, user_name, limit=30):
         cookie_file = self.get_cookie_file()
         loop = asyncio.get_running_loop()
@@ -332,7 +320,7 @@ class YTProcessorAPI:
                 try:
                     os.remove(file_path)
                     base = os.path.splitext(file_path)[0]
-                    for ext in [".jpg", ".webp"]: 
+                    for ext in [".jpg", ".webp", ".png"]: 
                         if os.path.exists(base+ext): os.remove(base+ext)
                 except: pass
             
