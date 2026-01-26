@@ -15,10 +15,11 @@ from AnnieXMedia import YouTube, app
 from AnnieXMedia.utils.formatters import convert_bytes
 from AnnieXMedia.utils.inline.song import song_markup
 
+# الأوامر الشاملة
 COMMANDS = ["اغنية", "هات", "ابعتلي"]
 
-@app.on_message(filters.command(COMMANDS, prefixes=["", "/"]) & filters.private & ~BANNED_USERS)
-async def song_private_processor(client, message: Message):
+@app.on_message(filters.command(COMMANDS, prefixes=["", "/"]) & ~BANNED_USERS)
+async def song_nuclear_processor(client, message: Message):
     if len(message.command) < 2:
         return await message.reply_text("يـرجى كـتـابـة اسـم الـمـقـطـع بـعـد الأمـر")
 
@@ -41,6 +42,45 @@ async def song_private_processor(client, message: Message):
         caption=f"الـعـنـوان: {title}\nالـمـدة: {duration_min}\n\nاخـتـر نـوع الـتـحـمـيـل الـمـطـلـوب:",
         reply_markup=InlineKeyboardMarkup(buttons),
     )
+
+@app.on_message(filters.command(["يوت"], prefixes=["", "/"]) & ~BANNED_USERS)
+async def yut_direct_download(client, message: Message):
+    if len(message.command) < 2:
+        return await message.reply_text("يـرجى كـتـابـة اسـم الأغـنـيـة بـعـد الأمـر")
+
+    query = message.text.split(None, 1)[1]
+    mystic = await message.reply_text("جـاري تـحضـير الـمـلف بـأعـلى جـودة صـوت")
+
+    try:
+        title, duration_min, duration_sec, thumbnail, vidid = await YouTube.details(query)
+        yturl = f"https://www.youtube.com/watch?v={vidid}"
+        
+        file_path, direct = await YouTube.download(
+            yturl,
+            mystic,
+            songaudio=True,
+            title=f"Yut_{vidid}"
+        )
+
+        if not file_path:
+            return await mystic.edit_text("فـشل تـحـمـيل الـمـلف")
+
+        await mystic.edit_text("جـاري الـرفـع الآن")
+
+        await message.reply_audio(
+            audio=file_path,
+            duration=duration_sec,
+            title=title,
+            performer="محرك يوت النووي",
+            caption=f"طـلـب بـواسـطـة {message.from_user.first_name}"
+        )
+
+        await mystic.delete()
+        if not direct and os.path.exists(file_path):
+            os.remove(file_path)
+
+    except Exception as e:
+        await mystic.edit_text(f"حـدث خـطأ في الـنـظام: {e}")
 
 @app.on_callback_query(filters.regex(pattern=r"song_helper") & ~BANNED_USERS)
 async def song_helper_callback(client, CallbackQuery):
@@ -110,6 +150,7 @@ async def song_download_final(client, CallbackQuery):
     
     title = info.get("title", "Unknown")
     thumbnail = await CallbackQuery.message.download() if CallbackQuery.message.photo else None
+    user_name = CallbackQuery.from_user.first_name
 
     try:
         if stype == "video":
@@ -117,7 +158,7 @@ async def song_download_final(client, CallbackQuery):
             await CallbackQuery.message.reply_video(
                 video=file_path,
                 duration=info.get("duration", 0),
-                caption=title,
+                caption=f"طـلـب بـواسـطـة {user_name}",
                 thumb=thumbnail,
                 supports_streaming=True
             )
@@ -125,9 +166,9 @@ async def song_download_final(client, CallbackQuery):
             await app.send_chat_action(CallbackQuery.message.chat.id, enums.ChatAction.UPLOAD_AUDIO)
             await CallbackQuery.message.reply_audio(
                 audio=file_path,
-                caption=title,
+                caption=f"طـلـب بـواسـطـة {user_name}",
                 duration=info.get("duration", 0),
-                performer=info.get("uploader", "AnnieXMedia"),
+                performer="محرك البحث النووي",
                 thumb=thumbnail,
                 title=title
             )
@@ -147,9 +188,3 @@ async def song_back_callback(client, CallbackQuery):
     stype, vidid = callback_request.split("|")
     buttons = song_markup(None, vidid)
     return await CallbackQuery.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(buttons))
-
-@app.on_message(filters.command(COMMANDS, prefixes=["", "/"]) & filters.group & ~BANNED_USERS)
-async def song_group_filter(client, message: Message):
-    # تم تصحيح الفاصلة هنا بالظبط لتعمل مع معايير بايثون
-    upl = InlineKeyboardMarkup([[InlineKeyboardButton(text="اضـغـط لـلـطـلب", url=f"https://t.me/{app.username}?start=song")]])
-    await message.reply_text("طـلب الأغـاني مـتـاح فـي الـخـاص فـقـط", reply_markup=upl)
