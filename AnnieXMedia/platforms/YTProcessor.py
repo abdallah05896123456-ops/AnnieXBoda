@@ -1,4 +1,4 @@
-# System: Processor | STRICT OWNER QUALITY | Alexa Speed | RAM Disk | Playlist
+# System: Processor | PRO COVER EDITION | Fix Thumbnails | 16-Core Speed
 
 import asyncio
 import os
@@ -131,49 +131,44 @@ class YTProcessorAPI:
             "noplaylist": True,
             "external_downloader": "aria2c",
             "external_downloader_args": aria2_args,
-            "writethumbnail": True,
+            "writethumbnail": True, # تحميل الغلاف أساسي
             "socket_timeout": 60,
             "retries": 10,
             "remote_components": ["ejs:github"],
         }
         
-        # --- نـظـام الـجـودة الـصـارم (Strict Quality Control) ---
         if is_video:
-            # 1. إذا كان المالك (Owner)
+            # --- إعدادات الفيديو ---
+            # المالك
             if is_owner:
                 if quality_arg == "high":
-                    # أعلى جودة متاحة (4K/8K)
-                    fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+                    fmt = "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
                 elif quality_arg == "mid":
                     fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best"
                 else:
                     fmt = "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]/best"
-            
-            # 2. للأعضاء العاديين (Non-Owner)
+            # الأعضاء
             else:
-                # إجبار الحد الأقصى 720p حتى لو طلب High
                 if quality_arg == "low":
                     fmt = "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]/best"
                 else:
-                    # سواء طلب High أو Mid -> يأخذ Mid
                     fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best"
 
+            # تحويل الغلاف لـ JPG عشان تليجرام يقبله كغلاف للفيديو
             base_opts["postprocessors"] = [
                 {'key': 'FFmpegMetadata', 'add_metadata': True},
                 {'key': 'FFmpegThumbnailsConvertor', 'format': 'jpg'}
             ]
         else:
-            # الصوت (Audio)
-            # 1. المالك فقط يحصل على 320kbps
+            # --- إعدادات الصوت ---
             if is_owner and quality_arg == "high":
                 fmt = "bestaudio[ext=m4a]/bestaudio/best"
                 q_rate = '320'
-            
-            # 2. باقي الأعضاء (أو لو المالك طلب جودة عادية) -> 128kbps
             else:
                 fmt = "bestaudio[ext=m4a]/bestaudio/best"
                 q_rate = '128'
 
+            # دمج الغلاف للصوت
             base_opts["postprocessors"] = [
                 {'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': q_rate},
                 {'key': 'FFmpegMetadata', 'add_metadata': True},
@@ -192,13 +187,16 @@ class YTProcessorAPI:
             try:
                 opts = base_opts.copy()
                 opts['extractor_args'] = {'youtube': {'player_client': ['web']}}
+                
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     ydl.download([url])
                 
+                # التحقق النهائي
                 base_name = os.path.join(Config.DOWNLOAD_PATH, vid_id_str)
                 if os.path.exists(final_file): return final_file
                 if os.path.exists(f"{base_name}.mp4"): return f"{base_name}.mp4"
                 if os.path.exists(f"{base_name}.mp3"): return f"{base_name}.mp3"
+
             except Exception as e:
                 print(f"Download Error: {e}")
                 pass
@@ -213,41 +211,77 @@ class YTProcessorAPI:
         caption = f"**الـعـنـوان:** {title}\n**طـلـب:** {user_name}"
         chat_id = mystic_msg.chat.id
         
+        # --- تجهيز الغلاف ---
         thumb_path = None
         base_name = os.path.splitext(file_path)[0]
         
-        for ext in [".jpg", ".jpeg", ".png", ".webp"]:
-            if os.path.exists(f"{base_name}{ext}"):
-                thumb_path = f"{base_name}{ext}"
-                break
+        # التأكد من وجود صورة بصيغة JPG (التيليجرام يفضلها كغلاف فيديو)
+        if os.path.exists(f"{base_name}.jpg"):
+            thumb_path = f"{base_name}.jpg"
+        elif os.path.exists(f"{base_name}.webp"):
+            # لو موجودة WebP ممكن نحولها سريعاً لو لزم الأمر، لكن غالباً jpg ستكون موجودة
+            thumb_path = f"{base_name}.webp"
         
+        # لو مفيش، ندور بأي طريقة
         if not thumb_path and vidid:
              possible_files = glob.glob(os.path.join(Config.DOWNLOAD_PATH, f"*{vidid}*"))
              for f in possible_files:
-                if f.endswith((".jpg", ".jpeg", ".png", ".webp")) and not f.endswith((".mp3", ".mp4", ".m4a", ".mkv")):
+                if f.endswith((".jpg", ".jpeg", ".png")) and not f.endswith((".mp3", ".mp4", ".m4a")):
                     thumb_path = f
                     break
 
         try:
             if is_video:
-                media = InputMediaVideo(media=file_path, thumb=thumb_path, caption=caption, duration=duration, supports_streaming=True)
+                # هنا النقطة: thumb=thumb_path بيخلي الفيديو يتبعت وعليه الغلاف بتاعه
+                # مش بيبعت رسالة تانية، لا، بيبعت فيديو واحد شكله احترافي
+                media = InputMediaVideo(
+                    media=file_path,
+                    thumb=thumb_path, 
+                    caption=caption, 
+                    duration=duration, 
+                    supports_streaming=True
+                )
             else:
-                media = InputMediaAudio(media=file_path, thumb=thumb_path, caption=caption, duration=duration, title=title, performer=user_name)
+                media = InputMediaAudio(
+                    media=file_path, 
+                    thumb=thumb_path, 
+                    caption=caption, 
+                    duration=duration, 
+                    title=title, 
+                    performer=user_name
+                )
             
             await mystic_msg.edit_media(media=media)
             
         except (MessageIdInvalid, MessageNotModified):
+            # لو الرسالة القديمة اتمسحت، ابعت واحدة جديدة نضيفة
             try:
                 try: await mystic_msg.delete()
                 except: pass
                 
                 if is_video:
-                    await client.send_video(chat_id, video=file_path, caption=caption, duration=duration, thumb=thumb_path, supports_streaming=True)
+                    await client.send_video(
+                        chat_id, 
+                        video=file_path, 
+                        caption=caption, 
+                        duration=duration, 
+                        thumb=thumb_path, # الغلاف هنا
+                        supports_streaming=True
+                    )
                 else:
-                    await client.send_audio(chat_id, audio=file_path, caption=caption, duration=duration, title=title, performer=user_name, thumb=thumb_path)
+                    await client.send_audio(
+                        chat_id, 
+                        audio=file_path, 
+                        caption=caption, 
+                        duration=duration, 
+                        title=title, 
+                        performer=user_name, 
+                        thumb=thumb_path
+                    )
             except:
                 return False
         except Exception:
+            # لو فشل كل حاجة، ابعت الملف من غير غلاف (نادراً ما يحصل)
             try:
                 if is_video:
                     await client.send_video(chat_id, video=file_path, caption=caption, duration=duration)
@@ -258,6 +292,7 @@ class YTProcessorAPI:
         
         return True
 
+    # --- تحميل البلاي ليست ---
     async def download_playlist(self, client, mystic_msg, playlist_url, is_video, user_name, limit=30):
         cookie_file = self.get_cookie_file()
         loop = asyncio.get_running_loop()
@@ -309,18 +344,4 @@ class YTProcessorAPI:
             
             if file_path:
                 temp_msg = await client.send_message(mystic_msg.chat.id, "**⬆️ رفـع...**")
-                await self.upload_alexa_style(
-                    client, temp_msg, file_path, is_video, title, 0, user_name, vidid=vid_id
-                )
-                try:
-                    os.remove(file_path)
-                    base = os.path.splitext(file_path)[0]
-                    for ext in [".jpg", ".webp", ".png"]: 
-                        if os.path.exists(base+ext): os.remove(base+ext)
-                except: pass
-            
-            await asyncio.sleep(1)
-
-        await mystic_msg.edit_text(f"**✅ تـم الانـتـهـاء!**")
-
-Processor = YTProcessorAPI()
+                await self
