@@ -1,5 +1,3 @@
-# Authored By Certified Coders © 2026
-# Verbatim Edition - Full Code with Race Mode Injections
 import asyncio
 import logging
 import os.path
@@ -23,7 +21,7 @@ from .exceptions import NoVideoSourceFound
 from .types.raw import AudioParameters
 from .types.raw import VideoParameters
 
-# 🔥 تعديل وضع السباق: إعدام الانتظار
+
 async def check_stream(
     ffmpeg_parameters: Optional[str],
     path: str,
@@ -31,22 +29,135 @@ async def check_stream(
     before_commands: Optional[List[str]] = None,
     headers: Optional[Dict[str, str]] = None,
 ):
-    # في المسابقات مش بنفحص الرابط، بنشغله فوراً
-    # تم تعطيل ffprobe لضمان تشغيل في 0 ثانية
-    if isinstance(stream_parameters, VideoParameters):
-        if not stream_parameters.width:
-            stream_parameters.width = 1280
-            stream_parameters.height = 720
-    return 
+    try:
+        ffprobe = await asyncio.create_subprocess_exec(
+            *await cleanup_commands(
+                build_command(
+                    'ffprobe',
+                    ffmpeg_parameters,
+                    path,
+                    stream_parameters,
+                    before_commands,
+                    headers,
+                    False,
+                ),
+            ),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except FileNotFoundError:
+        raise FFmpegError('ffprobe not installed')
 
-# 🔥 تعديل وضع السباق: تخطي فحص الأوامر المدعومة
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            ffprobe.communicate(),
+            timeout=20,
+        )
+        result = loads(stdout.decode('utf-8')) or {}
+        stream_list = result.get('streams', [])
+        format_content = result.get('format', [])
+        if 'No such file' in stderr.decode('utf-8'):
+            raise FileNotFoundError()
+    except (subprocess.TimeoutExpired, JSONDecodeError):
+        ffprobe.terminate()
+        raise
+
+    have_video = False
+    is_image = True
+    have_audio = False
+    have_valid_video = False
+
+    original_width, original_height = 0, 0
+
+    for stream in stream_list:
+        codec_type = stream.get('codec_type', '')
+        codec_name = stream.get('codec_name', '')
+        image_codecs = ['png', 'jpeg', 'jpg', 'mjpeg']
+        if codec_type == 'video':
+            is_image &= codec_name in image_codecs
+            have_video = True
+            original_width = int(stream.get('width', 0))
+            original_height = int(stream.get('height', 0))
+            if original_height and original_width:
+                have_valid_video = True
+        elif codec_type == 'audio':
+            have_audio = True
+
+    if isinstance(stream_parameters, VideoParameters):
+        if not have_video:
+            raise NoVideoSourceFound(path)
+        if not have_valid_video:
+            raise InvalidVideoProportion(
+                'Video proportion not found',
+            )
+
+        ratio = float(original_width) / original_height
+        new_w = min(original_width, stream_parameters.width)
+        new_h = int(new_w / ratio)
+
+        if (
+            new_h > stream_parameters.height and
+            stream_parameters.adjust_by_height
+        ):
+            new_h = stream_parameters.height
+            new_w = int(new_h * ratio)
+
+        new_w = new_w - 1 if new_w % 2 else new_w
+        new_h = new_h - 1 if new_h % 2 else new_h
+        stream_parameters.height = new_h
+        stream_parameters.width = new_w
+        if is_image:
+            stream_parameters.frame_rate = 10
+            raise ImageSourceFound(path)
+
+    if isinstance(stream_parameters, AudioParameters) and not have_audio:
+        raise NoAudioSourceFound(path)
+
+    if 'duration' not in format_content:
+        raise LiveStreamFound(path)
+
+
 async def cleanup_commands(
     commands: List[str],
     process_name: Optional[str] = None,
     blacklist: Optional[List[str]] = None,
 ) -> List[str]:
-    # إرجاع الأوامر فوراً بدون تشغيل ffmpeg -h وتضييع 0.4 ثانية
-    return commands
+    try:
+        proc_res = await asyncio.create_subprocess_exec(
+            commands[0] if not process_name else process_name,
+            '-h',
+            'full',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, _ = await asyncio.wait_for(
+                proc_res.communicate(),
+                timeout=20,
+            )
+            result = stdout.decode('utf-8')
+        except (subprocess.TimeoutExpired, JSONDecodeError):
+            proc_res.terminate()
+            raise
+        supported = re.findall(r'(?m)^ *(-\w+).*?\s+', result)
+        supported += ['-i']
+        new_commands = []
+        ignore_next = False
+
+        for v in commands:
+            if len(v) > 0:
+                if v[0] == '-':
+                    ignore_next = v not in supported or \
+                        blacklist is not None and v in blacklist
+
+                if not ignore_next:
+                    new_commands += [v]
+                elif v[0] != '-':
+                    ignore_next = False
+        return new_commands
+    except FileNotFoundError:
+        raise FFmpegError(f'{commands[0]} not installed')
+
 
 def build_command(
     name: str,
@@ -68,32 +179,31 @@ def build_command(
 
     ffmpeg_command: List = [name]
 
-    # حقن أعلام السرعة النووية في بداية الأمر
-    if name == 'ffmpeg':
-        ffmpeg_command += [
-            '-probesize', '32',
-            '-analyzeduration', '0',
-            '-fflags', 'nobuffer+fastseek+discardcorrupt',
-        ]
-
     ffmpeg_command += command['start']
 
     if not os.path.exists(path) \
             and not is_livestream\
             and name == 'ffmpeg':
         ffmpeg_command += [
-            '-reconnect', '1',
-            '-reconnect_at_eof', '1',
-            '-reconnect_streamed', '1',
-            '-reconnect_delay_max', '2',
+            '-reconnect',
+            '1',
+            '-reconnect_at_eof',
+            '1',
+            '-reconnect_streamed',
+            '1',
+            '-reconnect_delay_max',
+            '2',
         ]
 
     if name == 'ffprobe':
         ffmpeg_command += [
-            '-v', 'error',
-            '-show_entries', 'stream=width,height,codec_type,codec_name',
+            '-v',
+            'error',
+            '-show_entries',
+            'stream=width,height,codec_type,codec_name',
             '-show_format',
-            '-of', 'json',
+            '-of',
+            'json',
         ]
 
     if before_commands:
@@ -119,6 +229,7 @@ def build_command(
 
     return ffmpeg_command
 
+
 def _get_stream_params(command: Optional[str]):
     arg_names = ['base', 'audio', 'video']
     command_args: Dict = {arg: [] for arg in arg_names}
@@ -141,7 +252,9 @@ def _get_stream_params(command: Optional[str]):
             command_args[arg][x] += command_args[arg_names[0]][x]
 
     del command_args[arg_names[0]]
+
     return command_args
+
 
 def _extract_stream_params(command: List[str]):
     arg_names = ['start', 'mid', 'end']
@@ -157,11 +270,12 @@ def _extract_stream_params(command: List[str]):
 
     return command_args
 
+
 def _build_ffmpeg_options(
         stream_parameters: Union[AudioParameters, VideoParameters],
 ) -> List[str]:
-    # إجبار مستوى اللوج على quiet لتقليل استهلاك المعالج
-    ffmpeg_level = 'quiet'
+    log_level = logging.getLogger('ffmpeg').level
+    ffmpeg_level = 'info' if log_level == logging.DEBUG else 'quiet'
 
     options = ['-v', ffmpeg_level, '-f']
 
@@ -175,8 +289,10 @@ def _build_ffmpeg_options(
         options.extend([
             'rawvideo',
             '-r', str(stream_parameters.frame_rate),
-            '-pix_fmt', 'yuv420p',
-            '-vf', f'scale={stream_parameters.width}:{stream_parameters.height}',
+            '-pix_fmt',
+            'yuv420p',
+            '-vf',
+            f'scale={stream_parameters.width}:{stream_parameters.height}',
         ])
 
     return options
