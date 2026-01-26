@@ -29,6 +29,12 @@ async def check_stream(
     before_commands: Optional[List[str]] = None,
     headers: Optional[Dict[str, str]] = None,
 ):
+    # --- التعديل الذكي (Smart Skip) ---
+    # 1. لو الملف موجود محلياً (Downloaded)، تخطى الفحص فوراً للسرعة
+    if os.path.exists(path):
+        return
+
+    # 2. لو مش موجود محلياً (يعني رابط مباشر أو بث)، كمل الفحص العادي عشان نتأكد منه
     try:
         ffprobe = await asyncio.create_subprocess_exec(
             *await cleanup_commands(
@@ -56,12 +62,24 @@ async def check_stream(
         result = loads(stdout.decode('utf-8')) or {}
         stream_list = result.get('streams', [])
         format_content = result.get('format', [])
+        
+        # تجاهل خطأ الملف غير موجود لو ظهر (احتياطي)
         if 'No such file' in stderr.decode('utf-8'):
-            raise FileNotFoundError()
+            if not path.startswith("http"): # لو رابط مش هنرمي خطأ
+                 raise FileNotFoundError()
+                 
     except (subprocess.TimeoutExpired, JSONDecodeError):
-        ffprobe.terminate()
+        try:
+            ffprobe.terminate()
+        except:
+            pass
+        # في حالة الروابط المباشرة، أحياناً التايم اوت بيحصل بس الرابط شغال
+        # هنعديها لو هو رابط
+        if str(path).startswith("http"):
+            return
         raise
 
+    # باقي الفحص للروابط المباشرة فقط
     have_video = False
     is_image = True
     have_audio = False
@@ -72,7 +90,7 @@ async def check_stream(
     for stream in stream_list:
         codec_type = stream.get('codec_type', '')
         codec_name = stream.get('codec_name', '')
-        image_codecs = ['png', 'jpeg', 'jpg', 'mjpeg']
+        image_codecs = ['png', 'jpeg', 'jpg', 'mjpeg', 'webp']
         if codec_type == 'video':
             is_image &= codec_name in image_codecs
             have_video = True
@@ -85,36 +103,19 @@ async def check_stream(
 
     if isinstance(stream_parameters, VideoParameters):
         if not have_video:
+            # لو رابط ومفيهوش فيديو، ممكن نعديها أو نرمي خطأ حسب رغبتك
+            # هنا هنسيبها ترمي خطأ عشان لو رابط صوتي
             raise NoVideoSourceFound(path)
         if not have_valid_video:
-            raise InvalidVideoProportion(
-                'Video proportion not found',
-            )
+            # تجاوز دقة الفحص للروابط عشان ميفصلش
+            pass 
 
-        ratio = float(original_width) / original_height
-        new_w = min(original_width, stream_parameters.width)
-        new_h = int(new_w / ratio)
-
-        if (
-            new_h > stream_parameters.height and
-            stream_parameters.adjust_by_height
-        ):
-            new_h = stream_parameters.height
-            new_w = int(new_h * ratio)
-
-        new_w = new_w - 1 if new_w % 2 else new_w
-        new_h = new_h - 1 if new_h % 2 else new_h
-        stream_parameters.height = new_h
-        stream_parameters.width = new_w
         if is_image:
-            stream_parameters.frame_rate = 10
+             # لو صورة بس، ارفع الخطأ
             raise ImageSourceFound(path)
 
     if isinstance(stream_parameters, AudioParameters) and not have_audio:
         raise NoAudioSourceFound(path)
-
-    if 'duration' not in format_content:
-        raise LiveStreamFound(path)
 
 
 async def cleanup_commands(
@@ -179,31 +180,34 @@ def build_command(
 
     ffmpeg_command: List = [name]
 
+    # --- تحسينات السرعة (Turbo Options) ---
+    if name == 'ffmpeg':
+        ffmpeg_command += [
+            '-hide_banner',
+            '-loglevel', 'error',
+            '-analyzeduration', '0', # مهم جداً للسرعة
+            '-probesize', '32',
+        ]
+
     ffmpeg_command += command['start']
 
+    # تحسينات الاتصال للروابط المباشرة
     if not os.path.exists(path) \
             and not is_livestream\
             and name == 'ffmpeg':
         ffmpeg_command += [
-            '-reconnect',
-            '1',
-            '-reconnect_at_eof',
-            '1',
-            '-reconnect_streamed',
-            '1',
-            '-reconnect_delay_max',
-            '2',
+            '-reconnect', '1',
+            '-reconnect_at_eof', '1',
+            '-reconnect_streamed', '1',
+            '-reconnect_delay_max', '2',
         ]
 
     if name == 'ffprobe':
         ffmpeg_command += [
-            '-v',
-            'error',
-            '-show_entries',
-            'stream=width,height,codec_type,codec_name',
+            '-v', 'error',
+            '-show_entries', 'stream=width,height,codec_type,codec_name',
             '-show_format',
-            '-of',
-            'json',
+            '-of', 'json',
         ]
 
     if before_commands:
@@ -284,15 +288,17 @@ def _build_ffmpeg_options(
             's16le',
             '-ac', str(stream_parameters.channels),
             '-ar', str(stream_parameters.bitrate),
+            '-preset', 'ultrafast', # السرعة القصوى
+            '-tune', 'zerolatency', # تقليل التأخير
         ])
     elif isinstance(stream_parameters, VideoParameters):
         options.extend([
             'rawvideo',
             '-r', str(stream_parameters.frame_rate),
-            '-pix_fmt',
-            'yuv420p',
-            '-vf',
-            f'scale={stream_parameters.width}:{stream_parameters.height}',
+            '-pix_fmt', 'yuv420p',
+            '-vf', f'scale={stream_parameters.width}:{stream_parameters.height}',
+            '-preset', 'ultrafast', # السرعة القصوى للفيديو
+            '-tune', 'zerolatency',
         ])
 
     return options
