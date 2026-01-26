@@ -1,4 +1,4 @@
-# System: Processor | Anti-Bot Bypass | Force JPG Thumb | Smart Retry | RAM Disk
+# System: Processor | NUCLEAR EDITION (16-Core Aria2c) | RAM Disk | Anti-Bot V3 | Force JPG
 
 import asyncio
 import os
@@ -15,12 +15,19 @@ from AnnieXMedia import LOGGER
 from AnnieXMedia.utils.formatters import convert_bytes
 
 class Config:
-    # استخدام الرام ديسك للسرعة القصوى
-    DOWNLOAD_PATH = "/dev/shm/AnnieDownloads" if os.path.exists("/dev/shm") else "downloads"
+    # 1. استخدام الرامات (RAM Disk) للتخزين المؤقت للحصول على سرعة خرافية (مقتبس من ملفك)
+    if os.path.exists("/dev/shm"):
+        DOWNLOAD_PATH = "/dev/shm/AnnieDownloads"
+    else:
+        DOWNLOAD_PATH = os.path.abspath("downloads")
+        
+    # استغلال الـ 16 كور بالكامل
+    MAX_WORKERS = 16
+    
     # User-Agent حديث جداً لتجاوز الحظر
-    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-    MAX_WORKERS = 16 
+    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
 
+# إنشاء المجلد
 if not os.path.exists(Config.DOWNLOAD_PATH):
     os.makedirs(Config.DOWNLOAD_PATH, exist_ok=True)
 
@@ -30,6 +37,7 @@ class YTProcessorAPI:
         self._clean_cache()
 
     def _clean_cache(self):
+        """تنظيف الكاش عند البدء لتفريغ الرامات"""
         try:
             for filename in os.listdir(Config.DOWNLOAD_PATH):
                 file_path = os.path.join(Config.DOWNLOAD_PATH, filename)
@@ -41,50 +49,53 @@ class YTProcessorAPI:
             pass
 
     def get_cookie_file(self):
-        # البحث عن ملف الكوكيز في المسار الرئيسي
-        if os.path.exists("cookies.txt") and os.path.getsize("cookies.txt") > 0:
-            return "cookies.txt"
+        """البحث الذكي عن ملف الكوكيز في كل مكان محتمل"""
+        possible_paths = [
+            "cookies.txt", 
+            "AnnieXMedia/assets/cookies.txt",
+            "AnnieXMedia/cookies.txt", 
+            "assets/cookies.txt", 
+            "platforms/cookies.txt"
+        ]
+        for path in possible_paths:
+            if os.path.exists(path) and os.path.getsize(path) > 0:
+                return path
         return None
 
     async def get_quality_buttons(self, vidid, stype):
         yturl = f"https://www.youtube.com/watch?v={vidid}"
         cookie_file = self.get_cookie_file()
         
-        # خيارات استخراج المعلومات (سريعة)
+        # إعدادات سريعة لجلب المعلومات فقط
         ydl_opts = {
             "quiet": True,
             "cookiefile": cookie_file,
-            "user_agent": Config.USER_AGENT,
             "no_warnings": True,
             "ignoreerrors": True,
+            "nocheckcertificate": True,
         }
         
         loop = asyncio.get_running_loop()
         
-        # محاولة أولى: Web Client
-        def _fetch_web():
-            opts = ydl_opts.copy()
-            opts['extractor_args'] = {'youtube': {'player_client': ['web']}}
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                return ydl.extract_info(yturl, download=False)
-
-        # محاولة ثانية: Android Client (لتجاوز تسجيل الدخول)
-        def _fetch_android():
-            opts = ydl_opts.copy()
-            opts['extractor_args'] = {'youtube': {'player_client': ['android']}}
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                return ydl.extract_info(yturl, download=False)
+        # استخدام Client Rotation لجلب المعلومات (تفادي الحظر)
+        def _fetch_info():
+            clients = ['android', 'web', 'ios']
+            for client in clients:
+                try:
+                    opts = ydl_opts.copy()
+                    opts['extractor_args'] = {'youtube': {'player_client': [client]}}
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        return ydl.extract_info(yturl, download=False)
+                except:
+                    continue
+            return None
 
         formats = []
         try:
-            info = await loop.run_in_executor(self.pool, _fetch_web)
-            formats = info.get("formats", [])
+            info = await loop.run_in_executor(self.pool, _fetch_info)
+            if info: formats = info.get("formats", [])
         except:
-            try:
-                info = await loop.run_in_executor(self.pool, _fetch_android)
-                formats = info.get("formats", [])
-            except:
-                pass 
+            pass 
 
         keyboard = []
         if stype == "audio":
@@ -107,112 +118,117 @@ class YTProcessorAPI:
         return keyboard
 
     async def download_file(self, url, quality_arg, is_video, title, vidid=None, is_owner=False):
+        # توليد ID فريد للعملية
         vid_id_str = vidid if vidid else str(int(time.time()))
-        ext = "mp4" if is_video else "mp3"
+        
+        # تحديد الامتداد: m4a للصوت (أسرع في التحميل) و mp4 للفيديو
+        ext = "mp4" if is_video else "m4a" 
         final_file = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id_str}.{ext}")
         
-        # كاش الرام
+        # 1. فحص الكاش في الرام (RAM Cache Hit)
         if os.path.exists(final_file) and os.path.getsize(final_file) > 1024:
             return final_file
 
         cookie_file = self.get_cookie_file()
-        if not url.startswith("http"): url = f"ytsearch1:{url}"
+        if not url.startswith("http"): url = f"https://www.youtube.com/watch?v={vidid}"
 
-        # إعدادات التحميل الأساسية
+        # --- إعدادات Aria2c النووية (16 كور) ---
+        # هذه الإعدادات تضمن استخدام كامل سرعة السيرفر
+        aria2_args = [
+            "-x", "16", "-s", "16", "-j", "16", "-k", "1M",
+            "--file-allocation=none", # الحل السحري لمنع التعليق عند 99%
+            "--disable-ipv6=true",    # تسريع الاتصال
+            "--max-connection-per-server=16"
+        ]
+
         base_opts = {
             "outtmpl": os.path.join(Config.DOWNLOAD_PATH, f"{vid_id_str}.%(ext)s"),
-            "user_agent": Config.USER_AGENT,
-            "quiet": True,
-            "no_warnings": True,
-            "ignoreerrors": True,
+            "cookiefile": cookie_file,
+            "geo_bypass": True,
             "nocheckcertificate": True,
-            # إعدادات Aria2c السريعة
+            "quiet": True,
+            "noplaylist": True, # منع تحميل القوائم لتجنب الحظر
             "external_downloader": "aria2c",
-            "external_downloader_args": [
-                "-x", "16", "-s", "16", "-k", "1M", 
-                "--max-connection-per-server=16", 
-                "--file-allocation=none"
-            ],
-            "writethumbnail": True, 
+            "external_downloader_args": aria2_args,
+            "writethumbnail": True, # أساسي لجلب الغلاف
             "socket_timeout": 60,
             "retries": 10,
         }
         
-        # --- تحديد الجودة ---
+        # --- تحديد الجودة والصيغة (Formats) ---
         if is_video:
+            # استخدام mp4 حصراً لتجنب مشاكل الدمج
             if quality_arg == "high" or (is_owner and quality_arg == "best"):
-                fmt = "bestvideo+bestaudio/best"
+                fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
             elif quality_arg == "mid":
-                fmt = "bestvideo[height<=720]+bestaudio/best[height<=720]/best"
+                fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best"
             elif quality_arg == "low":
-                fmt = "bestvideo[height<=360]+bestaudio/best[height<=360]/best"
+                fmt = "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]/best"
             else:
-                fmt = "bestvideo[height<=720]+bestaudio/best[height<=720]/best"
+                fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best"
         else:
+            # الصوت (m4a يتم تحويله لاحقاً)
             if is_owner or quality_arg == "high":
-                fmt = "bestaudio/best"
+                fmt = "bestaudio[ext=m4a]/bestaudio/best"
                 q_rate = '320'
             elif quality_arg == "low":
-                fmt = "bestaudio/best"
+                fmt = "bestaudio[ext=m4a]/bestaudio/best"
                 q_rate = '64'
             else:
-                fmt = "bestaudio/best"
+                fmt = "bestaudio[ext=m4a]/bestaudio/best"
                 q_rate = '128'
 
             base_opts["postprocessors"] = [
-                {'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': q_rate},
-                {'key': 'FFmpegMetadata', 'add_metadata': True},
-                {'key': 'EmbedThumbnail'},
-                {'key': 'FFmpegThumbnailsConvertor', 'format': 'jpg'} # إجبار تحويل الغلاف لـ JPG
+                {
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': q_rate
+                },
+                {
+                    'key': 'FFmpegMetadata',
+                    'add_metadata': True
+                },
+                {
+                    'key': 'EmbedThumbnail'
+                },
+                # تحويل الغلاف لـ JPG إجبارياً لضمان ظهوره في تيليجرام
+                {
+                    'key': 'FFmpegThumbnailsConvertor',
+                    'format': 'jpg'
+                }
             ]
+
+        # للصوت، اللاحقة ستتغير بعد التحويل من m4a إلى mp3
+        if not is_video:
+            final_file = final_file.replace(".m4a", ".mp3")
+
+        base_opts['format'] = fmt
 
         loop = asyncio.get_running_loop()
 
-        # دالة التشغيل التي تعيد المحاولة تلقائياً مع عملاء مختلفين
-        def _smart_download():
-            # المحاولة 1: Web Client (الأسرع والأفضل للجودة)
-            try:
-                opts = base_opts.copy()
-                opts['format'] = fmt
-                opts['cookiefile'] = cookie_file
-                opts['extractor_args'] = {'youtube': {'player_client': ['web']}}
-                
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    ydl.download([url])
-                if os.path.exists(final_file): return final_file
-            except:
-                pass
-
-            # المحاولة 2: Android Client (يتجاوز حظر البوت وتسجيل الدخول)
-            try:
-                opts = base_opts.copy()
-                opts['format'] = fmt
-                opts['cookiefile'] = cookie_file # نجرب بالكوكيز أيضاً
-                opts['extractor_args'] = {'youtube': {'player_client': ['android']}}
-                
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    ydl.download([url])
-                if os.path.exists(final_file): return final_file
-            except:
-                pass
+        # --- دالة التحميل الذكية (Smart Download with Rotation) ---
+        def _run_download_with_rotation():
+            # قائمة العملاء لتجاوز الحظر (Anti-Bot)
+            clients = ['android', 'web', 'ios', 'tv_embedded']
             
-            # المحاولة 3: iOS Client (ملاذ أخير)
-            try:
-                opts = base_opts.copy()
-                opts['format'] = fmt
-                opts['cookiefile'] = None # بدون كوكيز
-                opts['extractor_args'] = {'youtube': {'player_client': ['ios']}}
-                
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    ydl.download([url])
-                if os.path.exists(final_file): return final_file
-            except:
-                pass
-            
+            for client in clients:
+                try:
+                    opts = base_opts.copy()
+                    opts['extractor_args'] = {'youtube': {'player_client': [client]}}
+                    
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        ydl.download([url])
+                    
+                    # التحقق من نجاح التحميل
+                    if os.path.exists(final_file) and os.path.getsize(final_file) > 100:
+                        return final_file
+                except Exception as e:
+                    print(f"Failed with client {client}: {e}")
+                    continue
             return None
 
-        result_path = await loop.run_in_executor(self.pool, _smart_download)
-        return result_path
+        # تشغيل في الخلفية
+        return await loop.run_in_executor(self.pool, _run_download_with_rotation)
 
     async def upload_alexa_style(self, client, mystic_msg, file_path, is_video, title, duration, user_name, vidid=None):
         if not file_path or not os.path.exists(file_path):
@@ -221,28 +237,25 @@ class YTProcessorAPI:
         caption = f"**الـعـنـوان:** {title}\n**طـلـب:** {user_name}"
         chat_id = mystic_msg.chat.id
         
-        # --- البحث الدقيق عن الغلاف ---
+        # --- استراتيجية الغلاف المضمونة (Hybrid) ---
         thumb_path = None
         base_name = os.path.splitext(file_path)[0]
         
-        # 1. البحث بنفس اسم الملف (الأدق)
-        for ext in [".jpg", ".jpeg", ".png"]: # تجاهلنا webp لأن تيليجرام لا يحبه كغلاف
-            if os.path.exists(f"{base_name}{ext}"):
-                thumb_path = f"{base_name}{ext}"
-                break
+        # 1. البحث عن ملف الـ JPG الذي أنتجه FFmpeg (الأولوية القصوى)
+        if os.path.exists(f"{base_name}.jpg"):
+            thumb_path = f"{base_name}.jpg"
         
-        # 2. البحث بالـ ID إذا فشل الاسم
-        if not thumb_path and vidid:
+        # 2. محاولة احتياطية شاملة في المجلد
+        elif vidid:
              possible_files = glob.glob(os.path.join(Config.DOWNLOAD_PATH, f"*{vidid}*"))
              for f in possible_files:
-                if f.endswith((".jpg", ".jpeg", ".png")) and not f.endswith((".mp3", ".mp4", ".mkv")):
+                if f.endswith((".jpg", ".jpeg", ".png")) and not f.endswith((".mp3", ".mp4", ".m4a", ".mkv")):
                     thumb_path = f
                     break
-        # -----------------------------
+        # ----------------------------------
 
-        # محاولة الرفع مع معالجة خطأ MessageIdInvalid
         try:
-            # محاولة التعديل أولاً (أسرع)
+            # محاولة التعديل (Edit Message) - الطريقة الأسرع
             if is_video:
                 media = InputMediaVideo(media=file_path, thumb=thumb_path, caption=caption, duration=duration, supports_streaming=True)
             else:
@@ -251,9 +264,8 @@ class YTProcessorAPI:
             await mystic_msg.edit_media(media=media)
             
         except (MessageIdInvalid, MessageNotModified):
-            # إذا فشل التعديل (الرسالة قديمة أو محذوفة)، نرسل رسالة جديدة
+            # الفشل الآمن: إرسال رسالة جديدة وحذف رسالة الانتظار
             try:
-                # نحاول حذف رسالة الانتظار القديمة
                 try: await mystic_msg.delete()
                 except: pass
                 
@@ -264,13 +276,13 @@ class YTProcessorAPI:
             except Exception as e:
                 print(f"Upload Failed: {e}")
                 return False
-        except Exception as e:
-            # أي خطأ آخر، نحاول الإرسال الجديد أيضاً
+        except Exception:
+            # محاولة يائسة أخيرة بدون غلاف
             try:
                 if is_video:
-                    await client.send_video(chat_id, video=file_path, caption=caption, duration=duration, thumb=thumb_path)
+                    await client.send_video(chat_id, video=file_path, caption=caption, duration=duration)
                 else:
-                    await client.send_audio(chat_id, audio=file_path, caption=caption, duration=duration, title=title, performer=user_name, thumb=thumb_path)
+                    await client.send_audio(chat_id, audio=file_path, caption=caption, duration=duration, title=title, performer=user_name)
             except:
                 return False
         
