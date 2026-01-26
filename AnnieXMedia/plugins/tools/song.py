@@ -1,4 +1,4 @@
-# System: Song Plugin | Interactive Fix | Full Maintenance | No Emojis
+# System: Song Plugin | Interactive | Full Maintenance | No Emojis | Elongated Text
 
 import asyncio
 import os
@@ -69,16 +69,19 @@ async def unified_song_processor(client, message: Message):
     if command_trigger in ["video", "/video", "فيديو"] or video_trigger:
         is_video_request = True
 
-    # 2. الـتـفـاعـل (Pyromod) - إصلاح المشكلة هنا
+    # 2. الـتـفـاعـل (Pyromod)
     if not query:
         # إرسال الرسالة أولاً
         prompt = await message.reply_text("**ارسـل الان اسـم الـمـقـطـع الـمـطـلـوب .**")
         
         try:
-            # محاولة الاستماع (انتظار 20 ثانية)
+            # التحقق من وجود listen
             if not hasattr(client, "listen"):
-                raise AttributeError("Pyromod not found")
+                # إذا لم تكن مفعلة، نطلب الكتابة اليدوية بدلاً من الخطأ
+                await prompt.edit_text("**عـذراً، يـرجـى كـتـابـة الاسـم بـجـانـب الأمـر مـبـاشـرةً.**")
+                return
 
+            # انتظار الرد لمدة 20 ثانية
             response = await client.listen(chat_id=message.chat.id, user_id=message.from_user.id, timeout=20)
             
             if response and response.text:
@@ -90,10 +93,6 @@ async def unified_song_processor(client, message: Message):
 
         except asyncio.TimeoutError:
             await prompt.edit_text("**تـم انـهـاء الانـتـظـار لـعـدم وجـود رد**")
-            return
-        except AttributeError:
-            # إذا لم تكن المكتبة موجودة، نطلب الكتابة بجانب الأمر بدلاً من رسالة الخطأ
-            await prompt.edit_text("**عـذراً، يـرجـى كـتـابـة الاسـم بـجـانـب الأمـر مـبـاشـرةً.**")
             return
         except Exception:
             await prompt.edit_text("**حـدث خـطـأ، حـاول مـرة أخـرى.**")
@@ -226,9 +225,11 @@ async def yut_direct_video(client, message: Message):
 # --- مـعـالـجـة الأزرار ---
 @app.on_callback_query(filters.regex(pattern=r"song_download") & ~BANNED_USERS)
 async def song_download_callback(client, CallbackQuery):
+    # التحقق من القفل العام
     if SEARCH_SECTION_LOCKED and CallbackQuery.from_user.id != OWNER_ID:
-        return await CallbackQuery.answer("⚠️ قـسـم الـتـحـمـيـل مـغـلـق لـلـصـيـانـة.", show_alert=True)
+        return await CallbackQuery.answer("قـسـم الـتـحـمـيـل مـغـلـق لـلـصـيـانـة.", show_alert=True)
 
+    # التحقق من قفل الانلاين (قد يكون تم تفعيله بعد ظهور الأزرار)
     if INLINE_SEARCH_LOCKED and CallbackQuery.from_user.id != OWNER_ID:
          return await CallbackQuery.answer("تـم قـفـل الـتـحـمـيـل عـبـر الأزرار حـالـيـاً.", show_alert=True)
 
@@ -260,7 +261,7 @@ async def song_download_callback(client, CallbackQuery):
 @app.on_callback_query(filters.regex(pattern=r"song_helper") & ~BANNED_USERS)
 async def song_helper_callback(client, CallbackQuery):
     if SEARCH_SECTION_LOCKED and CallbackQuery.from_user.id != OWNER_ID:
-        return await CallbackQuery.answer("⚠️ قـسـم الـتـحـمـيـل مـغـلـق لـلـصـيـانـة.", show_alert=True)
+        return await CallbackQuery.answer("قـسـم الـتـحـمـيـل مـغـلـق لـلـصـيـانـة.", show_alert=True)
 
     stype, vidid = CallbackQuery.data.split(None, 1)[1].split("|")
     await CallbackQuery.answer("جـارٍ جـلـب الـخـيـارات...")
