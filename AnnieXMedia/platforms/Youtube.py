@@ -1,10 +1,12 @@
 # Authored By Certified Coders © 2025
-# PLATFORM: YOUTUBE | PROGRESSIVE STREAMING | REMOTE FIX (No-Android)
+# Fixed for platforms/Youtube.py
+# NUCLEAR EDITION: 16-Core Aria2c Download + Instant Direct Stream + RAM Disk
+
 import asyncio
 import os
 import re
 import logging
-from typing import Union, Tuple, Optional, Dict, List
+from typing import Union, List, Dict, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor
 import time
 import yt_dlp
@@ -21,13 +23,14 @@ except ImportError:
     def time_to_seconds(t): return 0
 
 class Config:
-    # الرام ديسك للسرعة القصوى
+    # بما أن الرام 88 جيجا، سنستخدم الرام للتخزين المؤقت للحصول على سرعة قراءة وكتابة خرافية
     if os.path.exists("/dev/shm"):
         DOWNLOAD_PATH = "/dev/shm/AnnieDownloads"
     else:
         DOWNLOAD_PATH = os.path.abspath("downloads")
     
     COOKIE_PATH = "AnnieXMedia/assets/cookies.txt"
+    # استغلال الـ 16 كور بالكامل
     MAX_WORKERS = 16
 
 if not os.path.exists(Config.DOWNLOAD_PATH):
@@ -38,7 +41,10 @@ _cache_lock = asyncio.Lock()
 YOUTUBE_META_TTL = 3600
 
 def get_cookie_file():
-    possible_paths = [Config.COOKIE_PATH, "cookies.txt", "AnnieXMedia/cookies.txt", "assets/cookies.txt", "platforms/cookies.txt"]
+    possible_paths = [
+        Config.COOKIE_PATH, "cookies.txt", "AnnieXMedia/cookies.txt",
+        "assets/cookies.txt", "platforms/cookies.txt"
+    ]
     for path in possible_paths:
         if os.path.exists(path) and os.path.getsize(path) > 0:
             return path
@@ -79,16 +85,20 @@ class YouTubeAPI:
     async def track(self, link: str, videoid: Union[bool, str] = None):
         if videoid: link = self.base + link
         link = link.split("&")[0]
+
         async with _cache_lock:
             if link in _cache:
                 ts, val = _cache[link]
                 if time.time() - ts < YOUTUBE_META_TTL:
                     return val[0], val[1]
+
         try:
             results = VideosSearch(link, limit=1)
             res = await results.next()
-            if not res or not res.get("result"): raise ValueError("No Result")
+            if not res or not res.get("result"):
+                raise ValueError("No Result")
             data = res["result"][0]
+            
             track_details = {
                 "title": data["title"],
                 "link": data["link"],
@@ -120,41 +130,31 @@ class YouTubeAPI:
         d, _ = await self.track(link, videoid)
         return d.get("thumb")
 
-    # 🔥 دالة التحميل التدريجي (Netflix Style) 🔥
+    # 🔥 التحميل الخلفي باستخدام Aria2c لاستغلال سرعة الـ 3 جيجا 🔥
     def _background_download(self, link, final_path, is_video):
-        if os.path.exists(final_path) and os.path.getsize(final_path) > 1024 * 1024:
-            return
-
-        aria2_args = [
-            "-x", "16", "-s", "16", "-j", "16", "-k", "1M",
-            "--file-allocation=none", "--disable-ipv6=true"
-        ]
-        
-        fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]" if is_video else "bestaudio[ext=m4a]/bestaudio/best"
-        
-        ydl_opts = {
-            "format": fmt,
-            "outtmpl": final_path,
-            "cookiefile": get_cookie_file(),
-            "geo_bypass": True,
-            "nocheckcertificate": True,
-            "quiet": True,
-            "external_downloader": "aria2c",
-            "external_downloader_args": aria2_args,
-            
-            # 🔥 (1) nopart: عشان يشتغل زي يوتيوب ونتفلكس (تشغيل أثناء التحميل)
-            "nopart": True,
-            
-            # 🔥 (2) remote_components: ده الحل لمشكلة اللوجز بتاعتك
-            # ده بيخلي yt-dlp ينزل ملف صغير يحل بيه التوقيع بدل ما يفشل
-            "remote_components": {"ejs": "github"}, 
-        }
         try:
+            # استخدام 16 اتصال متوازي للتحميل بسرعة الضوء
+            aria2_args = [
+                "-x", "16", "-s", "16", "-j", "16", "-k", "1M",
+                "--file-allocation=none",
+                "--disable-ipv6=true" # IPv4 أسرع غالباً في السيرفرات
+            ]
+            
+            fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]" if is_video else "bestaudio[ext=m4a]/bestaudio/best"
+            
+            ydl_opts = {
+                "format": fmt,
+                "outtmpl": final_path,
+                "cookiefile": get_cookie_file(),
+                "geo_bypass": True,
+                "nocheckcertificate": True,
+                "quiet": True,
+                "external_downloader": "aria2c",
+                "external_downloader_args": aria2_args,
+            }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([link])
-        except Exception as e:
-            # طباعة الخطأ في الكونسول عشان لو حصل حاجة تانية نعرفها
-            print(f"YTDLP Error: {e}")
+        except Exception:
             pass
 
     async def download(
@@ -178,24 +178,77 @@ class YouTubeAPI:
             else: vid_id = str(int(time.time()))
         except: vid_id = str(int(time.time()))
 
+        # تحديد المسار في الرام
         ext = "mp4" if video else "m4a"
         ram_path = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
 
-        # لو الملف موجود (كاش)، رجعه علطول
+        # 1. فحص الكاش (RAM Cache Check)
         if os.path.exists(ram_path) and os.path.getsize(ram_path) > 1024:
+            print(f"⚡ RAM Cache Hit: {vid_id}", flush=True)
             return ram_path, False
 
-        # نشغل التحميل في الخلفية
-        loop.run_in_executor(self.pool, self._background_download, link, ram_path, video)
+        # 2. جلب الرابط المباشر (Direct Stream Fetch)
+        print(f"🚀 Fetching Direct Link for: {vid_id}", flush=True)
+        
+        try:
+            cmd = ["yt-dlp", "-g", "--cookies", get_cookie_file() or ""]
+            
+            # رفع الجودة لأن النت عندك قوي (720p بدلاً من 480p)
+            if video:
+                cmd.extend(["-f", "best[height<=720]"])
+            else:
+                cmd.extend(["-f", "bestaudio[ext=m4a]/bestaudio"])
+            
+            cmd.append(link)
 
-        # نرجع المسار فوراً + True (علامة Progressive)
-        # ده بيخلي ملف call.py يبدأ يراقب الملف ويشغله اول ما يجمع داتا
-        return ram_path, True
+            process = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+
+            if stdout:
+                direct_link = stdout.decode().split("\n")[0].strip()
+                
+                # 3. تشغيل التحميل في الخلفية (Background Cache)
+                loop.run_in_executor(self.pool, self._background_download, link, ram_path, video)
+
+                # 4. إرجاع الرابط المباشر فوراً
+                return direct_link, True
+            else:
+                print(f"❌ Direct Link Failed", flush=True)
+        except Exception as e:
+            print(f"❌ Error fetching direct link: {e}", flush=True)
+
+        # Fallback
+        def _fallback_download():
+            try:
+                fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]" if video else "bestaudio[ext=m4a]"
+                ydl_opts = {
+                    "format": fmt,
+                    "outtmpl": ram_path,
+                    "cookiefile": get_cookie_file(),
+                    "quiet": True
+                }
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([link])
+                return ram_path
+            except: return None
+
+        print("⚠️ Direct Link Failed, Fallback to Download...", flush=True)
+        downloaded_file = await loop.run_in_executor(self.pool, _fallback_download)
+        if downloaded_file:
+            return downloaded_file, False
+        
+        return None, False
 
     async def playlist(self, link, limit, user_id, videoid: Union[bool, str] = None):
         if videoid: link = self.listbase + link
         if "&" in link: link = link.split("&")[0]
-        cmd = f"yt-dlp -i --compat-options no-youtube-unavailable-videos --get-id --flat-playlist --playlist-end {limit} --skip-download '{link}' 2>/dev/null"
+        cmd = (
+            f"yt-dlp -i --compat-options no-youtube-unavailable-videos "
+            f"--get-id --flat-playlist --playlist-end {limit} --skip-download '{link}' "
+            f"2>/dev/null"
+        )
         proc = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         out, _ = await proc.communicate()
         try: result = [key for key in out.decode().split("\n") if key]
