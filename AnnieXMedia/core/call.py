@@ -1,4 +1,6 @@
 # Authored By Certified Coders © 2025
+# TITANOS CORE + DEEP WATCHDOG (VERBATIM FULL EDITION)
+# FIXED: URL-as-filename + ValueError Unknown + 16-Core Stereo
 import asyncio
 import os
 import traceback
@@ -49,8 +51,8 @@ counter = {}
 
 # --- Helper Function for Streams (Optimized for TitanOS) ---
 def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
-    # إجبار الاستيريو واستغلال الـ 16 كور وتقليل التقطيع
-    titan_flags = "-threads 16 -ac 2"
+    # إجبار الاستيريو واستغلال الـ 16 كور وتقليل التقطيع (TitanOS Optimizations)
+    titan_flags = "-threads 16 -ac 2 -ar 48000 -preset ultrafast"
     if str(path).startswith("http"):
         titan_flags += " -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
     
@@ -60,7 +62,7 @@ def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = No
     if video:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.STUDIO, # Alexa uses better quality
+            audio_parameters=AudioQuality.STUDIO,
             video_parameters=VideoQuality.HD_720p,
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.REQUIRED,
@@ -69,7 +71,7 @@ def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = No
     else:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.STUDIO, # Alexa uses better quality
+            audio_parameters=AudioQuality.STUDIO,
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.IGNORE,
             ffmpeg_parameters=titan_flags,
@@ -202,14 +204,17 @@ class Call:
             raise AssistantErr("Invalid stream info for speedup.")
 
         assistant = await group_assistant(self, chat_id)
-        base = os.path.basename(file_path)
+        
+        # 🛠️ Fix 1: Use vidid as filename to avoid URL-length errors
+        vidid = playing[0].get("vidid", "local_file")
+        ext = "mp4" if playing[0]["streamtype"] == "video" else "m4a"
         chatdir = os.path.join("playback", str(speed))
         os.makedirs(chatdir, exist_ok=True)
-        out = os.path.join(chatdir, base)
+        out = os.path.join(chatdir, f"{vidid}.{ext}")
 
         if not os.path.exists(out):
             vs = str(2.0 / float(speed))
-            # استخدام الـ 16 كور لضغط الملف المسرع بسرعة الصاروخ
+            # 🔥 Fix 2: Use 16 threads and stereo for speedup processing
             cmd = f'ffmpeg -threads 16 -i "{file_path}" -filter:v "setpts={vs}*PTS" -filter:a atempo={speed} -ac 2 -y "{out}"'
             proc = await asyncio.create_subprocess_shell(
                 cmd,
@@ -218,7 +223,7 @@ class Call:
             )
             await proc.communicate()
 
-        # 🛠️ حل المشكلة (Unknown Fix): صمام أمان لمنع الكراش
+        # 🛠️ Fix 3: Ensure path exists and handle 'Unknown' duration
         try:
             dur_raw = await asyncio.get_event_loop().run_in_executor(None, check_duration, out)
             dur = int(dur_raw) if str(dur_raw).isdigit() else int(playing[0]["seconds"])
