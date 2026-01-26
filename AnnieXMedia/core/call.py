@@ -1,5 +1,5 @@
 # Authored By Certified Coders © 2025
-# TITAN EDITION: Clean 16-Core + Fixed Speed/Buffer Logic
+# TITAN EDITION: Flash Start (Optimized for 200MB/s Network)
 import asyncio
 import os
 import traceback
@@ -48,47 +48,40 @@ from AnnieXMedia.utils.errors import capture_internal_err
 autoend = {}
 counter = {}
 
-# --- دالة الانتظار (حل مشكلة السرعة والبث المباشر الوهمي) ---
+# --- دالة الانتظار اللحظي (Flash Buffer) ---
 async def wait_for_buffer(file_path: str, is_video: bool):
     """
-    تنتظر حتى يحتوي الملف على بيانات كافية (Header + Data).
-    هذا يجعل البوت يتعرف عليه كـ 'ملف' وليس 'بث مباشر'، مما يصلح أمر /speed.
+    تنتظر فقط حتى يتم كتابة رأس الملف (Header) لضمان تعرف FFmpeg عليه.
+    بسرعة 200MB/s، هذا يحدث في أقل من جزء من الثانية.
     """
-    # ننتظر 500 كيلوبايت للصوت أو 2 ميجا للفيديو
-    required_size = 2 * 1024 * 1024 if is_video else 512 * 1024 
+    # ننتظر 50 كيلوبايت فقط! (مجرد تأكيد أن التحميل بدأ)
+    required_size = 100 * 1024 if is_video else 50 * 1024 
     timeout = 0
     
-    while timeout < 15: 
+    while timeout < 5: # تقليل مهلة الانتظار القصوى
         if os.path.exists(file_path):
             current_size = os.path.getsize(file_path)
-            # لو الحجم كافي، اخرج فوراً
+            # لو الملف فيه داتا (حتى لو لسه في أول ثانية)، ابدأ فوراً
             if current_size >= required_size:
                 return
-            
-            # لو الملف موجود بس حجمه ثابت (خلص تحميل وكان صغير)
-            if current_size > 0 and timeout > 3:
-                await asyncio.sleep(0.2)
-                if os.path.getsize(file_path) == current_size:
-                     return
-
-        await asyncio.sleep(0.5)
-        timeout += 0.5
+        
+        # فحص كل 0.1 ثانية بدلاً من 0.5 للسرعة القصوى
+        await asyncio.sleep(0.1)
+        timeout += 0.1
     return
 
-# --- إعدادات البث (نظيفة وبدون تعقيدات) ---
+# --- إعدادات البث (High Performance) ---
 def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
     # استخدام 16 كور + تثبيت معدل الصوت
-    # تم إزالة probesize/analyzeduration لمنع الكراش
     titan_flags = "-threads 16 -ac 2 -ar 48000"
     
-    # فقط للروابط الخارجية (ليس لملفات التحميل)
+    # تحسينات الاتصال للروابط المباشرة (Live Stream) فقط
     if str(path).startswith("http"):
         titan_flags += " -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
     
     if ffmpeg_params:
         titan_flags += f" {ffmpeg_params}"
 
-    # STUDIO هو الأفضل لتغيير السرعة (Transcoding)
     audio_q = AudioQuality.STUDIO
 
     if video:
@@ -277,7 +270,7 @@ class Call:
         lang = await get_lang(chat_id)
         _ = get_string(lang)
         
-        # 🔥 انتظار تحميل البيانات قبل التشغيل (إصلاح الكراش والسرعة)
+        # 🔥 Flash Buffer: انتظار 50 كيلوبايت فقط!
         if not str(link).startswith("http"):
              await wait_for_buffer(link, bool(video))
              
@@ -407,7 +400,7 @@ class Call:
                     except:
                         return await mystic.edit_text(_["call_6"], disable_web_page_preview=True)
                     
-                    # 🔥 انتظار المخزون (Buffer) قبل التشغيل
+                    # 🔥 Flash Buffer: الانتظار اللحظي
                     await wait_for_buffer(file_path, video)
 
                     stream = dynamic_media_stream(path=file_path, video=video)
