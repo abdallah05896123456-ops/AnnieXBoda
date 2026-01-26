@@ -1,6 +1,7 @@
 # Authored By Certified Coders © 2025
-# TITANOS CORE + DEEP WATCHDOG (VERBATIM FULL EDITION)
-# FIXED: URL-as-filename + ValueError Unknown + 16-Core Stereo
+# TITANOS CORE v9: ATOMIC SPEED + COOKIE SYNC + 16-CORE TURBO
+# FIXED: Join/Leave loop + Speed Crash + Metadata Latency (Competition Ready)
+
 import asyncio
 import os
 import traceback
@@ -49,12 +50,27 @@ from AnnieXMedia.utils.errors import capture_internal_err
 autoend = {}
 counter = {}
 
-# --- Helper Function for Streams (Optimized for TitanOS) ---
+# --- Helper Function for Streams (Optimized for Competition Speed) ---
 def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
-    # إجبار الاستيريو واستغلال الـ 16 كور وتقليل التقطيع (TitanOS Optimizations)
-    titan_flags = "-threads 16 -ac 2 -ar 48000 -preset ultrafast"
+    # الحصول على مسار الكوكيز لربطه بالـ FFmpeg لضمان استقرار البث
+    cookie_path = "AnnieXMedia/assets/cookies.txt"
+    
+    # 🏎️ أعلام سرعة الضوء (Race Mode Flags)
+    titan_flags = (
+        "-threads 16 -ac 2 -ar 48000 -preset ultrafast "
+        "-probesize 32 -analyzeduration 0 -fflags +nobuffer+fastseek+discardcorrupt"
+    )
+    
     if str(path).startswith("http"):
-        titan_flags += " -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
+        # إرسال الكوكيز والـ User-Agent لليوتيوب لمنع طرد المساعد
+        if os.path.exists(cookie_path):
+            titan_flags += f' -cookies "{cookie_path}"'
+        
+        titan_flags += (
+            ' -user_agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"'
+            " -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2"
+        )
     
     if ffmpeg_params:
         titan_flags += f" {ffmpeg_params}"
@@ -115,7 +131,6 @@ class Call:
         self.five = PyTgCalls(self.userbot5, cache_duration=100) if self.userbot5 else None
 
         self.active_calls: set[int] = set()
-        # 🔥 TitanOS: Turbo Variable added for Web Control
         self.turbo_mode = {} 
 
     @capture_internal_err
@@ -126,7 +141,6 @@ class Call:
     @capture_internal_err
     async def resume_stream(self, chat_id: int) -> None:
         assistant = await group_assistant(self, chat_id)
-        # 🔥 TitanOS Fix: Force Resume (If resume fails, unmute)
         try:
             await assistant.resume(chat_id)
         except:
@@ -179,7 +193,6 @@ class Call:
     @capture_internal_err
     async def skip_stream(self, chat_id: int, link: str, video: Union[bool, str] = None, image: Union[bool, str] = None) -> None:
         assistant = await group_assistant(self, chat_id)
-        # 🔥 ALEXA OPTIMIZATION: Using GroupCallConfig
         ksk = GroupCallConfig(auto_start=False)
         stream = dynamic_media_stream(path=link, video=bool(video))
         await assistant.play(chat_id, stream, config=ksk)
@@ -205,7 +218,7 @@ class Call:
 
         assistant = await group_assistant(self, chat_id)
         
-        # 🛠️ Fix 1: Use vidid as filename to avoid URL-length errors
+        # 🏎️ تحسين: استخدام vidid لضمان استقرار مسار الملف ومعالجته في ثانية واحدة
         vidid = playing[0].get("vidid", "local_file")
         ext = "mp4" if playing[0]["streamtype"] == "video" else "m4a"
         chatdir = os.path.join("playback", str(speed))
@@ -214,8 +227,8 @@ class Call:
 
         if not os.path.exists(out):
             vs = str(2.0 / float(speed))
-            # 🔥 Fix 2: Use 16 threads and stereo for speedup processing
-            cmd = f'ffmpeg -threads 16 -i "{file_path}" -filter:v "setpts={vs}*PTS" -filter:a atempo={speed} -ac 2 -y "{out}"'
+            # استخدام الـ 16 كور ببريسيت ultrafast للمعالجة اللحظية
+            cmd = f'ffmpeg -threads 16 -i "{file_path}" -filter:v "setpts={vs}*PTS" -filter:a atempo={speed} -ac 2 -preset ultrafast -y "{out}"'
             proc = await asyncio.create_subprocess_shell(
                 cmd,
                 stdin=asyncio.subprocess.PIPE,
@@ -223,7 +236,7 @@ class Call:
             )
             await proc.communicate()
 
-        # 🛠️ Fix 3: Ensure path exists and handle 'Unknown' duration
+        # صمام أمان لليوتيوب (Unknown Duration Fix)
         try:
             dur_raw = await asyncio.get_event_loop().run_in_executor(None, check_duration, out)
             dur = int(dur_raw) if str(dur_raw).isdigit() else int(playing[0]["seconds"])
@@ -293,7 +306,7 @@ class Call:
                  await asyncio.sleep(1)
                  await assistant.play(chat_id, stream, config=ksk)
             except:
-                 raise AssistantErr(f"ᴜɴᴀʙʟᴇ ᴛᴏ ᴊᴏɪɴ ᴛʜᴇ ɢʀᴏᴜᴘ ᴄᴀʟʟ.\nRᴇᴀsᴏɴ: {e}")
+                 raise AssistantErr(f"ᴜɴᴀʙʟᴇ ᴛᴏ ᴊᴏɪɴ.\nRᴇᴀsᴏɴ: {e}")
                  
         self.active_calls.add(chat_id)
         await add_active_chat(chat_id)
@@ -512,7 +525,7 @@ class Call:
                 return await app.send_message(original_chat_id, text=_["call_6"])
 
     async def start(self) -> None:
-        LOGGER(__name__).info("Starting PyTgCalls Clients...")
+        LOGGER(__name__).info("Starting Assistants...")
         if config.STRING1:
             await self.one.start()
         if config.STRING2:
