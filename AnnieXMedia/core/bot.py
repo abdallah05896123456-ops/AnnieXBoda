@@ -14,8 +14,12 @@ class MusicBotClient(Client):
             api_id=config.API_ID,
             api_hash=config.API_HASH,
             bot_token=config.BOT_TOKEN,
+            # استغلال الـ 16 كور عبر رفع عدد العمال (Workers)
             workers=48,
             max_concurrent_transmissions=7,
+            # 🔥 التعديل النووي: تفعيل السيرفر المحلي لرفع حتى 2 جيجابايت 🔥
+            local_server=True,
+            base_url="http://127.0.0.1:8081",
         )
         LOGGER(__name__).info("Bot client initialized.")
 
