@@ -1,10 +1,10 @@
-# 1. جلب سيرفر التيليجرام من المصدر الرسمي
+# 1. جلب سيرفر التيليجرام (المصدر الرسمي)
 FROM aiogram/telegram-bot-api:latest AS server_source
 
-# 2. صورة البوت الأساسية (بايثون 3.12)
-FROM python:3.12-slim
+# 2. استخدام بايثون نسخة Alpine عشان التوافق التام والسرعة
+FROM python:3.12-alpine
 
-# تحسينات البيئة لضمان السرعة
+# تحسينات البيئة لضمان السرعة القصوى
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PIP_NO_CACHE_DIR=1
@@ -13,20 +13,15 @@ ENV PATH="${DENO_INSTALL}/bin:${PATH}"
 
 WORKDIR /app
 
-# نسخ سيرفر التيليجرام لداخل البوت
+# نسخ سيرفر التيليجرام (دلوقتي هيشتغل لأن البيئة متوافقة)
 COPY --from=server_source /usr/local/bin/telegram-bot-api /usr/local/bin/telegram-bot-api
 
-# 3. تثبيت أدوات النظام والسرعة (Aria2, FFmpeg)
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        git ffmpeg curl unzip build-essential python3-dev \
-        libffi-dev libxml2-dev libxslt-dev zlib1g-dev gcc \
-        aria2 && \
-    # تثبيت Node.js و Deno لفك التشفير
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs && \
-    curl -fsSL https://deno.land/install.sh | sh && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+# 3. تثبيت الأدوات (نسخة Alpine)
+RUN apk add --no-cache \
+    git ffmpeg curl unzip build-essential python3-dev \
+    libffi-dev aria2 nodejs npm libstdc++ \
+    # تثبيت Deno لفك التشفير النووي
+    && curl -fsSL https://deno.land/install.sh | sh
 
 # 4. تثبيت مكتبات بايثون
 RUN pip install --upgrade pip setuptools wheel
@@ -35,16 +30,13 @@ COPY requirements.txt .
 RUN grep -v -i '^py-tgcalls\|pytgcalls' requirements.txt > filtered.txt && \
     pip install --no-cache-dir -r filtered.txt
 
-# 5. إعدادات فك التشفير التلقائية لـ yt-dlp
+# 5. إعدادات yt-dlp الإجبارية
 RUN mkdir -p /etc/yt-dlp && \
-    echo "--remote-components ejs:github" > /etc/yt-dlp.conf
+    echo "--remote-components ["ejs:github"]" > /etc/yt-dlp.conf
 
-# 6. نسخ الملفات
+# 6. نسخ الملفات وصنع ملف التشغيل (اللي مش موجود عندك)
 COPY . .
-
-# 7. 🔥 الضربة القاضية: صنع ملف التشغيل برمجياً 🔥
-# السطر ده هيخلق ملف entrypoint.sh من العدم عشان متبقاش محتاج ترفعه
-RUN printf "#!/bin/bash\n\
+RUN printf "#!/bin/sh\n\
 telegram-bot-api --local --api-id=\${API_ID} --api-hash=\${API_HASH} &\n\
 sleep 5\n\
 python3 run.py\n" > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
