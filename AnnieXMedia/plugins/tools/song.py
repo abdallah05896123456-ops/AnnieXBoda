@@ -1,4 +1,4 @@
-# System: Song Plugin | Interactive | Full Maintenance | No Emojis | Elongated Text
+# System: Song Plugin | MongoDB Persistence | Pyromod | No Emojis | Elongated Text
 
 import asyncio
 import os
@@ -16,37 +16,50 @@ from AnnieXMedia import app
 from AnnieXMedia.platforms.Youtube import YouTube 
 from AnnieXMedia.platforms.YTProcessor import Processor 
 from AnnieXMedia.utils.inline.song import song_markup
+from AnnieXMedia.misc import dbb
 
-# --- مـتـغـيـرات الـتـحـكـم ---
-SEARCH_SECTION_LOCKED = False
-INLINE_SEARCH_LOCKED = False
+# --- إعـدادات قـاعـدة الـبـيـانـات (لـلـحـفـظ الـدائـم) ---
+songdb = dbb.song_settings
 
-# --- أوامـر الـقـفـل الـعـام (الصيانة) ---
+# دوال مساعدة للتعامل مع الداتا بيز
+async def get_config(key):
+    """جلب حالة القفل من القاعدة"""
+    data = await songdb.find_one({"_id": "song_config"})
+    if not data:
+        return False
+    return data.get(key, False)
+
+async def set_config(key, value):
+    """حفظ حالة القفل في القاعدة"""
+    await songdb.update_one(
+        {"_id": "song_config"}, 
+        {"$set": {key: value}}, 
+        upsert=True
+    )
+
+# --- أوامـر الـقـفـل الـعـام (لـلـقـسـم بـالـكـامـل) ---
 
 @app.on_message(filters.command(["قفل البحث", "تعطيل البحث"], prefixes=["", "/"]) & filters.user(OWNER_ID))
 async def lock_whole_section(client, message):
-    global SEARCH_SECTION_LOCKED
-    SEARCH_SECTION_LOCKED = True
-    await message.reply_text("**تـم قـفـل قـسـم الـبـحـث والـتـحـمـيـل نـهـائـيـاً عـن الـأعـضـاء.**\n\n**يـمـكـنـك فـقـط اسـتـخـدام الـبـوت.**")
+    await set_config("search_locked", True)
+    await message.reply_text("**تـم قـفـل قـسـم الـبـحـث والـتـحـمـيـل نـهـائـيـاً عـن الـأعـضـاء (تـم الـحـفـظ).**\n\n**يـمـكـنـك فـقـط اسـتـخـدام الـبـوت.**")
 
 @app.on_message(filters.command(["فتح البحث", "تفعيل البحث"], prefixes=["", "/"]) & filters.user(OWNER_ID))
 async def unlock_whole_section(client, message):
-    global SEARCH_SECTION_LOCKED
-    SEARCH_SECTION_LOCKED = False
-    await message.reply_text("**تـم فـتـح قـسـم الـبـحـث والـتـحـمـيـل لـلـجـمـيـع.**")
+    await set_config("search_locked", False)
+    await message.reply_text("**تـم فـتـح قـسـم الـبـحـث والـتـحـمـيـل لـلـجـمـيـع (تـم الـحـفـظ).**")
 
-# --- أوامـر قـفـل الانـلايـن ---
+
+# --- أوامـر قـفـل الانـلايـن (الـتـحـويـل لـتـحـمـيـل مـبـاشـر) ---
 
 @app.on_message(filters.command(["قفل انلاين البحث", "قفل انلاين بحث"], prefixes=["", "/"]) & filters.user(OWNER_ID))
 async def lock_inline_search(client, message):
-    global INLINE_SEARCH_LOCKED
-    INLINE_SEARCH_LOCKED = True
+    await set_config("inline_locked", True)
     await message.reply_text("**تـم قـفـل بـحـث الانـلايـن (الأزرار).**\n\n**سـيـتـم الـتـحـمـيـل مـبـاشـرةً عـنـد طـلـب أي أغـنـيـة لـلـجـمـيـع.**")
 
 @app.on_message(filters.command(["فتح انلاين البحث", "فتح انلاين بحث"], prefixes=["", "/"]) & filters.user(OWNER_ID))
 async def unlock_inline_search(client, message):
-    global INLINE_SEARCH_LOCKED
-    INLINE_SEARCH_LOCKED = False
+    await set_config("inline_locked", False)
     await message.reply_text("**تـم فـتـح بـحـث الانـلايـن.**\n\n**سـتـظـهـر أزرار اخـتـيـار الـجـودة عـنـد الـطـلـب.**")
 
 
@@ -54,8 +67,9 @@ async def unlock_inline_search(client, message):
 @app.on_message(filters.regex(r"^/?(اغنية|اغنيه|هات|هاتلي|ابعتلي|song|video|تحميل)(?:\s+(فيد|فيديو|video))?(?:\s+(.+))?$") & ~BANNED_USERS)
 async def unified_song_processor(client, message: Message):
     
-    # 1. فحص القفل العام
-    if SEARCH_SECTION_LOCKED and message.from_user.id != OWNER_ID:
+    # 1. الـتـحـقـق مـن الـقـفـل الـعـام (من الداتا بيز)
+    is_search_locked = await get_config("search_locked")
+    if is_search_locked and message.from_user.id != OWNER_ID:
         return await message.reply_text("**عـذراً، قـسـم الـبـحـث والـتـحـمـيـل مـغـلـق حـالـيـاً لـلـصـيـانـة.**")
 
     match = re.match(r"^/?(اغنية|اغنيه|هات|هاتلي|ابعتلي|song|video|تحميل)(?:\s+(فيد|فيديو|video))?(?:\s+(.+))?$", message.text)
@@ -71,46 +85,41 @@ async def unified_song_processor(client, message: Message):
 
     # 2. الـتـفـاعـل (Pyromod)
     if not query:
-        # إرسال الرسالة أولاً
         prompt = await message.reply_text("**ارسـل الان اسـم الـمـقـطـع الـمـطـلـوب .**")
-        
         try:
-            # التحقق من وجود listen
             if not hasattr(client, "listen"):
-                # إذا لم تكن مفعلة، نطلب الكتابة اليدوية بدلاً من الخطأ
                 await prompt.edit_text("**عـذراً، يـرجـى كـتـابـة الاسـم بـجـانـب الأمـر مـبـاشـرةً.**")
                 return
 
-            # انتظار الرد لمدة 20 ثانية
             response = await client.listen(chat_id=message.chat.id, user_id=message.from_user.id, timeout=20)
-            
             if response and response.text:
                 query = response.text
                 await prompt.delete()
             else:
                 await prompt.edit_text("**تـم انـهـاء الانـتـظـار لـعـدم وجـود رد**")
                 return
-
         except asyncio.TimeoutError:
             await prompt.edit_text("**تـم انـهـاء الانـتـظـار لـعـدم وجـود رد**")
             return
-        except Exception:
+        except:
             await prompt.edit_text("**حـدث خـطـأ، حـاول مـرة أخـرى.**")
             return
 
-    # 3. بدء البحث
     mystic = await message.reply_text("**جـارٍ الـبـحـث عـن الـمـطـلـوب...**")
 
     try:
         title, duration_min, duration_sec, thumbnail, vidid = await YouTube.details(query)
         if duration_sec is None: duration_sec = 0
         
-        # السماح بمدة تصل لـ 4 ساعات (14400 ثانية)
+        # التعديل ليكون الحد 4 ساعات (14400 ثانية)
         if int(duration_sec) > 14400:
             return await mystic.edit_text("**عـذراً، هـذا الـمـقـطـع طـويـل جـداً ولا يـمـكـن تـحـمـيـلـه.**")
         
-        # --- التحميل المباشر (عند القفل) ---
-        if INLINE_SEARCH_LOCKED:
+        # فحص حالة الانلاين من الداتا بيز
+        is_inline_locked = await get_config("inline_locked")
+
+        # --- حـالـة قـفـل الانـلايـن (الـتـحـمـيـل الـمـبـاشـر) ---
+        if is_inline_locked:
              await mystic.edit_text("**جـارٍ الـتـحـمـيـل الـفـوري...**")
              
              is_owner = (message.from_user.id == OWNER_ID)
@@ -118,15 +127,28 @@ async def unified_song_processor(client, message: Message):
              quality_arg = "high" if is_owner else "mid"
 
              file_path = await Processor.download_file(
-                 yturl, quality_arg, is_video_request, title, vidid=vidid, is_owner=is_owner
+                 yturl, 
+                 quality_arg, 
+                 is_video_request, 
+                 title, 
+                 vidid=vidid, 
+                 is_owner=is_owner
              )
              
              await mystic.edit_text("**جـارٍ الـرفـع إلـيـك...**")
+             
              await Processor.upload_alexa_style(
-                 client, mystic, file_path, is_video_request, title, duration_sec, message.from_user.first_name, vidid=vidid
+                 client, 
+                 mystic, 
+                 file_path, 
+                 is_video_request, 
+                 title, 
+                 duration_sec, 
+                 message.from_user.first_name, 
+                 vidid=vidid
              )
 
-        # --- الأزرار (الوضع الطبيعي) ---
+        # --- الـوضـع الـطـبـيـعـي (الأزرار) ---
         else:
             buttons = song_markup(None, vidid)
             await mystic.delete()
@@ -138,7 +160,8 @@ async def unified_song_processor(client, message: Message):
 
     except Exception:
         # Fallback
-        if INLINE_SEARCH_LOCKED or is_video_request:
+        is_inline_locked = await get_config("inline_locked")
+        if is_inline_locked or is_video_request:
             await mystic.edit_text("**جـارٍ الـبـحـث والـتـحـمـيـل الـتـلـقـائـي...**")
             is_owner = (message.from_user.id == OWNER_ID)
             
@@ -156,10 +179,12 @@ async def unified_song_processor(client, message: Message):
         else:
              await mystic.edit_text("**عـذراً، لـم يـتـم الـعـثـور عـلـى نـتـائـج.**")
 
-# --- يـوت (صـوت مـبـاشـر) ---
+# --- أمـر يـوت (صـوت مـبـاشـر) ---
 @app.on_message(filters.command(["يوت"], prefixes=["", "/"]) & ~BANNED_USERS)
 async def yut_direct_audio(client, message: Message):
-    if SEARCH_SECTION_LOCKED and message.from_user.id != OWNER_ID:
+    # التحقق من الداتا بيز
+    is_search_locked = await get_config("search_locked")
+    if is_search_locked and message.from_user.id != OWNER_ID:
         return await message.reply_text("**عـذراً، قـسـم الـبـحـث والـتـحـمـيـل مـغـلـق حـالـيـاً لـلـصـيـانـة.**")
 
     if len(message.command) > 1 and message.command[1] in ["فيد", "فيديو", "video", "vid"]:
@@ -190,10 +215,12 @@ async def yut_direct_audio(client, message: Message):
     except Exception as e:
         await mystic.edit_text(f"**حـدث خـطـأ:** {e}")
 
-# --- يـوت فـيـد (فـيـديـو مـبـاشـر) ---
+# --- أمـر يـوت فـيـد (فـيـديـو مـبـاشـر) ---
 @app.on_message(filters.command(["يوت فيد", "يوت فيديو"], prefixes=["", "/"]) & ~BANNED_USERS)
 async def yut_direct_video(client, message: Message):
-    if SEARCH_SECTION_LOCKED and message.from_user.id != OWNER_ID:
+    # التحقق من الداتا بيز
+    is_search_locked = await get_config("search_locked")
+    if is_search_locked and message.from_user.id != OWNER_ID:
         return await message.reply_text("**عـذراً، قـسـم الـبـحـث والـتـحـمـيـل مـغـلـق حـالـيـاً لـلـصـيـانـة.**")
 
     if len(message.command) < 3: 
@@ -222,21 +249,25 @@ async def yut_direct_video(client, message: Message):
         await mystic.edit_text(f"**حـدث خـطـأ:** {e}")
 
 
-# --- مـعـالـجـة الأزرار ---
+# --- مـعـالـجـة الأزرار (الـكـول بـاك) ---
 @app.on_callback_query(filters.regex(pattern=r"song_download") & ~BANNED_USERS)
 async def song_download_callback(client, CallbackQuery):
-    # التحقق من القفل العام
-    if SEARCH_SECTION_LOCKED and CallbackQuery.from_user.id != OWNER_ID:
+    # التحقق من الداتا بيز في الكول باك
+    is_search_locked = await get_config("search_locked")
+    if is_search_locked and CallbackQuery.from_user.id != OWNER_ID:
         return await CallbackQuery.answer("قـسـم الـتـحـمـيـل مـغـلـق لـلـصـيـانـة.", show_alert=True)
 
-    # التحقق من قفل الانلاين (قد يكون تم تفعيله بعد ظهور الأزرار)
-    if INLINE_SEARCH_LOCKED and CallbackQuery.from_user.id != OWNER_ID:
+    is_inline_locked = await get_config("inline_locked")
+    if is_inline_locked and CallbackQuery.from_user.id != OWNER_ID:
          return await CallbackQuery.answer("تـم قـفـل الـتـحـمـيـل عـبـر الأزرار حـالـيـاً.", show_alert=True)
 
     stype, quality_arg, vidid = CallbackQuery.data.split(None, 1)[1].split("|")
     await CallbackQuery.answer("جـارٍ بـدء الـعـمـلـيـة...")
     
-    mystic = await CallbackQuery.message.edit_text("**جـارٍ الـتـحـمـيـل...**")
+    try:
+        mystic = await CallbackQuery.message.edit_text("**جـارٍ الـتـحـمـيـل...**")
+    except:
+        mystic = await client.send_message(CallbackQuery.message.chat.id, "**جـارٍ الـتـحـمـيـل...**")
     
     is_video = (stype == "video")
     is_owner = (CallbackQuery.from_user.id == OWNER_ID)
@@ -251,6 +282,7 @@ async def song_download_callback(client, CallbackQuery):
         )
         
         await mystic.edit_text("**جـارٍ الـرفـع...**")
+        
         await Processor.upload_alexa_style(
             client, mystic, file_path, is_video, title, duration_sec, CallbackQuery.from_user.first_name, vidid=vidid
         )
@@ -260,7 +292,8 @@ async def song_download_callback(client, CallbackQuery):
 
 @app.on_callback_query(filters.regex(pattern=r"song_helper") & ~BANNED_USERS)
 async def song_helper_callback(client, CallbackQuery):
-    if SEARCH_SECTION_LOCKED and CallbackQuery.from_user.id != OWNER_ID:
+    is_search_locked = await get_config("search_locked")
+    if is_search_locked and CallbackQuery.from_user.id != OWNER_ID:
         return await CallbackQuery.answer("قـسـم الـتـحـمـيـل مـغـلـق لـلـصـيـانـة.", show_alert=True)
 
     stype, vidid = CallbackQuery.data.split(None, 1)[1].split("|")
