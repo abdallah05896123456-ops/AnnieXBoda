@@ -1,5 +1,5 @@
 # Authored By Certified Coders © 2025
-# TITAN EDITION: Smart Buffer + 16-Core Stability
+# TITAN EDITION: Clean 16-Core + Fixed Speed/Buffer Logic
 import asyncio
 import os
 import traceback
@@ -48,53 +48,47 @@ from AnnieXMedia.utils.errors import capture_internal_err
 autoend = {}
 counter = {}
 
-# --- دالة المخزون الذكي (تمنع الكراش 100%) ---
+# --- دالة الانتظار (حل مشكلة السرعة والبث المباشر الوهمي) ---
 async def wait_for_buffer(file_path: str, is_video: bool):
     """
-    تنتظر حتى يتم تحميل جزء من الملف (Buffer) قبل السماح بتشغيله.
-    هذا يمنع FFmpeg من الخروج بسبب "نهاية الملف" الوهمية.
+    تنتظر حتى يحتوي الملف على بيانات كافية (Header + Data).
+    هذا يجعل البوت يتعرف عليه كـ 'ملف' وليس 'بث مباشر'، مما يصلح أمر /speed.
     """
-    # ننتظر 1 ميجا بايت (صوت) أو 5 ميجا (فيديو) - حوالي 10 ثواني تشغيل
-    required_size = 5 * 1024 * 1024 if is_video else 1024 * 1024 
+    # ننتظر 500 كيلوبايت للصوت أو 2 ميجا للفيديو
+    required_size = 2 * 1024 * 1024 if is_video else 512 * 1024 
     timeout = 0
     
-    while timeout < 15: # ننتظر بحد أقصى 15 ثانية
+    while timeout < 15: 
         if os.path.exists(file_path):
             current_size = os.path.getsize(file_path)
-            
-            # لو الحجم كافي، ابدأ فوراً
+            # لو الحجم كافي، اخرج فوراً
             if current_size >= required_size:
                 return
             
-            # لو الملف حجمه ثابت لفترة (النت بطيء أو الملف خلص تحميل)، ابدأ
+            # لو الملف موجود بس حجمه ثابت (خلص تحميل وكان صغير)
             if current_size > 0 and timeout > 3:
-                # تحقق بسيط لو الحجم لم يتغير
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.2)
                 if os.path.getsize(file_path) == current_size:
                      return
 
         await asyncio.sleep(0.5)
         timeout += 0.5
-    
-    # لو الوقت خلص والملف لسه صغير (نادر جداً)، شغله على أي حال
     return
 
-# --- إعدادات البث (مبسطة وقوية) ---
+# --- إعدادات البث (نظيفة وبدون تعقيدات) ---
 def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
-    # 1. Threads 16: قوة المعالج
-    # 2. إزالة فلاتر الـ Buffer اليدوية (هي سبب المشكلة السابقة)
-    # 3. probesize/analyzeduration: لمنع التقطيع في البداية فقط
+    # استخدام 16 كور + تثبيت معدل الصوت
+    # تم إزالة probesize/analyzeduration لمنع الكراش
+    titan_flags = "-threads 16 -ac 2 -ar 48000"
     
-    titan_flags = "-threads 16 -ac 2 -ar 48000 -probesize 10M -analyzeduration 10M"
-    
-    # لو رابط مباشر خارجي (يوتيوب لايف)
+    # فقط للروابط الخارجية (ليس لملفات التحميل)
     if str(path).startswith("http"):
         titan_flags += " -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
     
     if ffmpeg_params:
         titan_flags += f" {ffmpeg_params}"
 
-    # نعود لـ STUDIO لأنه الأكثر استقراراً مع الملفات المحلية
+    # STUDIO هو الأفضل لتغيير السرعة (Transcoding)
     audio_q = AudioQuality.STUDIO
 
     if video:
@@ -283,7 +277,7 @@ class Call:
         lang = await get_lang(chat_id)
         _ = get_string(lang)
         
-        # 🔥 هنا السحر: انتظار المخزون (Buffer)
+        # 🔥 انتظار تحميل البيانات قبل التشغيل (إصلاح الكراش والسرعة)
         if not str(link).startswith("http"):
              await wait_for_buffer(link, bool(video))
              
