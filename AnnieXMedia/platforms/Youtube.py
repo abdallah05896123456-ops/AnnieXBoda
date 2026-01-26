@@ -1,6 +1,6 @@
 # Authored By Certified Coders © 2025
-# NUCLEAR EDITION v7: 1s Instant Link + 5s Delayed RAM Cache + Anti-Crash Logic
-# Optimized for high-speed Fly.io Servers (88GB RAM / 16 Cores)
+# Fixed for platforms/Youtube.py
+# NUCLEAR EDITION: 16-Core Aria2c Download + Instant Direct Stream + RAM Disk
 
 import asyncio
 import os
@@ -20,24 +20,18 @@ try:
 except ImportError:
     logging.basicConfig(level=logging.ERROR)
     def LOGGER(name): return logging.getLogger(name)
-    def time_to_seconds(t):
-        if not t: return 0
-        try:
-            parts = str(t).split(':')
-            if len(parts) == 2: return int(parts[0]) * 60 + int(parts[1])
-            if len(parts) == 3: return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-        except: return 0
-        return 0
+    def time_to_seconds(t): return 0
 
 class Config:
-    # استخدام الـ RAM Disk للسرعة المطلقة 0ms Latency وحماية الهارد
+    # بما أن الرام 88 جيجا، سنستخدم الرام للتخزين المؤقت للحصول على سرعة قراءة وكتابة خرافية
     if os.path.exists("/dev/shm"):
         DOWNLOAD_PATH = "/dev/shm/AnnieDownloads"
     else:
         DOWNLOAD_PATH = os.path.abspath("downloads")
     
     COOKIE_PATH = "AnnieXMedia/assets/cookies.txt"
-    MAX_WORKERS = 16 # استغلال الـ 16 كور بالكامل
+    # استغلال الـ 16 كور بالكامل
+    MAX_WORKERS = 16
 
 if not os.path.exists(Config.DOWNLOAD_PATH):
     os.makedirs(Config.DOWNLOAD_PATH, exist_ok=True)
@@ -105,17 +99,11 @@ class YouTubeAPI:
                 raise ValueError("No Result")
             data = res["result"][0]
             
-            # 🛠️ صمام أمان لليوتيوب (Unknown Duration Fix)
-            # نضمن أن المدة رقمية دايماً عشان ملف الكول ميهنجش
-            duration = data.get("duration")
-            if not duration or any(x.isalpha() for x in str(duration)):
-                duration = "00:00"
-
             track_details = {
                 "title": data["title"],
                 "link": data["link"],
                 "vidid": data["id"],
-                "duration_min": duration,
+                "duration_min": data["duration"],
                 "thumb": data["thumbnails"][0]["url"].split("?")[0],
                 "cookiefile": get_cookie_file(),
             }
@@ -123,7 +111,7 @@ class YouTubeAPI:
                 _cache[link] = (time.time(), (track_details, data["id"]))
             return track_details, data["id"]
         except Exception:
-            return {"title": "Unknown", "link": link, "vidid": "error", "duration_min": "00:00", "thumb": ""}, "error"
+            return {"title": "Unknown", "link": link, "vidid": "error", "duration_min": "0:00", "thumb": ""}, "error"
 
     async def details(self, link: str, videoid: Union[bool, str] = None):
         d, i = await self.track(link, videoid)
@@ -142,30 +130,31 @@ class YouTubeAPI:
         d, _ = await self.track(link, videoid)
         return d.get("thumb")
 
+    # 🔥 التحميل الخلفي باستخدام Aria2c لاستغلال سرعة الـ 3 جيجا 🔥
     def _background_download(self, link, final_path, is_video):
         try:
+            # استخدام 16 اتصال متوازي للتحميل بسرعة الضوء
             aria2_args = [
-                "-x", "16", "-s", "16", "-j", "16", "-k", "2M",
-                "--file-allocation=none", "--disable-ipv6=true"
+                "-x", "16", "-s", "16", "-j", "16", "-k", "1M",
+                "--file-allocation=none",
+                "--disable-ipv6=true" # IPv4 أسرع غالباً في السيرفرات
             ]
             
-            # الجودة الفائقة + الاستيريو (TitanOS Engine)
-            fmt = "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]" if is_video else "bestaudio[ext=m4a]/bestaudio/best"
+            fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]" if is_video else "bestaudio[ext=m4a]/bestaudio/best"
             
             ydl_opts = {
                 "format": fmt,
                 "outtmpl": final_path,
                 "cookiefile": get_cookie_file(),
+                "geo_bypass": True,
+                "nocheckcertificate": True,
                 "quiet": True,
                 "external_downloader": "aria2c",
                 "external_downloader_args": aria2_args,
-                "nocheckcertificate": True,
-                "postprocessor_args": ['-threads', '16', '-ac', '2']
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([link])
-            print(f"✅ [SUCCESS] RAM Disk Cache Ready: {final_path}", flush=True)
-        except:
+        except Exception:
             pass
 
     async def download(
@@ -189,43 +178,68 @@ class YouTubeAPI:
             else: vid_id = str(int(time.time()))
         except: vid_id = str(int(time.time()))
 
+        # تحديد المسار في الرام
         ext = "mp4" if video else "m4a"
         ram_path = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
 
-        # 1. فحص الرام (Instant RAM Hit)
-        if os.path.exists(ram_path) and os.path.getsize(ram_path) > 10240:
-            print(f"⚡ RAM Cache Hit (Speed Support Ready): {vid_id}", flush=True)
+        # 1. فحص الكاش (RAM Cache Check)
+        if os.path.exists(ram_path) and os.path.getsize(ram_path) > 1024:
+            print(f"⚡ RAM Cache Hit: {vid_id}", flush=True)
             return ram_path, False
 
-        # 2. جلب الرابط المباشر للبث الفوري (0.5 ثانية)
-        print(f"🚀 [ULTRA-INSTANT] Fetching Stream for: {vid_id}", flush=True)
+        # 2. جلب الرابط المباشر (Direct Stream Fetch)
+        print(f"🚀 Fetching Direct Link for: {vid_id}", flush=True)
+        
         try:
-            # أوامر مختصرة جداً لجلب الرابط الخام فقط
-            cmd = ["yt-dlp", "-g", "--no-warnings", "--cookies", get_cookie_file() or "", "--geo-bypass"]
-            cmd.extend(["-f", "best[height<=720]/best"] if video else ["-f", "bestaudio[ext=m4a]/bestaudio"])
+            cmd = ["yt-dlp", "-g", "--cookies", get_cookie_file() or ""]
+            
+            # رفع الجودة لأن النت عندك قوي (720p بدلاً من 480p)
+            if video:
+                cmd.extend(["-f", "best[height<=720]"])
+            else:
+                cmd.extend(["-f", "bestaudio[ext=m4a]/bestaudio"])
+            
             cmd.append(link)
 
             process = await asyncio.create_subprocess_exec(
                 *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
-            stdout, _ = await process.communicate()
+            stdout, stderr = await process.communicate()
 
             if stdout:
                 direct_link = stdout.decode().split("\n")[0].strip()
                 
-                # 🔥 الخطة النووية: المساعد يدخل الآن.. والتحميل يبدأ بعد 5 ثواني في صمت لدعم الـ Speed
-                async def smart_buffering_task():
-                    await asyncio.sleep(5)
-                    print(f"🛠️ [SMART-DELAY] Buffering {vid_id} to RAM Disk...", flush=True)
-                    loop.run_in_executor(self.pool, self._background_download, link, ram_path, video)
+                # 3. تشغيل التحميل في الخلفية (Background Cache)
+                loop.run_in_executor(self.pool, self._background_download, link, ram_path, video)
 
-                asyncio.create_task(smart_buffering_task())
+                # 4. إرجاع الرابط المباشر فوراً
                 return direct_link, True
-        except:
-            pass
+            else:
+                print(f"❌ Direct Link Failed", flush=True)
+        except Exception as e:
+            print(f"❌ Error fetching direct link: {e}", flush=True)
 
-        # Fallback سريع لو الرابط المباشر فشل
-        return link, True
+        # Fallback
+        def _fallback_download():
+            try:
+                fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]" if video else "bestaudio[ext=m4a]"
+                ydl_opts = {
+                    "format": fmt,
+                    "outtmpl": ram_path,
+                    "cookiefile": get_cookie_file(),
+                    "quiet": True
+                }
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([link])
+                return ram_path
+            except: return None
+
+        print("⚠️ Direct Link Failed, Fallback to Download...", flush=True)
+        downloaded_file = await loop.run_in_executor(self.pool, _fallback_download)
+        if downloaded_file:
+            return downloaded_file, False
+        
+        return None, False
 
     async def playlist(self, link, limit, user_id, videoid: Union[bool, str] = None):
         if videoid: link = self.listbase + link
