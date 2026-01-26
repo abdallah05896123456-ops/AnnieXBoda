@@ -1,10 +1,11 @@
-﻿# Authored By Certified Coders © 2025
+# Authored By Certified Coders © 2025
 import random
 from typing import Dict, List, Union
 
 from AnnieXMedia import userbot
 from AnnieXMedia.core.mongo import mongodb
 
+# --- تـعـريـفـات الـمـجـمـوعـات (Collections) ---
 authdb = mongodb.adminauth
 authuserdb = mongodb.authuser
 autoenddb = mongodb.autoend
@@ -23,7 +24,11 @@ skipdb = mongodb.skipmode
 sudoersdb = mongodb.sudoers
 usersdb = mongodb.tgusersdb
 
+# --- الإضـافـة الـجـديـدة (لـحـل مـشـكـلـة حـفـظ إعـدادات الـأغـانـي) ---
+song_settings = mongodb.song_settings
+# -------------------------------------------------------------
 
+# --- مـتـغـيـرات الـتـخـزيـن الـمـؤقـت (Cache) ---
 active = []
 activevideo = []
 assistantdict = {}
@@ -39,6 +44,8 @@ playmode = {}
 playtype = {}
 skipmode = {}
 mute = {}
+
+# --- الـدوال (Functions) ---
 
 async def get_assistant_number(chat_id: int) -> str:
     assistant = assistantdict.get(chat_id)
