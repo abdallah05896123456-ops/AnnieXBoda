@@ -1,5 +1,5 @@
 # Authored By Certified Coders © 2025
-# PLATFORM: YOUTUBE | PROGRESSIVE STREAMING EDITION
+# PLATFORM: YOUTUBE | PROGRESSIVE STREAMING (No-Part Edition)
 import asyncio
 import os
 import re
@@ -27,6 +27,7 @@ class Config:
         DOWNLOAD_PATH = os.path.abspath("downloads")
     
     COOKIE_PATH = "AnnieXMedia/assets/cookies.txt"
+    # استغلال 16 كور
     MAX_WORKERS = 16
 
 if not os.path.exists(Config.DOWNLOAD_PATH):
@@ -119,11 +120,10 @@ class YouTubeAPI:
         d, _ = await self.track(link, videoid)
         return d.get("thumb")
 
-    # 🔥 دالة التحميل الخلفي المتطور (Progressive Download) 🔥
+    # 🔥 دالة التحميل في الخلفية (Fire & Forget)
     def _background_download(self, link, final_path, is_video):
-        # لو الملف موجود وكامل، مفيش داعي نحمل تاني
-        # (شرط تقريبي للحجم لتجنب الملفات الفاسدة)
-        if os.path.exists(final_path) and os.path.getsize(final_path) > 1024 * 1024: 
+        # لو الملف موجود وكبير، خلاص مش هنحمل
+        if os.path.exists(final_path) and os.path.getsize(final_path) > 5 * 1024 * 1024:
             return
 
         aria2_args = [
@@ -142,9 +142,7 @@ class YouTubeAPI:
             "quiet": True,
             "external_downloader": "aria2c",
             "external_downloader_args": aria2_args,
-            
-            # 🔥 النقطة الجوهرية: عدم استخدام .part
-            # هذا يسمح لـ FFmpeg بقراءة الملف بينما Aria2c يكتب فيه
+            # 🔥 nopart: الملف يظهر فوراً ويقرأه البوت أثناء التحميل
             "nopart": True, 
         }
         try:
@@ -177,15 +175,14 @@ class YouTubeAPI:
         ext = "mp4" if video else "m4a"
         ram_path = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
 
-        # لو الملف موجود (كاش)، رجعه علطول
+        # لو الملف موجود من قبل، نرجعه فوراً
         if os.path.exists(ram_path) and os.path.getsize(ram_path) > 1024:
             return ram_path, False
 
-        # تشغيل التحميل في الخلفية (Thread منفصل)
+        # نشغل التحميل في الخلفية
         loop.run_in_executor(self.pool, self._background_download, link, ram_path, video)
 
-        # نرجع مسار الملف فوراً + True
-        # (True هنا بتعرف البوت إن ده تحميل تقدمي عشان يستنى الـ Buffer)
+        # نرجع المسار فوراً (حتى لو لسه 0 بايت) + True (علامة إنه Progressive)
         return ram_path, True
 
     async def playlist(self, link, limit, user_id, videoid: Union[bool, str] = None):
