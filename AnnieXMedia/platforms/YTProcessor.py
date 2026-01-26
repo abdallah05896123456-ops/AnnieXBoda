@@ -1,4 +1,4 @@
-# System: Processor | Ultra Speed | Force JPG Thumb | MetaData Injection | Auto-Clean
+# System: Processor | Ultra Speed (RAM) | Force JPG | MetaData | Anti-Lag
 
 import asyncio
 import os
@@ -14,22 +14,22 @@ from AnnieXMedia import LOGGER
 from AnnieXMedia.utils.formatters import convert_bytes
 
 class Config:
-    # استخدام الرام ديسك للسرعة القصوى، مع مجلد احتياطي
+    # استخدام ذاكرة الرام (RAM Disk) للتخزين المؤقت لسرعة خيالية في التجميع
     DOWNLOAD_PATH = "/dev/shm/AnnieDownloads" if os.path.exists("/dev/shm") else "downloads"
     USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
     MAX_WORKERS = 16 
 
-# إنشاء المجلد
+# التأكد من وجود المجلد
 if not os.path.exists(Config.DOWNLOAD_PATH):
     os.makedirs(Config.DOWNLOAD_PATH, exist_ok=True)
 
 class YTProcessorAPI:
     def __init__(self):
         self.pool = ThreadPoolExecutor(max_workers=Config.MAX_WORKERS)
-        self._clean_cache() # تنظيف تلقائي عند بدء التشغيل
+        self._clean_cache() # تنظيف الكاش عند بداية التشغيل
 
     def _clean_cache(self):
-        """ميزة جديدة: تنظيف المخلفات عند البدء لتسريع السيرفر"""
+        """تنظيف الملفات العالقة لتفريغ الرام"""
         try:
             for filename in os.listdir(Config.DOWNLOAD_PATH):
                 file_path = os.path.join(Config.DOWNLOAD_PATH, filename)
@@ -106,13 +106,14 @@ class YTProcessorAPI:
         ext = "mp4" if is_video else "mp3"
         final_file = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id_str}.{ext}")
         
+        # كاش الرام (سرعة القراءة فورية)
         if os.path.exists(final_file) and os.path.getsize(final_file) > 1024:
             return final_file
 
         cookie_file = self.get_cookie_file()
         if not url.startswith("http"): url = f"ytsearch1:{url}"
 
-        # --- إعدادات السرعة القصوى (Ultra Speed Aria2) ---
+        # --- إعدادات Aria2c المعدلة لمنع التعليق ---
         base_opts = {
             "outtmpl": os.path.join(Config.DOWNLOAD_PATH, f"{vid_id_str}.%(ext)s"),
             "user_agent": Config.USER_AGENT,
@@ -120,22 +121,21 @@ class YTProcessorAPI:
             "nocheckcertificate": True,
             "external_downloader": "aria2c",
             "external_downloader_args": [
-                "-x", "16",       # 16 اتصالات لكل سيرفر
-                "-s", "16",       # تقسيم الملف لـ 16 جزء
+                "-x", "16",       # 16 خط اتصال
+                "-s", "16",       # تقسيم لـ 16 جزء
                 "-k", "1M",       # حجم القطعة
                 "--max-connection-per-server=16",
+                "--file-allocation=none", # الحل السحري: يمنع حجز المساحة المسبق الذي يسبب البطء
                 "--min-split-size=1M"
             ],
             "writethumbnail": True, 
             "socket_timeout": 300,
             "retries": 15,
-            "fragment_retries": 15,
         }
         
         if is_video:
-            # منطق الفيديو
+            # منطق الفيديو: المطور يحصل على Max Quality
             if quality_arg == "high" or (is_owner and quality_arg == "best"):
-                # تحميل أعلى جودة (فيديو+صوت) ودمجهم
                 fmt = "bestvideo+bestaudio/best"
             elif quality_arg == "mid":
                 fmt = "bestvideo[height<=720]+bestaudio/best[height<=720]/best"
@@ -144,7 +144,7 @@ class YTProcessorAPI:
             else:
                 fmt = "bestvideo[height<=720]+bestaudio/best[height<=720]/best"
         else:
-            # منطق الصوت
+            # منطق الصوت: المطور 320kbps
             if is_owner or quality_arg == "high":
                 fmt = "bestaudio/best"
                 quality = '320'
@@ -162,14 +162,14 @@ class YTProcessorAPI:
                     'preferredquality': quality
                 },
                 {
-                    'key': 'FFmpegMetadata', # ميزة جديدة: إضافة اسم الفنان للأغنية
+                    'key': 'FFmpegMetadata', # إضافة اسم الفنان
                     'add_metadata': True
                 },
                 {
-                    'key': 'EmbedThumbnail' # ميزة جديدة: دمج الغلاف داخل الملف
+                    'key': 'EmbedThumbnail' # دمج الغلاف
                 },
                 {
-                    'key': 'FFmpegThumbnailsConvertor', # ميزة جديدة: تحويل الغلاف لـ JPG إجبارياً
+                    'key': 'FFmpegThumbnailsConvertor', # الحل لمشكلة اختفاء الغلاف: تحويله لـ JPG
                     'format': 'jpg'
                 }
             ]
@@ -212,22 +212,20 @@ class YTProcessorAPI:
         caption = f"**الـعـنـوان:** {title}\n**طـلـب:** {user_name}"
         chat_id = mystic_msg.chat.id
         
-        # البحث الذكي عن الغلاف (الأولوية للـ JPG)
+        # البحث عن الغلاف (JPG حصراً لضمان عمله في تيليجرام)
         thumb_path = None
         base_name = os.path.splitext(file_path)[0]
         
-        # 1. البحث بالاسم المطابق (الأدق)
-        for ext in [".jpg", ".jpeg", ".png", ".webp"]:
-            potential_thumb = f"{base_name}{ext}"
-            if os.path.exists(potential_thumb):
-                thumb_path = potential_thumb
-                break
+        # 1. البحث بالاسم المطابق (النتيجة من التحويل)
+        if os.path.exists(f"{base_name}.jpg"):
+            thumb_path = f"{base_name}.jpg"
         
-        # 2. البحث بالـ ID إذا فشل الاسم
+        # 2. محاولة احتياطية شاملة
         if not thumb_path and vidid:
              possible_files = glob.glob(os.path.join(Config.DOWNLOAD_PATH, f"*{vidid}*"))
              for f in possible_files:
-                if f.endswith((".jpg", ".jpeg", ".png", ".webp")) and not f.endswith((".mp3", ".mp4", ".mkv")):
+                # نستهدف JPG لأننا حولناه بالفعل
+                if f.endswith(".jpg") and not f.endswith((".mp3", ".mp4", ".mkv")):
                     thumb_path = f
                     break
 
@@ -247,14 +245,12 @@ class YTProcessorAPI:
                     caption=caption,
                     duration=duration,
                     title=title,
-                    performer=user_name # هنا يظهر اسم الطالب كـ (Performer)
+                    performer=user_name # يظهر اسم الطالب كـ مؤدي
                 )
             
-            # استبدال الرسالة (Alexa Style)
             await mystic_msg.edit_media(media=media)
             
         except Exception:
-            # في حال فشل التعديل، إرسال جديد
             try:
                 await mystic_msg.delete()
                 if is_video:
@@ -280,10 +276,6 @@ class YTProcessorAPI:
                 print(f"Upload Error: {e}")
                 return False
         
-        # لا نحذف الملفات فوراً لكي يستفيد الكاش منها، سيقوم Clean_cache بحذفها عند الريستارت
-        # أو يمكنك تفعيل الحذف التالي لو المساحة ضيقة جداً:
-        # if thumb_path and os.path.exists(thumb_path): os.remove(thumb_path)
-            
         return True
 
 Processor = YTProcessorAPI()
