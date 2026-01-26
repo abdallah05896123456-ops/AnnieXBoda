@@ -70,7 +70,7 @@ class YTProcessorAPI:
         keyboard = []
         
         if stype == "audio":
-            # للصوت: فائقة (320)، متوسطة (128)، منخفضة (64/48)
+            # للصوت: فائقة (320)، متوسطة (128)، منخفضة (64)
             keyboard.append([InlineKeyboardButton(text="جـودة فـائـقـة", callback_data=f"song_download audio|high|{vidid}")])
             keyboard.append([InlineKeyboardButton(text="جـودة مـتـوسـطـة", callback_data=f"song_download audio|mid|{vidid}")])
             keyboard.append([InlineKeyboardButton(text="جـودة مـنـخـفـضـة", callback_data=f"song_download audio|low|{vidid}")])
@@ -78,22 +78,18 @@ class YTProcessorAPI:
         else:
             # للفيديو: تحليل الجودات المتاحة لتحديد ما يمكن عرضه
             has_high = False # 1080, 2K, 4K
-            has_mid = False  # 720, 480
-            has_low = False  # 360, 240, 144
             
             if formats:
                 for x in formats:
                     h = x.get("height")
                     if h:
                         if h >= 1080: has_high = True
-                        elif 480 <= h <= 720: has_mid = True
-                        elif h < 480: has_low = True
 
-            # عرض الأزرار بناءً على التوفر (أو عرض الكل كخيار افتراضي)
+            # عرض الأزرار
             if has_high:
                 keyboard.append([InlineKeyboardButton(text="جـودة فـائـقـة (4K/1080)", callback_data=f"song_download video|high|{vidid}")])
             
-            # المتوسطة والمنخفضة نعرضهم دائماً لأنهم متاحين غالباً
+            # المتوسطة والمنخفضة نعرضهم دائماً
             keyboard.append([InlineKeyboardButton(text="جـودة مـتـوسـطـة (720/480)", callback_data=f"song_download video|mid|{vidid}")])
             keyboard.append([InlineKeyboardButton(text="جـودة مـنـخـفـضـة (360/144)", callback_data=f"song_download video|low|{vidid}")])
         
@@ -118,7 +114,7 @@ class YTProcessorAPI:
             "nocheckcertificate": True,
             "external_downloader": "aria2c",
             "external_downloader_args": ["-x", "16", "-s", "16", "-k", "1M"],
-            "writethumbnail": True, # هذا السطر مهم جداً لتحميل الغلاف
+            "writethumbnail": True, # هام جداً لتحميل الغلاف
         }
         
         if is_video:
@@ -145,7 +141,7 @@ class YTProcessorAPI:
                 quality = '128' 
             elif quality_arg == "low":
                 fmt = "bestaudio/best"
-                quality = '64' # حجم صغير جداً
+                quality = '64'
             else:
                 fmt = "bestaudio/best"
                 quality = '128'
@@ -201,7 +197,7 @@ class YTProcessorAPI:
             # نبحث عن أي ملف يبدأ بـ ID وليس فيديو أو صوت
             possible_files = glob.glob(os.path.join(Config.DOWNLOAD_PATH, f"{vidid}*"))
             for f in possible_files:
-                if f.endswith((".jpg", ".webp", ".png", ".jpeg")):
+                if f.endswith((".jpg", ".webp", ".png", ".jpeg")) and not f.endswith((".mp3", ".mp4", ".mkv")):
                     thumb_path = f
                     break
         
