@@ -1,6 +1,6 @@
 # Authored By Certified Coders © 2025
 # Fixed for platforms/Youtube.py
-# NUCLEAR EDITION: 16-Core Aria2c Download + Instant Direct Stream + RAM Disk
+# NUCLEAR EDITION: 16-Core Aria2c Download + MP3 Converter + 2GB Local Server Support
 
 import asyncio
 import os
@@ -24,7 +24,7 @@ except ImportError:
     def convert_bytes(b): return "0 B"
 
 class Config:
-    # استخدام الرام ديسك للحصول على سرعة خرافية في المعالجة
+    # استخدام الرام ديسك (50GB متاح) للحصول على سرعة خرافية في المعالجة
     if os.path.exists("/dev/shm"):
         DOWNLOAD_PATH = "/dev/shm/AnnieDownloads"
     else:
@@ -132,12 +132,12 @@ class YouTubeAPI:
         return d.get("thumb")
 
     def _background_download(self, link, final_path, is_video):
-        """التحميل الخلفي مع التحويل لـ MP3 باستخدام FFmpeg والـ Cookies"""
+        """التحميل الخلفي بـ 16 اتصال مع التحويل لـ MP3 أو دمج الفيديو"""
         try:
             aria2_args = ["-x", "16", "-s", "16", "-j", "16", "-k", "1M"]
             if is_video:
                 ydl_opts = {
-                    "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]",
+                    "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]",
                     "outtmpl": final_path,
                     "external_downloader": "aria2c",
                     "external_downloader_args": aria2_args,
@@ -177,39 +177,34 @@ class YouTubeAPI:
         loop = asyncio.get_running_loop()
         is_vid = (video or songvideo)
 
-        try:
-            if "v=" in link: vid_id = link.split("v=")[1].split("&")[0]
-            else: vid_id = str(int(time.time()))
-        except: vid_id = str(int(time.time()))
-
+        vid_id = str(int(time.time()))
         ext = "mp4" if is_vid else "mp3"
         ram_path = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
 
         if os.path.exists(ram_path) and os.path.getsize(ram_path) > 1024:
             return ram_path, False
 
-        try:
-            # استخدام الكوكيز والمكونات البعيدة في جلب الرابط المباشر
-            cmd = ["yt-dlp", "-g", "--cookies", get_cookie_file() or "", "--remote-components", "ejs:github"]
-            cmd.extend(["-f", "best[height<=720]" if is_vid else "bestaudio"])
-            cmd.append(link)
+        # استخدام الرابط المباشر للصوت فقط لضمان السرعة
+        if not is_vid:
+            try:
+                cmd = ["yt-dlp", "-g", "--cookies", get_cookie_file() or "", "--remote-components", "ejs:github"]
+                cmd.extend(["-f", "bestaudio"])
+                cmd.append(link)
+                process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                stdout, _ = await process.communicate()
+                if stdout:
+                    direct_link = stdout.decode().split("\n")[0].strip()
+                    loop.run_in_executor(self.pool, self._background_download, link, ram_path, False)
+                    return direct_link, True
+            except: pass
 
-            process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-            stdout, _ = await process.communicate()
-
-            if stdout:
-                direct_link = stdout.decode().split("\n")[0].strip()
-                loop.run_in_executor(self.pool, self._background_download, link, ram_path, is_vid)
-                return direct_link, True
-        except Exception:
-            pass
-
+        # في حالة الفيديو: يجب التنزيل والدمج لضمان وصول الصوت والصورة معاً
         def _fallback_download():
             try:
-                fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]" if is_vid else "bestaudio/best"
+                fmt = f"{format_id}+bestaudio/best" if format_id else "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]"
                 ydl_opts = {
                     "format": fmt, 
-                    "outtmpl": ram_path, 
+                    "outtmpl": ram_path.replace(".mp3", ""), 
                     "cookiefile": get_cookie_file(), 
                     "quiet": True,
                     "remote_components": ["ejs:github"],
@@ -245,7 +240,7 @@ class YouTubeAPI:
         return formats_available, link
 
     async def get_quality_buttons(self, vidid, stype):
-        """توليد أزرار الجودات من داخل المحرك بنسق مطول"""
+        """توليد أزرار الجودات بنسق مطول مباشرة من المحرك"""
         formats_available, _ = await self.formats(vidid, True)
         keyboard = []
         if stype == "audio":
@@ -253,7 +248,7 @@ class YouTubeAPI:
             for x in formats_available:
                 if "audio" in x.get("format"):
                     if x.get("filesize") is None: continue
-                    form = x.get("format_note", "Audio").title()
+                    form = "MP3 HQ" if "320" in x.get("format") else "Audio"
                     if form not in done: 
                         done.append(form)
                         keyboard.append([InlineKeyboardButton(text=f"صـوت {form} الـحـجـم {convert_bytes(x.get('filesize'))}", callback_data=f"song_download {stype}|{x.get('format_id')}|{vidid}")])
@@ -268,7 +263,7 @@ class YouTubeAPI:
         return keyboard
 
     async def send_nuclear_file(self, client, chat_id, file_path, is_direct, is_video, title, duration, thumb, user_name):
-        """دالة الرفع والتنظيف التلقائي للمحرك النووي"""
+        """دالة الرفع النووي: تدعم حتى 2 جيجابايت مع التنظيف التلقائي"""
         from pyrogram import enums
         caption = f"طـلـب بـواسـطـة {user_name}"
         try:
@@ -278,10 +273,14 @@ class YouTubeAPI:
             else:
                 await client.send_chat_action(chat_id, enums.ChatAction.UPLOAD_AUDIO)
                 await client.send_audio(chat_id=chat_id, audio=file_path, caption=caption, duration=duration, title=title, performer="الـمـحـرك الـنـووي", thumb=thumb)
+            
+            # تنظيف الرام ديسك فور الإرسال لضمان خفة النظام
             if not is_direct and os.path.exists(file_path): os.remove(file_path)
             if thumb and os.path.exists(thumb): os.remove(thumb)
             return True
-        except: return False
+        except Exception as e:
+            print(f"❌ Upload Error: {e}", flush=True)
+            return False
 
     async def slider(self, link: str, query_type: int, videoid: Union[bool, str] = None):
         if videoid: link = self.base + link
