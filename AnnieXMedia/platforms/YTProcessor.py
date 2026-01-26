@@ -1,4 +1,4 @@
-# System: Direct Upload Processor | Alexa Mode | Smart Cache | No Assistant
+# System: Processor | Fix Thumbnails | 3 Quality Levels | No Emojis
 
 import asyncio
 import os
@@ -7,8 +7,7 @@ import random
 import glob
 import yt_dlp
 from concurrent.futures import ThreadPoolExecutor
-from pyrogram.types import InputMediaAudio, InputMediaVideo
-from pyrogram.errors import MessageNotModified
+from pyrogram.types import InputMediaAudio, InputMediaVideo, InlineKeyboardButton
 from config import LOGGER_ID
 from AnnieXMedia import LOGGER
 from AnnieXMedia.utils.formatters import convert_bytes
@@ -35,6 +34,9 @@ class YTProcessorAPI:
         return random.choice(valid) if valid else None
 
     async def get_quality_buttons(self, vidid, stype):
+        """
+        تقسيم الجودات إلى 3 فئات فقط: فائقة، متوسطة، منخفضة
+        """
         yturl = f"https://www.youtube.com/watch?v={vidid}"
         cookie_file = self.get_cookie_file()
         
@@ -52,6 +54,7 @@ class YTProcessorAPI:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 return ydl.extract_info(yturl, download=False)
         
+        formats = []
         try:
             info = await loop.run_in_executor(self.pool, _fetch)
             formats = info.get("formats", [])
@@ -62,25 +65,51 @@ class YTProcessorAPI:
                 info = await loop.run_in_executor(self.pool, _fetch)
                 formats = info.get("formats", [])
             except:
-                return [] 
+                pass 
 
-        # (كود الأزرار الذي يعمل بشكل صحيح سيتم استخدامه في song.py)
-        # هذا الجزء فقط للتحقق، song.py يحتوي على المنطق الكامل للأزرار
-        return []
+        keyboard = []
+        
+        if stype == "audio":
+            # للصوت: فائقة (320)، متوسطة (128)، منخفضة (64/48)
+            keyboard.append([InlineKeyboardButton(text="جـودة فـائـقـة", callback_data=f"song_download audio|high|{vidid}")])
+            keyboard.append([InlineKeyboardButton(text="جـودة مـتـوسـطـة", callback_data=f"song_download audio|mid|{vidid}")])
+            keyboard.append([InlineKeyboardButton(text="جـودة مـنـخـفـضـة", callback_data=f"song_download audio|low|{vidid}")])
+
+        else:
+            # للفيديو: تحليل الجودات المتاحة لتحديد ما يمكن عرضه
+            has_high = False # 1080, 2K, 4K
+            has_mid = False  # 720, 480
+            has_low = False  # 360, 240, 144
+            
+            if formats:
+                for x in formats:
+                    h = x.get("height")
+                    if h:
+                        if h >= 1080: has_high = True
+                        elif 480 <= h <= 720: has_mid = True
+                        elif h < 480: has_low = True
+
+            # عرض الأزرار بناءً على التوفر (أو عرض الكل كخيار افتراضي)
+            if has_high:
+                keyboard.append([InlineKeyboardButton(text="جـودة فـائـقـة (4K/1080)", callback_data=f"song_download video|high|{vidid}")])
+            
+            # المتوسطة والمنخفضة نعرضهم دائماً لأنهم متاحين غالباً
+            keyboard.append([InlineKeyboardButton(text="جـودة مـتـوسـطـة (720/480)", callback_data=f"song_download video|mid|{vidid}")])
+            keyboard.append([InlineKeyboardButton(text="جـودة مـنـخـفـضـة (360/144)", callback_data=f"song_download video|low|{vidid}")])
+        
+        keyboard.append([InlineKeyboardButton(text="إغـلاق", callback_data="close")])
+        return keyboard
 
     async def download_file(self, url, quality_arg, is_video, title, vidid=None, is_owner=False):
         vid_id_str = vidid if vidid else str(int(time.time()))
         ext = "mp4" if is_video else "mp3"
         final_file = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id_str}.{ext}")
         
-        # كاش الرام
         if os.path.exists(final_file) and os.path.getsize(final_file) > 1024:
             return final_file
 
         cookie_file = self.get_cookie_file()
-        
-        if not url.startswith("http"):
-            url = f"ytsearch1:{url}"
+        if not url.startswith("http"): url = f"ytsearch1:{url}"
 
         base_opts = {
             "outtmpl": os.path.join(Config.DOWNLOAD_PATH, f"{vid_id_str}.%(ext)s"),
@@ -89,26 +118,38 @@ class YTProcessorAPI:
             "nocheckcertificate": True,
             "external_downloader": "aria2c",
             "external_downloader_args": ["-x", "16", "-s", "16", "-k", "1M"],
-            "writethumbnail": True,
+            "writethumbnail": True, # هذا السطر مهم جداً لتحميل الغلاف
         }
         
         if is_video:
-            if is_owner and (quality_arg == "best" or quality_arg is None):
-                fmt = f"bestvideo+bestaudio/best"
+            # منطق الجودات الجديد للفيديو
+            if quality_arg == "high" or (is_owner and quality_arg == "best"):
+                # فائقة: هات أفضل شيء (4K/2K/1080)
+                fmt = "bestvideo+bestaudio/best"
+            elif quality_arg == "mid":
+                # متوسطة: حد أقصى 720
+                fmt = "bestvideo[height<=720]+bestaudio/best[height<=720]/best"
+            elif quality_arg == "low":
+                # منخفضة: حد أقصى 360
+                fmt = "bestvideo[height<=360]+bestaudio/best[height<=360]/best"
             else:
-                if str(quality_arg).isdigit():
-                    height = quality_arg
-                    fmt = f"bestvideo[height<={height}]+bestaudio/best[height<={height}]/best"
-                else:
-                    fmt = "bestvideo[height<=720]+bestaudio/best[height<=720]/best"
+                # افتراضي
+                fmt = "bestvideo[height<=720]+bestaudio/best[height<=720]/best"
         else:
-            if is_owner:
+            # منطق الجودات الجديد للصوت
+            if quality_arg == "high" or is_owner:
                 fmt = "bestaudio/best"
                 quality = '320'
-            else:
+            elif quality_arg == "mid":
                 fmt = "bestaudio/best"
                 quality = '128' 
-                
+            elif quality_arg == "low":
+                fmt = "bestaudio/best"
+                quality = '64' # حجم صغير جداً
+            else:
+                fmt = "bestaudio/best"
+                quality = '128'
+
             base_opts["postprocessors"] = [
                 {'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': quality},
                 {'key': 'EmbedThumbnail'}, 
@@ -131,7 +172,6 @@ class YTProcessorAPI:
         })
 
         loop = asyncio.get_running_loop()
-        
         def _run(opts):
             with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.download([url])
@@ -148,30 +188,28 @@ class YTProcessorAPI:
         return final_file
 
     async def upload_alexa_style(self, client, mystic_msg, file_path, is_video, title, duration, user_name, vidid=None):
-        """
-        الرفع المباشر (Direct Upload) للبوت في نفس المحادثة.
-        """
         if not file_path or not os.path.exists(file_path):
             return False
 
-        caption = f"**العنوان:** {title}\n**طلب:** {user_name}"
-        chat_id = mystic_msg.chat.id  # الرفع لنفس الشات حصراً
+        caption = f"**الـعـنـوان:** {title}\n**طـلـب:** {user_name}"
+        chat_id = mystic_msg.chat.id
         
-        # البحث عن الغلاف
+        # البحث عن ملف الغلاف (الصورة)
         thumb_path = None
         if vidid:
-            possible_thumbs = glob.glob(os.path.join(Config.DOWNLOAD_PATH, f"{vidid}.*"))
-            for f in possible_thumbs:
-                if f.endswith((".jpg", ".webp", ".png")) and "mp3" not in f and "mp4" not in f:
+            # yt-dlp قد يحفظ الصورة بصيغ مختلفة (webp, jpg, png)
+            # نبحث عن أي ملف يبدأ بـ ID وليس فيديو أو صوت
+            possible_files = glob.glob(os.path.join(Config.DOWNLOAD_PATH, f"{vidid}*"))
+            for f in possible_files:
+                if f.endswith((".jpg", ".webp", ".png", ".jpeg")):
                     thumb_path = f
                     break
         
         try:
-            # تجهيز الميديا
             if is_video:
                 media = InputMediaVideo(
                     media=file_path,
-                    thumb=thumb_path,
+                    thumb=thumb_path, # هنا يتم تمرير الغلاف للفيديو
                     caption=caption,
                     duration=duration,
                     supports_streaming=True
@@ -179,30 +217,25 @@ class YTProcessorAPI:
             else:
                 media = InputMediaAudio(
                     media=file_path,
-                    thumb=thumb_path,
+                    thumb=thumb_path, # هنا يتم تمرير الغلاف للصوت
                     caption=caption,
                     duration=duration,
                     title=title,
                     performer=user_name
                 )
             
-            # 1. محاولة استبدال الرسالة (توفير للوقت)
             await mystic_msg.edit_media(media=media)
             
         except Exception:
-            # 2. الفشل (مثلاً لأن الرسالة الأصلية نص): إرسال جديد
             try:
-                # حذف رسالة "جاري التحميل"
                 await mystic_msg.delete()
-                
-                # الإرسال المباشر للشات
                 if is_video:
                     await client.send_video(
                         chat_id, 
                         video=file_path, 
                         caption=caption, 
                         duration=duration, 
-                        thumb=thumb_path, 
+                        thumb=thumb_path, # محاولة ثانية في الإرسال الجديد
                         supports_streaming=True
                     )
                 else:
@@ -213,13 +246,13 @@ class YTProcessorAPI:
                         duration=duration, 
                         title=title, 
                         performer=user_name, 
-                        thumb=thumb_path
+                        thumb=thumb_path # محاولة ثانية
                     )
             except Exception as e:
                 print(f"Upload Error: {e}")
                 return False
 
-        # تنظيف الغلاف فقط (نترك الملف الأساسي للكاش)
+        # تنظيف صورة الغلاف بعد الإرسال
         if thumb_path and os.path.exists(thumb_path):
             try: os.remove(thumb_path)
             except: pass
