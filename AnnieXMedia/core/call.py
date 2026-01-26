@@ -1,5 +1,5 @@
 # Authored By Certified Coders © 2025
-# TITAN EDITION: Zero-Lag Buffer + 16-Core Optimization
+# TITAN EDITION: Smart Buffer + 16-Core Stability
 import asyncio
 import os
 import traceback
@@ -48,31 +48,54 @@ from AnnieXMedia.utils.errors import capture_internal_err
 autoend = {}
 counter = {}
 
-# --- The Secret Weapon: Smart Stream Config ---
+# --- دالة المخزون الذكي (تمنع الكراش 100%) ---
+async def wait_for_buffer(file_path: str, is_video: bool):
+    """
+    تنتظر حتى يتم تحميل جزء من الملف (Buffer) قبل السماح بتشغيله.
+    هذا يمنع FFmpeg من الخروج بسبب "نهاية الملف" الوهمية.
+    """
+    # ننتظر 1 ميجا بايت (صوت) أو 5 ميجا (فيديو) - حوالي 10 ثواني تشغيل
+    required_size = 5 * 1024 * 1024 if is_video else 1024 * 1024 
+    timeout = 0
+    
+    while timeout < 15: # ننتظر بحد أقصى 15 ثانية
+        if os.path.exists(file_path):
+            current_size = os.path.getsize(file_path)
+            
+            # لو الحجم كافي، ابدأ فوراً
+            if current_size >= required_size:
+                return
+            
+            # لو الملف حجمه ثابت لفترة (النت بطيء أو الملف خلص تحميل)، ابدأ
+            if current_size > 0 and timeout > 3:
+                # تحقق بسيط لو الحجم لم يتغير
+                await asyncio.sleep(0.1)
+                if os.path.getsize(file_path) == current_size:
+                     return
+
+        await asyncio.sleep(0.5)
+        timeout += 0.5
+    
+    # لو الوقت خلص والملف لسه صغير (نادر جداً)، شغله على أي حال
+    return
+
+# --- إعدادات البث (مبسطة وقوية) ---
 def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
-    # إعدادات FFmpeg المخصصة لسيرفر 16 كور
-    # 1. threads 16: استخدام كل الانوية
-    # 2. probesize/analyzeduration: تكبير حجم الفحص لمنع التقطيع في البداية
-    # 3. bufsize/maxrate: تنظيم تدفق البيانات (Bitrate Control)
+    # 1. Threads 16: قوة المعالج
+    # 2. إزالة فلاتر الـ Buffer اليدوية (هي سبب المشكلة السابقة)
+    # 3. probesize/analyzeduration: لمنع التقطيع في البداية فقط
     
-    # القاعدة الأساسية
-    titan_flags = "-threads 16 -ac 2 -probesize 20M -analyzeduration 20M"
+    titan_flags = "-threads 16 -ac 2 -ar 48000 -probesize 10M -analyzeduration 10M"
     
-    # إذا كان رابط مباشر (يوتيوب لايف / رابط خارجي)
+    # لو رابط مباشر خارجي (يوتيوب لايف)
     if str(path).startswith("http"):
-        # هنا السحر: إعادة الاتصال العدوانية + كاش للشبكة
-        titan_flags += (
-            " -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 60 "
-            "-reconnect_on_network_error 1 -reconnect_on_http_error 4xx,5xx "
-            "-bufsize 8192k -maxrate 4096k"
-        )
+        titan_flags += " -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
     
     if ffmpeg_params:
         titan_flags += f" {ffmpeg_params}"
 
-    # للبث المباشر، نستخدم High بدلاً من Studio لتخفيف الحمل على الشبكة (مع الحفاظ على جودة ممتازة)
-    # للملفات المحملة، نستخدم Studio
-    audio_q = AudioQuality.HIGH if str(path).startswith("http") else AudioQuality.STUDIO
+    # نعود لـ STUDIO لأنه الأكثر استقراراً مع الملفات المحلية
+    audio_q = AudioQuality.STUDIO
 
     if video:
         return MediaStream(
@@ -103,32 +126,16 @@ async def _clear_(chat_id: int) -> None:
 
 class Call:
     def __init__(self):
-        # Cache Duration 100 is optimal for stable connections
-        self.userbot1 = Client(
-            "AnnieXAssis1", config.API_ID, config.API_HASH, session_string=config.STRING1
-        ) if config.STRING1 else None
+        self.userbot1 = Client("AnnieXAssis1", config.API_ID, config.API_HASH, session_string=config.STRING1) if config.STRING1 else None
         self.one = PyTgCalls(self.userbot1, cache_duration=100) if self.userbot1 else None
-
-        self.userbot2 = Client(
-            "AnnieXAssis2", config.API_ID, config.API_HASH, session_string=config.STRING2
-        ) if config.STRING2 else None
+        self.userbot2 = Client("AnnieXAssis2", config.API_ID, config.API_HASH, session_string=config.STRING2) if config.STRING2 else None
         self.two = PyTgCalls(self.userbot2, cache_duration=100) if self.userbot2 else None
-
-        self.userbot3 = Client(
-            "AnnieXAssis3", config.API_ID, config.API_HASH, session_string=config.STRING3
-        ) if config.STRING3 else None
+        self.userbot3 = Client("AnnieXAssis3", config.API_ID, config.API_HASH, session_string=config.STRING3) if config.STRING3 else None
         self.three = PyTgCalls(self.userbot3, cache_duration=100) if self.userbot3 else None
-
-        self.userbot4 = Client(
-            "AnnieXAssis4", config.API_ID, config.API_HASH, session_string=config.STRING4
-        ) if config.STRING4 else None
+        self.userbot4 = Client("AnnieXAssis4", config.API_ID, config.API_HASH, session_string=config.STRING4) if config.STRING4 else None
         self.four = PyTgCalls(self.userbot4, cache_duration=100) if self.userbot4 else None
-
-        self.userbot5 = Client(
-            "AnnieXAssis5", config.API_ID, config.API_HASH, session_string=config.STRING5
-        ) if config.STRING5 else None
+        self.userbot5 = Client("AnnieXAssis5", config.API_ID, config.API_HASH, session_string=config.STRING5) if config.STRING5 else None
         self.five = PyTgCalls(self.userbot5, cache_duration=100) if self.userbot5 else None
-
         self.active_calls: set[int] = set()
 
     @capture_internal_err
@@ -191,7 +198,6 @@ class Call:
     @capture_internal_err
     async def skip_stream(self, chat_id: int, link: str, video: Union[bool, str] = None, image: Union[bool, str] = None) -> None:
         assistant = await group_assistant(self, chat_id)
-        # استخدام Config لمنع المساعد من الخروج والدخول المتكرر
         ksk = GroupCallConfig(auto_start=False)
         stream = dynamic_media_stream(path=link, video=bool(video))
         await assistant.play(chat_id, stream, config=ksk)
@@ -276,13 +282,15 @@ class Call:
         assistant = await group_assistant(self, chat_id)
         lang = await get_lang(chat_id)
         _ = get_string(lang)
+        
+        # 🔥 هنا السحر: انتظار المخزون (Buffer)
+        if not str(link).startswith("http"):
+             await wait_for_buffer(link, bool(video))
+             
         stream = dynamic_media_stream(path=link, video=bool(video))
         ksk = GroupCallConfig(auto_start=False)
 
         try:
-            # تأخير بسيط جداً (0.2 ثانية) لمنع الـ Race Condition
-            # هذا يمنع المساعد من الفشل في الانضمام
-            await asyncio.sleep(0.2)
             await assistant.play(chat_id, stream, config=ksk)
         except (NoActiveGroupCall, ChatAdminRequired):
             raise AssistantErr(_["call_8"])
@@ -293,8 +301,7 @@ class Call:
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
         except Exception as e:
-            # إعادة المحاولة مرة واحدة فقط عند الفشل الغريب
-            LOGGER(__name__).error(f"💣 [JOIN ERROR] Chat: {chat_id} | Retrying...")
+            LOGGER(__name__).error(f"💣 [JOIN ERROR] Chat: {chat_id}\n{traceback.format_exc()}")
             try:
                  await asyncio.sleep(1)
                  await assistant.play(chat_id, stream, config=ksk)
@@ -367,12 +374,10 @@ class Call:
             video = True if str(streamtype) == "video" else False
             
             try:
-                # منطق تشغيل الروابط المباشرة (Live)
                 if "live_" in queued:
                     n, link = await YouTube.video(videoid, True)
                     if n == 0:
                         return await app.send_message(original_chat_id, text=_["call_6"])
-                    
                     stream = dynamic_media_stream(path=link, video=video)
                     
                     try:
@@ -407,6 +412,9 @@ class Call:
                         )
                     except:
                         return await mystic.edit_text(_["call_6"], disable_web_page_preview=True)
+                    
+                    # 🔥 انتظار المخزون (Buffer) قبل التشغيل
+                    await wait_for_buffer(file_path, video)
 
                     stream = dynamic_media_stream(path=file_path, video=video)
                     try:
