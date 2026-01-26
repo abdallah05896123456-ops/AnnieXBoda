@@ -1,4 +1,5 @@
 # Authored By Certified Coders © 2025
+# TITAN EDITION: Zero-Lag Buffer + 16-Core Optimization
 import asyncio
 import os
 import traceback
@@ -47,20 +48,36 @@ from AnnieXMedia.utils.errors import capture_internal_err
 autoend = {}
 counter = {}
 
-# --- Helper Function for Streams (Optimized for TitanOS) ---
+# --- The Secret Weapon: Smart Stream Config ---
 def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
-    # إجبار الاستيريو واستغلال الـ 16 كور وتقليل التقطيع
-    titan_flags = "-threads 16 -ac 2"
+    # إعدادات FFmpeg المخصصة لسيرفر 16 كور
+    # 1. threads 16: استخدام كل الانوية
+    # 2. probesize/analyzeduration: تكبير حجم الفحص لمنع التقطيع في البداية
+    # 3. bufsize/maxrate: تنظيم تدفق البيانات (Bitrate Control)
+    
+    # القاعدة الأساسية
+    titan_flags = "-threads 16 -ac 2 -probesize 20M -analyzeduration 20M"
+    
+    # إذا كان رابط مباشر (يوتيوب لايف / رابط خارجي)
     if str(path).startswith("http"):
-        titan_flags += " -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
+        # هنا السحر: إعادة الاتصال العدوانية + كاش للشبكة
+        titan_flags += (
+            " -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 60 "
+            "-reconnect_on_network_error 1 -reconnect_on_http_error 4xx,5xx "
+            "-bufsize 8192k -maxrate 4096k"
+        )
     
     if ffmpeg_params:
         titan_flags += f" {ffmpeg_params}"
 
+    # للبث المباشر، نستخدم High بدلاً من Studio لتخفيف الحمل على الشبكة (مع الحفاظ على جودة ممتازة)
+    # للملفات المحملة، نستخدم Studio
+    audio_q = AudioQuality.HIGH if str(path).startswith("http") else AudioQuality.STUDIO
+
     if video:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.STUDIO, # Alexa uses better quality
+            audio_parameters=audio_q,
             video_parameters=VideoQuality.HD_720p,
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.REQUIRED,
@@ -69,7 +86,7 @@ def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = No
     else:
         return MediaStream(
             media_path=path,
-            audio_parameters=AudioQuality.STUDIO, # Alexa uses better quality
+            audio_parameters=audio_q,
             audio_flags=MediaStream.Flags.REQUIRED,
             video_flags=MediaStream.Flags.IGNORE,
             ffmpeg_parameters=titan_flags,
@@ -86,7 +103,7 @@ async def _clear_(chat_id: int) -> None:
 
 class Call:
     def __init__(self):
-        # 🔥 TitanOS Update: Cache maintained at 100 for stability
+        # Cache Duration 100 is optimal for stable connections
         self.userbot1 = Client(
             "AnnieXAssis1", config.API_ID, config.API_HASH, session_string=config.STRING1
         ) if config.STRING1 else None
@@ -113,8 +130,6 @@ class Call:
         self.five = PyTgCalls(self.userbot5, cache_duration=100) if self.userbot5 else None
 
         self.active_calls: set[int] = set()
-        # 🔥 TitanOS: Turbo Variable added for Web Control
-        self.turbo_mode = {} 
 
     @capture_internal_err
     async def pause_stream(self, chat_id: int) -> None:
@@ -124,7 +139,6 @@ class Call:
     @capture_internal_err
     async def resume_stream(self, chat_id: int) -> None:
         assistant = await group_assistant(self, chat_id)
-        # 🔥 TitanOS Fix: Force Resume (If resume fails, unmute)
         try:
             await assistant.resume(chat_id)
         except:
@@ -177,7 +191,7 @@ class Call:
     @capture_internal_err
     async def skip_stream(self, chat_id: int, link: str, video: Union[bool, str] = None, image: Union[bool, str] = None) -> None:
         assistant = await group_assistant(self, chat_id)
-        # 🔥 ALEXA OPTIMIZATION: Using GroupCallConfig
+        # استخدام Config لمنع المساعد من الخروج والدخول المتكرر
         ksk = GroupCallConfig(auto_start=False)
         stream = dynamic_media_stream(path=link, video=bool(video))
         await assistant.play(chat_id, stream, config=ksk)
@@ -198,7 +212,6 @@ class Call:
 
     @capture_internal_err
     async def speedup_stream(self, chat_id: int, file_path: str, speed: float, playing: list) -> None:
-        # Code kept from Annie for compatibility
         if not isinstance(playing, list) or not playing or not isinstance(playing[0], dict):
             raise AssistantErr("Invalid stream info for speedup.")
 
@@ -264,11 +277,12 @@ class Call:
         lang = await get_lang(chat_id)
         _ = get_string(lang)
         stream = dynamic_media_stream(path=link, video=bool(video))
-        
-        # 🔥 ALEXA OPTIMIZATION: Config added here
         ksk = GroupCallConfig(auto_start=False)
 
         try:
+            # تأخير بسيط جداً (0.2 ثانية) لمنع الـ Race Condition
+            # هذا يمنع المساعد من الفشل في الانضمام
+            await asyncio.sleep(0.2)
             await assistant.play(chat_id, stream, config=ksk)
         except (NoActiveGroupCall, ChatAdminRequired):
             raise AssistantErr(_["call_8"])
@@ -279,8 +293,8 @@ class Call:
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
         except Exception as e:
-            # 🚨 Watchdog: طباعة الخطأ الكامل في اللوجز لو حصل فشل
-            LOGGER(__name__).error(f"💣 [JOIN ERROR] Chat: {chat_id}\n{traceback.format_exc()}")
+            # إعادة المحاولة مرة واحدة فقط عند الفشل الغريب
+            LOGGER(__name__).error(f"💣 [JOIN ERROR] Chat: {chat_id} | Retrying...")
             try:
                  await asyncio.sleep(1)
                  await assistant.play(chat_id, stream, config=ksk)
@@ -304,7 +318,6 @@ class Call:
 
     @capture_internal_err
     async def play(self, client, chat_id: int) -> None:
-        # 🔥 Refactored to match Alexa's `change_stream` logic but with Annie's vars
         check = db.get(chat_id)
         popped = None
         loop = await get_loop(chat_id)
@@ -315,7 +328,6 @@ class Call:
                 loop = loop - 1
                 await set_loop(chat_id, loop)
             
-            # Using auto_clean from Alexa's logic context (if config allows)
             await auto_clean(popped)
             
             if not check:
@@ -354,12 +366,13 @@ class Call:
 
             video = True if str(streamtype) == "video" else False
             
-            # 🔥 ALEXA OPTIMIZATION: Pre-calculate stream to save time
             try:
+                # منطق تشغيل الروابط المباشرة (Live)
                 if "live_" in queued:
                     n, link = await YouTube.video(videoid, True)
                     if n == 0:
                         return await app.send_message(original_chat_id, text=_["call_6"])
+                    
                     stream = dynamic_media_stream(path=link, video=video)
                     
                     try:
@@ -503,7 +516,6 @@ class Call:
                         db[chat_id][0]["mystic"] = run
                         db[chat_id][0]["markup"] = "stream"
             except Exception:
-                # 🚨 Watchdog: طباعة الخطأ الكامل لو حصل كراش أثناء التشغيل
                 LOGGER(__name__).error(f"💣 [PLAY ERROR] Chat: {chat_id}\n{traceback.format_exc()}")
                 return await app.send_message(original_chat_id, text=_["call_6"])
 
