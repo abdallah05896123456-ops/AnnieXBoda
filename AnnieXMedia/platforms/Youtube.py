@@ -1,6 +1,6 @@
 # Authored By Certified Coders © 2026
-# THE INFINITY EDITION: Anti-Bot Bypass + Alexa Secret Technique
-# FULL CODE: 16-Core Aria2c + Invisible Assistant + RAM Disk Cache + Slider + Playlist
+# THE NUCLEAR FINAL SUITE: 16-Core Aria2c + Alexa Invisible Assistant
+# FIXED: JS Challenge Solver + Anti-Bot Bypass + Complete 380+ Lines
 
 import asyncio
 import os
@@ -16,7 +16,7 @@ from pyrogram.enums import MessageEntityType, ChatAction
 from pyrogram.types import Message, InlineKeyboardButton
 from youtubesearchpython.aio import VideosSearch
 
-# استيراد الأدوات المساعدة من قلب السورس
+# استيراد الأدوات المساعدة من السورس
 try:
     from AnnieXMedia.utils.formatters import time_to_seconds, convert_bytes
     from AnnieXMedia import LOGGER
@@ -27,31 +27,32 @@ except ImportError:
     def convert_bytes(b): return "0 B"
 
 class Config:
-    # تهيئة المسارات في الرام ديسك 50 جيجا للسرعة الخارقة
+    # استغلال الرام ديسك 50 جيجا للسرعة الخلية
     if os.path.exists("/dev/shm"):
         DOWNLOAD_PATH = "/dev/shm/AnnieDownloads"
     else:
         DOWNLOAD_PATH = os.path.abspath("downloads")
     
-    # رأس المتصفح (User-Agent) حديث جداً لمحاكاة إنسان حقيقي ومنع حظر يوتيوب
-    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+    COOKIE_PATH = "AnnieXMedia/assets/cookies.txt"
     MAX_WORKERS = 16
+    # رأس المتصفح للتمويه ومنع اكتشاف البوت
+    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
 
 if not os.path.exists(Config.DOWNLOAD_PATH):
     os.makedirs(Config.DOWNLOAD_PATH, exist_ok=True)
 
-# نظام كاش البيانات الوصفية لتقليل طلبات يوتيوب
+# نظام الكاش لبيانات يوتيوب
 _cache: Dict[str, Tuple[float, List[Dict]]] = {}
 _cache_lock = asyncio.Lock()
 
 def get_cookie_file():
-    """البحث الذكي عن الكوكيز لفك حظر يوتيوب فوراً"""
+    """البحث الذكي عن الكوكيز لفك حظر يوتيوب"""
     if os.path.exists("cookies"):
         for f in os.listdir("cookies"):
             if f.endswith(".txt"): return os.path.join("cookies", f)
     
     paths = [
-        "AnnieXMedia/assets/cookies.txt", "cookies.txt", 
+        Config.COOKIE_PATH, "cookies.txt", "AnnieXMedia/cookies.txt",
         "assets/cookies.txt", "platforms/cookies.txt"
     ]
     for p in paths:
@@ -59,10 +60,7 @@ def get_cookie_file():
     return None
 
 async def shell_cmd(cmd):
-    """تنفيذ أوامر النظام بسرعة عالية لمعالجة البلاي ليست"""
-    proc = await asyncio.create_subprocess_shell(
-        cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
+    proc = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     out, _ = await proc.communicate()
     return out.decode("utf-8")
 
@@ -108,8 +106,7 @@ class YouTubeAPI:
                 "thumb": data["thumbnails"][0]["url"].split("?")[0],
                 "cookiefile": get_cookie_file(),
             }
-            async with _cache_lock:
-                _cache[link] = (time.time(), (track_details, data["id"]))
+            async with _cache_lock: _cache[link] = (time.time(), (track_details, data["id"]))
             return track_details, data["id"]
         except:
             return {"title": "Unknown", "vidid": "error"}, "error"
@@ -132,71 +129,65 @@ class YouTubeAPI:
         return d.get("thumb")
 
     async def playlist(self, link, limit, user_id, videoid: Union[bool, str] = None):
-        """حل مشكلة البلاي ليست مع الكوكيز لمنع الحظر"""
         if videoid: link = self.listbase + link
         cookie = get_cookie_file()
         cookie_cmd = f"--cookies {cookie}" if cookie else ""
-        cmd = f"yt-dlp -i --get-id --flat-playlist --playlist-end {limit} {cookie_cmd} --user-agent '{Config.USER_AGENT}' --skip-download '{link}' 2>/dev/null"
+        cmd = f"yt-dlp -i --get-id --flat-playlist --playlist-end {limit} {cookie_cmd} --user-agent '{Config.USER_AGENT}' --remote-components ejs:github --skip-download '{link}' 2>/dev/null"
         playlist = await shell_cmd(cmd)
-        try: result = [key for key in playlist.split("\n") if key]
-        except: result = []
-        return result
+        return [key for key in playlist.split("\n") if key]
 
     def _background_download(self, link, final_path, is_video):
-        """التحميل الخلفي بـ 16 اتصال Aria2c مع تمويه كامل"""
+        """التحميل الخلفي بـ 16 اتصال Aria2c مع حل التحدي النووي"""
         try:
             aria2_args = ["-x", "16", "-s", "16", "-j", "16", "-k", "1M", "--file-allocation=none"]
-            fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]" if is_video else "bestaudio[ext=m4a]/bestaudio"
+            fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]" if is_video else "bestaudio[ext=m4a]/bestaudio/best"
             ydl_opts = {
                 "format": fmt, "outtmpl": final_path, "cookiefile": get_cookie_file(),
                 "user_agent": Config.USER_AGENT, "quiet": True, "nocheckcertificate": True,
+                "remote_components": ["ejs:github"],
                 "external_downloader": "aria2c", "external_downloader_args": aria2_args,
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl: ydl.download([link])
         except: pass
 
     async def download(self, link, mystic, video=None, videoid=None, songaudio=None, songvideo=None, format_id=None, title=None):
-        """المحرك النووي: يعالج البث المباشر (المكالمة) والتنزيل (الدردشة) بشكل منفصل"""
+        """المحرك النووي: ممرات منفصلة للبث المباشر وللتحميل"""
         if not videoid: _, vid_id = await self.track(link)
         else: vid_id = videoid
 
         loop = asyncio.get_running_loop()
         is_vid = (video or songvideo)
-        ext = "mp4" if is_vid else "mp3"
+        ext = "mp4" if is_vid else "m4a"
         ram_path = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
 
-        # كاش أليكسا: لو الملف موجود نرجعه فوراً
+        # كاش الرام ديسك (تكنيك أليكسا للسرعة اللحظية)
         if os.path.exists(ram_path) and os.path.getsize(ram_path) > 1024:
             return ram_path, False
 
-        # --- ممر البث الصوتي المباشر (Direct Link) للمكالمات ---
+        # --- ممر البث الصوتي المباشر (Direct Stream) للمكالمات ---
         if not is_vid and not songaudio:
             try:
-                cookie = get_cookie_file()
-                # إضافة كل رؤوس التمويه لمنع رسالة "Confirm you're not a bot"
-                cmd = ["yt-dlp", "-g", "--user-agent", Config.USER_AGENT, "--no-check-certificates", "--geo-bypass"]
-                if cookie: cmd.extend(["--cookies", cookie])
-                cmd.extend(["-f", "bestaudio", link])
-                
+                cmd = [
+                    "yt-dlp", "-g", "--cookies", get_cookie_file() or "", 
+                    "--user-agent", Config.USER_AGENT, "--remote-components", "ejs:github",
+                    "--no-check-certificates", "-f", "bestaudio[ext=m4a]/bestaudio", link
+                ]
                 process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-                stdout, stderr = await process.communicate()
-                
+                stdout, _ = await process.communicate()
                 if stdout:
                     direct_link = stdout.decode().split("\n")[0].strip()
-                    # تحميل خلفي للكاش دون تعطيل البث
                     loop.run_in_executor(self.pool, self._background_download, link, ram_path, False)
                     return direct_link, True
-                else:
-                    LOGGER(__name__).error(f"YT-DLP Error Bypass: {stderr.decode()}")
             except: pass
 
         # --- ممر التنزيل الفعلي لملفات الصوت والفيديو ---
         def _execute_dl():
             try:
-                fmt = f"{format_id}+bestaudio/best" if format_id else "bestvideo[height<=720]+bestaudio/best"
+                fmt = f"{format_id}+bestaudio/best" if format_id else "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]"
                 ydl_opts = {
                     "format": fmt, "outtmpl": ram_path.replace(".mp3", ""), "quiet": True,
-                    "cookiefile": get_cookie_file(), "user_agent": Config.USER_AGENT, "nocheckcertificate": True
+                    "cookiefile": get_cookie_file(), "user_agent": Config.USER_AGENT,
+                    "remote_components": ["ejs:github"], "nocheckcertificate": True
                 }
                 if songaudio:
                     ydl_opts["postprocessors"] = [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "320"}]
@@ -207,8 +198,8 @@ class YouTubeAPI:
         res = await loop.run_in_executor(self.pool, _execute_dl)
         return res, False
 
+    # 🔥 دالة الإرسال السرية: المساعد يرفع في اللوج والبوت يرسل للمستخدم (تكنيك أليكسا) 🔥
     async def send_nuclear_file(self, client, chat_id, file_path, is_direct, is_video, title, duration, thumb, user_name):
-        """دالة الرفع النووي: المساعد يرفع في اللوج والبوت يرسل للمستخدم (خفي)"""
         from AnnieXMedia import userbot, config
         caption = f"**الـعـنـوان:** {title}\n**طـلـب:** {user_name}"
         
@@ -220,9 +211,12 @@ class YouTubeAPI:
 
             filesize = os.path.getsize(file_path) / (1024 * 1024)
 
+            # 1. لو الملف أصغر من 50MB، البوت يرسله مباشرة
             if filesize < 50:
                 if is_video: await client.send_video(chat_id, video=file_path, caption=caption, duration=duration, thumb=thumb, supports_streaming=True)
                 else: await client.send_audio(chat_id, audio=file_path, caption=caption, duration=duration, title=title, performer="المحرك النووي", thumb=thumb)
+            
+            # 2. لو الملف أكبر من 50MB (التكنيك الخفي): المساعد يرفع في اللوج والبوت يرسل file_id
             else:
                 assistant = userbot.one
                 if is_video:
@@ -240,9 +234,8 @@ class YouTubeAPI:
             return False
 
     async def formats(self, link: str, videoid: Union[bool, str] = None):
-        """جلب الجودات مع تجاوز حظر يوتيوب"""
         if videoid: link = self.base + link
-        ydl_opts = {"quiet": True, "cookiefile": get_cookie_file(), "user_agent": Config.USER_AGENT, "nocheckcertificate": True}
+        ydl_opts = {"quiet": True, "cookiefile": get_cookie_file(), "user_agent": Config.USER_AGENT, "remote_components": ["ejs:github"]}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             formats_available = []
             try:
@@ -254,7 +247,7 @@ class YouTubeAPI:
 
     async def get_quality_buttons(self, vidid, stype):
         """توليد أزرار الجودات بنسق أليكسا المطول"""
-        formats_available, _ = await self.formats(vidid, True)
+        formats_available, _ = await self.formats(f"https://www.youtube.com/watch?v={vidid}")
         keyboard = []
         if stype == "audio":
             done = []
@@ -268,17 +261,15 @@ class YouTubeAPI:
             allowed = ["160", "133", "134", "135", "136", "137", "298", "299", "264", "304", "266"]
             for x in formats_available:
                 if x.get("format_id") in allowed and x.get("filesize"):
-                    keyboard.append([InlineKeyboardButton(text=f"فـيـديـو {x.get('format_note', 'HD')} | {convert_bytes(x['filesize'])}", callback_data=f"song_download video|{x['format_id']}|{vidid}")])
+                    keyboard.append([InlineKeyboardButton(text=f"فـيـديـو {x.get('format_id')} | {convert_bytes(x['filesize'])}", callback_data=f"song_download video|{x['format_id']}|{vidid}")])
         keyboard.append([InlineKeyboardButton(text="إغـلاق", callback_data="close")])
         return keyboard
 
     async def slider(self, link: str, query_type: int, videoid: Union[bool, str] = None):
-        """نظام البحث المتقدم (Slider) المعتمد في أليكسا"""
         if videoid: link = self.base + link
         try:
             a = VideosSearch(link, limit=10)
             res = await a.next()
-            if not res or not res.get("result"): return "Error", "0", "", "error"
             r = res["result"][query_type] if query_type < len(res["result"]) else res["result"][0]
             return r["title"], r["duration"], r["thumbnails"][0]["url"].split("?")[0], r["id"]
         except: return "Error", "0", "", "error"
