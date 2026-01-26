@@ -1,5 +1,5 @@
 # تم التطوير بواسطة Certified Coders 2026
-# معالج الكوكيز الذكي: تدوير عشوائي + حذف التالف تلقائياً + 16 نواة
+# المحرك النووي: كاش ذكي + تخصيص الجودة حسب الرتبة + سرعة قصوى
 
 import asyncio
 import os
@@ -17,7 +17,7 @@ from AnnieXMedia.utils.formatters import convert_bytes
 
 class Config:
     DOWNLOAD_PATH = "/dev/shm/AnnieDownloads" if os.path.exists("/dev/shm") else "downloads"
-    # متصفح حديث جداً
+    # User-Agent حديث
     USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
     MAX_WORKERS = 16
 
@@ -29,35 +29,14 @@ class YTProcessorAPI:
         self.pool = ThreadPoolExecutor(max_workers=Config.MAX_WORKERS)
 
     def get_cookie_file(self):
-        """نظام تدوير الكوكيز العشوائي"""
-        # التأكد من وجود المجلد
-        cookie_dir = "cookies"
-        if not os.path.exists(cookie_dir):
-            os.makedirs(cookie_dir, exist_ok=True)
-            
-        # البحث عن ملفات txt
-        files = [f for f in os.listdir(cookie_dir) if f.endswith(".txt")]
+        """نظام تدوير الكوكيز"""
+        paths = ["cookies.txt", "AnnieXMedia/assets/cookies.txt", "assets/cookies.txt", "AnnieXMedia/cookies.txt"]
+        if os.path.exists("cookies"):
+            for f in os.listdir("cookies"):
+                if f.endswith(".txt"): paths.append(os.path.join("cookies", f))
         
-        # البحث في مسارات بديلة أيضاً
-        if not files:
-            alternate_paths = ["AnnieXMedia/assets/cookies.txt", "assets/cookies.txt", "cookies.txt"]
-            for p in alternate_paths:
-                if os.path.exists(p) and os.path.getsize(p) > 0:
-                    return p
-            return None
-
-        # اختيار ملف عشوائي لتوزيع الحمل
-        selected = random.choice(files)
-        return os.path.join(cookie_dir, selected)
-
-    def remove_bad_cookie(self, cookie_path):
-        """حذف الكوكيز التالفة لعدم استخدامها مرة أخرى"""
-        if cookie_path and os.path.exists(cookie_path) and "cookies" in cookie_path:
-            try:
-                os.remove(cookie_path)
-                LOGGER(__name__).warning(f"🗑️ تم حذف كوكيز تالف: {cookie_path}")
-            except:
-                pass
+        valid = [p for p in paths if os.path.exists(p) and os.path.getsize(p) > 0]
+        return random.choice(valid) if valid else None
 
     async def get_quality_buttons(self, vidid, stype):
         yturl = f"https://www.youtube.com/watch?v={vidid}"
@@ -69,7 +48,7 @@ class YTProcessorAPI:
             "user_agent": Config.USER_AGENT,
             "remote_components": ["ejs:github"],
             "nocheckcertificate": True,
-            "extractor_args": {"youtube": {"player_client": ["web", "ios"]}}
+            "extractor_args": {"youtube": {"player_client": ["web"]}} 
         }
         
         loop = asyncio.get_running_loop()
@@ -80,12 +59,15 @@ class YTProcessorAPI:
         try:
             info = await loop.run_in_executor(self.pool, _fetch)
             formats = info.get("formats", [])
-        except Exception as e:
-            # إذا كان الخطأ بسبب الحظر، نحذف الكوكيز ونحاول مرة أخرى
-            if "Sign in" in str(e) and cookie_file:
-                self.remove_bad_cookie(cookie_file)
-            LOGGER(__name__).error(f"خطأ الجودات: {e}")
-            return [[InlineKeyboardButton(text="جـودة تـلـقـائـيـة", callback_data=f"song_download audio|bestaudio|{vidid}")]]
+        except:
+            # Fallback to Android if Web fails
+            try:
+                ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android"]}}
+                ydl_opts["cookiefile"] = None
+                info = await loop.run_in_executor(self.pool, _fetch)
+                formats = info.get("formats", [])
+            except:
+                return [[InlineKeyboardButton(text="جـودة تـلـقـائـيـة", callback_data=f"song_download audio|bestaudio|{vidid}")]]
 
         keyboard = []
         if stype == "audio":
@@ -106,53 +88,99 @@ class YTProcessorAPI:
         keyboard.append([InlineKeyboardButton(text="إغـلاق", callback_data="close")])
         return keyboard
 
-    async def download_file(self, url, format_id, is_video, title):
-        vid_id = str(int(time.time()))
+    async def download_file(self, url, format_id, is_video, title, vidid=None, is_owner=False):
+        """
+        التحميل الذكي:
+        - is_owner=True: تحميل بأعلى جودة (320kbps للصوت / 4K للفيديو).
+        - is_owner=False: تحميل بجودة سريعة (128kbps للصوت / 720p للفيديو).
+        """
+        vid_id_str = vidid if vidid else str(int(time.time()))
         ext = "mp4" if is_video else "mp3"
-        final_file = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
+        final_file = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id_str}.{ext}")
+        
+        # ⚡⚡ الكاش: لو الملف موجود بنفس الاسم، ابعته فوراً ⚡⚡
+        if os.path.exists(final_file) and os.path.getsize(final_file) > 1024:
+            return final_file
+
         cookie_file = self.get_cookie_file()
         
-        ydl_opts = {
-            "format": f"{format_id}+bestaudio/best" if is_video else format_id,
-            "outtmpl": os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.%(ext)s"),
-            "cookiefile": cookie_file,
+        base_opts = {
+            "outtmpl": os.path.join(Config.DOWNLOAD_PATH, f"{vid_id_str}.%(ext)s"),
             "user_agent": Config.USER_AGENT,
-            "remote_components": ["ejs:github"],
             "quiet": True,
             "nocheckcertificate": True,
             "external_downloader": "aria2c",
-            "external_downloader_args": ["-x", "16", "-s", "16", "-k", "1M"]
+            "external_downloader_args": ["-x", "16", "-s", "16", "-k", "1M"],
+            "writethumbnail": True,
         }
         
-        if not is_video:
-            ydl_opts["postprocessors"] = [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "320",
-            }]
+        if is_video:
+            if is_owner:
+                # للمطور: هات أعلى جودة موجودة في اليوتيوب كله
+                fmt = f"bestvideo+bestaudio/best"
+            else:
+                # للمستخدم العادي: أقصى جودة 720p عشان السرعة والنت
+                fmt = f"bestvideo[height<=720]+bestaudio/best[height<=720]/best"
+        else:
+            # للصوت
+            if is_owner:
+                # للمطور: 320kbps (تاخد وقت شوية في المعالجة)
+                fmt = f"{format_id if format_id else 'bestaudio'}/best"
+                quality = '320'
+            else:
+                # للمستخدم العادي: 128kbps (صاروخ في التحميل والمعالجة)
+                fmt = f"{format_id if format_id else 'bestaudio'}/best"
+                quality = '128' # تقليل الجودة لزيادة السرعة حسب طلبك
+                
+            base_opts["postprocessors"] = [
+                {'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': quality},
+                {'key': 'EmbedThumbnail'}, 
+                {'key': 'FFmpegMetadata', 'add_metadata': True}
+            ]
 
-        def _run():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        # المحاولة 1: ويب
+        opts_1 = base_opts.copy()
+        opts_1.update({
+            "format": fmt,
+            "cookiefile": cookie_file,
+            "remote_components": ["ejs:github"],
+            "extractor_args": {"youtube": {"player_client": ["web"]}}
+        })
+
+        # المحاولة 2: أندرويد (Fallback)
+        opts_2 = base_opts.copy()
+        opts_2.update({
+            "format": fmt,
+            "cookiefile": None, 
+            "extractor_args": {"youtube": {"player_client": ["android"]}}
+        })
+
+        loop = asyncio.get_running_loop()
+        
+        def _run(opts):
+            with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.download([url])
             return final_file
 
-        loop = asyncio.get_running_loop()
         try:
-            return await loop.run_in_executor(self.pool, _run)
-        except Exception as e:
-             if "Sign in" in str(e) and cookie_file:
-                self.remove_bad_cookie(cookie_file)
-             return None
+            await loop.run_in_executor(self.pool, lambda: _run(opts_1))
+        except Exception:
+            try:
+                await loop.run_in_executor(self.pool, lambda: _run(opts_2))
+            except:
+                return None
+
+        return final_file
 
     async def send_smart_file(self, client, chat_id, file_path, is_video, title, duration, thumb, user_name):
         if not file_path or not os.path.exists(file_path):
             return False
 
         from AnnieXMedia import userbot
-        caption = f"الـعـنـوان: {title}\nطـلـب: {user_name}"
-        filesize = os.path.getsize(file_path) / (1024 * 1024)
+        caption = f"🏷 **الـعـنـوان:** {title}\n👤 **طـلـب:** {user_name}"
         
         try:
+            filesize = os.path.getsize(file_path) / (1024 * 1024)
             if filesize < 50:
                 action = ChatAction.UPLOAD_VIDEO if is_video else ChatAction.UPLOAD_AUDIO
                 await client.send_chat_action(chat_id, action)
@@ -169,8 +197,6 @@ class YTProcessorAPI:
                     up = await assistant.send_audio(LOGGER_ID, audio=file_path, duration=duration, title=title, performer=user_name, thumb=thumb)
                     await client.send_audio(chat_id, audio=up.audio.file_id, caption=caption, duration=duration, title=title, performer=user_name, thumb=thumb)
                 await up.delete()
-
-            if os.path.exists(file_path): os.remove(file_path)
             return True
         except Exception:
             return False
