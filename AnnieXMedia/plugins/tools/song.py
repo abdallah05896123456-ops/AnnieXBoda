@@ -12,7 +12,6 @@ from pyrogram.types import (
 )
 from motor.motor_asyncio import AsyncIOMotorClient
 
-# استيراد المتغيرات الأساسية
 from config import BANNED_USERS, SONG_DOWNLOAD_DURATION, SONG_DOWNLOAD_DURATION_LIMIT, OWNER_ID, MONGO_DB_URI
 from AnnieXMedia import app
 from AnnieXMedia.platforms.Youtube import YouTube 
@@ -69,7 +68,7 @@ async def unified_song_processor(client, message: Message):
     # 1. فحص القفل
     is_search_locked = await get_config("search_locked")
     if is_search_locked and message.from_user.id != OWNER_ID:
-        return await message.reply_text("**عـذراً، قـسـم الـبـحـث والـتـحـمـيـل مـغـلـق حـالـيـاً لـلـصـيـانـة.**")
+        return await message.reply_text("**عـذراً، الـقـسـم مـغـلـق.**")
 
     match = re.match(r"^/?(اغنية|اغنيه|هات|هاتلي|ابعتلي|song|video|تحميل|play)(?:\s+(فيد|فيديو|video))?(?:\s+(.+))?$", message.text)
     if not match: return
@@ -102,8 +101,7 @@ async def unified_song_processor(client, message: Message):
 
     mystic = await message.reply_text("**جـارٍ الـمـعـالـجـة...**")
 
-    # --- 3. اكـتـشـاف الـبـلاي لـيـسـت (Playlist Detection) ---
-    # إذا كان الرابط يحتوي على list= فهو قائمة تشغيل
+    # --- 3. اكـتـشـاف الـبـلاي لـيـسـت ---
     if "list=" in query and ("youtube.com" in query or "youtu.be" in query):
         try:
             await Processor.download_playlist(
@@ -115,7 +113,7 @@ async def unified_song_processor(client, message: Message):
             )
         except Exception as e:
             await mystic.edit_text(f"**حـدث خـطـأ فـي الـقـائـمـة:** {e}")
-        return # نخرج من الدالة هنا لأننا انتهينا
+        return
 
     # --- 4. مـعـالـجـة الـفـيـديـو الـفـردي ---
     try:
@@ -182,7 +180,7 @@ async def yut_direct_audio(client, message: Message):
     query = message.text.split(None, 1)[1]
     mystic = await message.reply_text("**جـارٍ الـتـحـمـيـل...**")
     
-    # دعم البلاي ليست في أمر يوت أيضاً
+    # دعم البلاي ليست
     if "list=" in query:
          return await Processor.download_playlist(client, mystic, query, False, message.from_user.first_name)
 
