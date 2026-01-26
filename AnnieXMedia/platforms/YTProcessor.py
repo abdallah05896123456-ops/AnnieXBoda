@@ -1,4 +1,4 @@
-# System: Processor | NUCLEAR EDITION (16-Core) | RAM Disk | Client Rotation | Remote Fix
+# System: Processor | NUCLEAR (16-Core) | Playlist Support | RAM Disk | Remote Fix | Safe Thumb
 
 import asyncio
 import os
@@ -8,13 +8,13 @@ import shutil
 import yt_dlp
 from concurrent.futures import ThreadPoolExecutor
 from pyrogram.types import InputMediaAudio, InputMediaVideo, InlineKeyboardButton
-from pyrogram.errors import MessageIdInvalid, MessageNotModified
+from pyrogram.errors import MessageIdInvalid, MessageNotModified, FloodWait
 from config import LOGGER_ID
 from AnnieXMedia import LOGGER
 from AnnieXMedia.utils.formatters import convert_bytes
 
 class Config:
-    # استخدام الرامات (RAM Disk) للتخزين المؤقت للسرعة القصوى
+    # 1. استخدام الرامات (RAM Disk) للتخزين المؤقت للسرعة القصوى
     if os.path.exists("/dev/shm"):
         DOWNLOAD_PATH = "/dev/shm/AnnieDownloads"
     else:
@@ -71,7 +71,7 @@ class YTProcessorAPI:
             "no_warnings": True,
             "ignoreerrors": True,
             "nocheckcertificate": True,
-            "remote_components": ["ejs:github"], # اضافة الريموت لتحديث الاكواد
+            "remote_components": ["ejs:github"], # تحديث المكونات تلقائياً
         }
         
         loop = asyncio.get_running_loop()
@@ -182,11 +182,6 @@ class YTProcessorAPI:
                 },
                 {
                     'key': 'EmbedThumbnail'
-                },
-                # تحويل الغلاف لـ JPG اجباريا
-                {
-                    'key': 'FFmpegThumbnailsConvertor',
-                    'format': 'jpg'
                 }
             ]
 
@@ -210,8 +205,12 @@ class YTProcessorAPI:
                     with yt_dlp.YoutubeDL(opts) as ydl:
                         ydl.download([url])
                     
-                    if os.path.exists(final_file) and os.path.getsize(final_file) > 100:
-                        return final_file
+                    # التحقق بمرونة من وجود الملف
+                    base_name = os.path.join(Config.DOWNLOAD_PATH, vid_id_str)
+                    if os.path.exists(final_file): return final_file
+                    if os.path.exists(f"{base_name}.mp4"): return f"{base_name}.mp4"
+                    if os.path.exists(f"{base_name}.mp3"): return f"{base_name}.mp3"
+                    
                 except Exception as e:
                     print(f"Failed with client {client}: {e}")
                     continue
@@ -230,15 +229,17 @@ class YTProcessorAPI:
         thumb_path = None
         base_name = os.path.splitext(file_path)[0]
         
-        # 1. البحث عن ملف الـ JPG الناتج عن FFmpeg
-        if os.path.exists(f"{base_name}.jpg"):
-            thumb_path = f"{base_name}.jpg"
+        # البحث عن أي غلاف تم تحميله
+        for ext in [".jpg", ".jpeg", ".png", ".webp"]:
+            if os.path.exists(f"{base_name}{ext}"):
+                thumb_path = f"{base_name}{ext}"
+                break
         
-        # 2. محاولة احتياطية
-        elif vidid:
+        # محاولة احتياطية
+        if not thumb_path and vidid:
              possible_files = glob.glob(os.path.join(Config.DOWNLOAD_PATH, f"*{vidid}*"))
              for f in possible_files:
-                if f.endswith((".jpg", ".jpeg", ".png")) and not f.endswith((".mp3", ".mp4", ".m4a", ".mkv")):
+                if f.endswith((".jpg", ".jpeg", ".png", ".webp")) and not f.endswith((".mp3", ".mp4", ".m4a", ".mkv")):
                     thumb_path = f
                     break
 
@@ -272,5 +273,71 @@ class YTProcessorAPI:
                 return False
         
         return True
+
+    # --- دالة تحميل البلاي ليست (الـجـديـدة) ---
+    async def download_playlist(self, client, mystic_msg, playlist_url, is_video, user_name, limit=30):
+        cookie_file = self.get_cookie_file()
+        loop = asyncio.get_running_loop()
+        
+        ydl_opts = {
+            "extract_flat": True, 
+            "playlistend": limit,
+            "quiet": True,
+            "cookiefile": cookie_file,
+            "user_agent": Config.USER_AGENT,
+            "no_warnings": True,
+            "ignoreerrors": True,
+            "remote_components": ["ejs:github"],
+        }
+
+        def _fetch_playlist():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                return ydl.extract_info(playlist_url, download=False)
+
+        await mystic_msg.edit_text("**جـارٍ جـلـب الـقـائـمـة...**")
+        
+        try:
+            info = await loop.run_in_executor(self.pool, _fetch_playlist)
+        except:
+            return await mystic_msg.edit_text("**❌ فـشـل الـجـلـب.**")
+
+        if not info or 'entries' not in info:
+            return await mystic_msg.edit_text("**❌ لا يـوجـد مـحـتـوى.**")
+
+        entries = info['entries']
+        total = len(entries)
+        
+        await mystic_msg.edit_text(f"**✅ تـم كـشـف {total} مـلـف.\nجـارٍ الـبـدء...**")
+        
+        count = 0
+        for entry in entries:
+            count += 1
+            vid_id = entry.get('id')
+            title = entry.get('title', f"Track {count}")
+            url = f"https://www.youtube.com/watch?v={vid_id}"
+            
+            if count % 2 == 0: 
+                try: await mystic_msg.edit_text(f"**📥 تـحـمـيـل: {count}/{total}**\n**🎵 {title}**")
+                except: pass
+
+            file_path = await self.download_file(
+                url, "mid" if is_video else "high", is_video, title, vidid=vid_id
+            )
+            
+            if file_path:
+                temp_msg = await client.send_message(mystic_msg.chat.id, "**⬆️ رفـع...**")
+                await self.upload_alexa_style(
+                    client, temp_msg, file_path, is_video, title, 0, user_name, vidid=vid_id
+                )
+                try:
+                    os.remove(file_path)
+                    base = os.path.splitext(file_path)[0]
+                    for ext in [".jpg", ".webp"]: 
+                        if os.path.exists(base+ext): os.remove(base+ext)
+                except: pass
+            
+            await asyncio.sleep(1)
+
+        await mystic_msg.edit_text(f"**✅ تـم الانـتـهـاء!**")
 
 Processor = YTProcessorAPI()
