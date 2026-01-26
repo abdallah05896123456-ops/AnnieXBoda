@@ -21,7 +21,7 @@ async def song_processor(client, message: Message):
     mystic = await message.reply_text("جـاري الـبـحـث")
     
     try:
-        # جلب تفاصيل المقطع من المحرك
+        # جلب تفاصيل المقطع من المحرك النووي
         title, duration_min, duration_sec, thumbnail, vidid = await YouTube.details(query)
         
         if int(duration_sec) > SONG_DOWNLOAD_DURATION_LIMIT:
@@ -50,11 +50,11 @@ async def yut_direct_processor(client, message: Message):
     
     try:
         title, _, duration_sec, _, vidid = await YouTube.details(query)
-        # التحميل عبر المحرك النووي
+        # التحميل عبر المحرك النووي بـ 16 اتصال
         file_path, direct = await YouTube.download(f"https://www.youtube.com/watch?v={vidid}", mystic, songaudio=True)
         
         await mystic.edit_text("جـاري الـرفـع")
-        # الإرسال عبر دالة المحرك المركزية
+        # الإرسال عبر دالة المحرك المركزية مع نص "طـلـب بـواسـطـة"
         await YouTube.send_nuclear_file(
             client, message.chat.id, file_path, direct, False, 
             title, duration_sec, None, message.from_user.first_name
@@ -69,19 +69,19 @@ async def song_helper_callback(client, CallbackQuery):
     stype, vidid = CallbackQuery.data.split(None, 1)[1].split("|")
     await CallbackQuery.answer("جـاري الـتـحـضـيـر")
     
-    # استدعاء الجودات المتاحة بنسق مطول من المحرك
+    # استدعاء الجودات المتاحة بنسق مطول من المحرك المركزي
     buttons = await YouTube.get_quality_buttons(vidid, stype)
     await CallbackQuery.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(buttons))
 
 @app.on_callback_query(filters.regex(pattern=r"song_download") & ~BANNED_USERS)
 async def song_download_callback(client, CallbackQuery):
-    """التنزيل النهائي والرفع الفوري"""
+    """التنزيل النهائي والرفع الفوري من الرام ديسك"""
     stype, format_id, vidid = CallbackQuery.data.split(None, 1)[1].split("|")
     mystic = await CallbackQuery.edit_message_text("جـاري الـتـنـزيـل")
     yturl = f"https://www.youtube.com/watch?v={vidid}"
     
     try:
-        # تنفيذ التحميل عبر Aria2c
+        # تنفيذ التحميل عبر Aria2c بـ 16 نواة
         file_path, direct = await YouTube.download(
             yturl, mystic, 
             songvideo=(stype == "video"), 
@@ -95,7 +95,7 @@ async def song_download_callback(client, CallbackQuery):
         
         thumb = await CallbackQuery.message.download() if CallbackQuery.message.photo else None
         
-        # الرفع من الرام ديسك والتنظيف التلقائي
+        # الرفع النهائي والتنظيف التلقائي للملفات
         await YouTube.send_nuclear_file(
             client, CallbackQuery.message.chat.id, file_path, direct, 
             (stype == "video"), info.get("title"), info.get("duration", 0), 
