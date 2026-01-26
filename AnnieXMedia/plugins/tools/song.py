@@ -29,21 +29,29 @@ async def song_processor(client, message: Message):
     
     if len(message.command) < 2:
         try:
-            # إرسال طلب الاسم والانتظار لمدة 10 ثوان من صاحب الأيدي
+            # إرسال طلب الاسم
             prompt = await message.reply_text("ارسـل الان اسـم الـمـقـطـع")
             
-            # الانتظار لرد من نفس المستخدم في نفس الدردشة
-            response = await client.listen.Message(
+            # تم تعديل طريقة الانتظار لضمان استجابة المحرك وعدم الانهاء الفوري
+            # يجب التأكد من وجود pyromod في ملف init البوت
+            response = await client.listen(
                 chat_id=message.chat.id,
                 filters=filters.user(message.from_user.id),
                 timeout=10
             )
-            query = response.text
-            await prompt.delete()
+            
+            if response:
+                query = response.text
+                await prompt.delete()
+            else:
+                return # تجنب استمرار الكود في حال كانت الاستجابة فارغة
+                
         except asyncio.TimeoutError:
             # رسالة الإغلاق في حال عدم الرد خلال 10 ثوان
             return await message.reply_text("تـم انـهـاء الـطـلـب لـعـدم وجـود طـلـب .")
-        except Exception:
+        except Exception as e:
+            # في حال وجود خطأ تقني في الدالة نفسها يتم إنهاء الطلب بوضوح
+            print(f"Listener Error: {e}")
             return await message.reply_text("تـم انـهـاء الـطـلـب لـعـدم وجـود طـلـب .")
     else:
         query = message.text.split(None, 1)[1]
@@ -86,7 +94,7 @@ async def yut_direct_processor(client, message: Message):
         
         await mystic.edit_text("جـاري الـرفـع...")
         
-        # الرفع الذكي الذي يظهر الاسم والعنوان بشكل صحيح
+        # الرفع باستخدام المساعد في الخلفية (Processor)
         await Processor.send_smart_file(
             client, message.chat.id, file_path, False, 
             title, duration_sec, None, message.from_user.first_name
@@ -148,7 +156,7 @@ async def song_download_callback(client, CallbackQuery):
 async def song_helper_callback(client, CallbackQuery):
     """جلب الجودات باستخدام المحرك المطور الذي يدعم الريموت"""
     stype, vidid = CallbackQuery.data.split(None, 1)[1].split("|")
-    await CallbackQuery.answer("جـاري جـلـب الـجـودات...")
+    await CallbackQuery.answer("جـاري جـلـب الـجـودات الـمـتـاحـة...")
     # استدعاء دالة الجودات من Processor لضمان عدم اختفائها
     buttons = await Processor.get_quality_buttons(vidid, stype)
     await CallbackQuery.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(buttons))
