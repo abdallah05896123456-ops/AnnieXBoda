@@ -1,9 +1,8 @@
-# System: Processor | NUCLEAR EDITION (16-Core Aria2c) | RAM Disk | Anti-Bot V3 | Force JPG
+# System: Processor | NUCLEAR EDITION (16-Core) | RAM Disk | Client Rotation | Remote Fix
 
 import asyncio
 import os
 import time
-import random
 import glob
 import shutil
 import yt_dlp
@@ -15,19 +14,19 @@ from AnnieXMedia import LOGGER
 from AnnieXMedia.utils.formatters import convert_bytes
 
 class Config:
-    # 1. استخدام الرامات (RAM Disk) للتخزين المؤقت للحصول على سرعة خرافية (مقتبس من ملفك)
+    # استخدام الرامات (RAM Disk) للتخزين المؤقت للسرعة القصوى
     if os.path.exists("/dev/shm"):
         DOWNLOAD_PATH = "/dev/shm/AnnieDownloads"
     else:
         DOWNLOAD_PATH = os.path.abspath("downloads")
         
-    # استغلال الـ 16 كور بالكامل
-    MAX_WORKERS = 16
+    # استغلال 16 نواة
+    MAX_WORKERS = 16 
     
-    # User-Agent حديث جداً لتجاوز الحظر
+    # User-Agent يحاكي متصفح حقيقي لتجنب الحظر
     USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
 
-# إنشاء المجلد
+# انشاء المجلد
 if not os.path.exists(Config.DOWNLOAD_PATH):
     os.makedirs(Config.DOWNLOAD_PATH, exist_ok=True)
 
@@ -37,7 +36,7 @@ class YTProcessorAPI:
         self._clean_cache()
 
     def _clean_cache(self):
-        """تنظيف الكاش عند البدء لتفريغ الرامات"""
+        """تنظيف الكاش عند البدء"""
         try:
             for filename in os.listdir(Config.DOWNLOAD_PATH):
                 file_path = os.path.join(Config.DOWNLOAD_PATH, filename)
@@ -49,7 +48,7 @@ class YTProcessorAPI:
             pass
 
     def get_cookie_file(self):
-        """البحث الذكي عن ملف الكوكيز في كل مكان محتمل"""
+        """البحث عن الكوكيز في جميع المسارات المحتملة"""
         possible_paths = [
             "cookies.txt", 
             "AnnieXMedia/assets/cookies.txt",
@@ -66,29 +65,26 @@ class YTProcessorAPI:
         yturl = f"https://www.youtube.com/watch?v={vidid}"
         cookie_file = self.get_cookie_file()
         
-        # إعدادات سريعة لجلب المعلومات فقط
         ydl_opts = {
             "quiet": True,
             "cookiefile": cookie_file,
             "no_warnings": True,
             "ignoreerrors": True,
             "nocheckcertificate": True,
+            "remote_components": ["ejs:github"], # اضافة الريموت لتحديث الاكواد
         }
         
         loop = asyncio.get_running_loop()
         
-        # استخدام Client Rotation لجلب المعلومات (تفادي الحظر)
         def _fetch_info():
-            clients = ['android', 'web', 'ios']
-            for client in clients:
-                try:
-                    opts = ydl_opts.copy()
-                    opts['extractor_args'] = {'youtube': {'player_client': [client]}}
-                    with yt_dlp.YoutubeDL(opts) as ydl:
-                        return ydl.extract_info(yturl, download=False)
-                except:
-                    continue
-            return None
+            # محاولة سريعة باستخدام الويب
+            try:
+                opts = ydl_opts.copy()
+                opts['extractor_args'] = {'youtube': {'player_client': ['web']}}
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    return ydl.extract_info(yturl, download=False)
+            except:
+                return None
 
         formats = []
         try:
@@ -118,14 +114,11 @@ class YTProcessorAPI:
         return keyboard
 
     async def download_file(self, url, quality_arg, is_video, title, vidid=None, is_owner=False):
-        # توليد ID فريد للعملية
         vid_id_str = vidid if vidid else str(int(time.time()))
-        
-        # تحديد الامتداد: m4a للصوت (أسرع في التحميل) و mp4 للفيديو
         ext = "mp4" if is_video else "m4a" 
         final_file = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id_str}.{ext}")
         
-        # 1. فحص الكاش في الرام (RAM Cache Hit)
+        # فحص الكاش
         if os.path.exists(final_file) and os.path.getsize(final_file) > 1024:
             return final_file
 
@@ -133,11 +126,10 @@ class YTProcessorAPI:
         if not url.startswith("http"): url = f"https://www.youtube.com/watch?v={vidid}"
 
         # --- إعدادات Aria2c النووية (16 كور) ---
-        # هذه الإعدادات تضمن استخدام كامل سرعة السيرفر
         aria2_args = [
             "-x", "16", "-s", "16", "-j", "16", "-k", "1M",
-            "--file-allocation=none", # الحل السحري لمنع التعليق عند 99%
-            "--disable-ipv6=true",    # تسريع الاتصال
+            "--file-allocation=none", 
+            "--disable-ipv6=true",
             "--max-connection-per-server=16"
         ]
 
@@ -147,17 +139,18 @@ class YTProcessorAPI:
             "geo_bypass": True,
             "nocheckcertificate": True,
             "quiet": True,
-            "noplaylist": True, # منع تحميل القوائم لتجنب الحظر
+            "noplaylist": True,
             "external_downloader": "aria2c",
             "external_downloader_args": aria2_args,
-            "writethumbnail": True, # أساسي لجلب الغلاف
+            "writethumbnail": True,
             "socket_timeout": 60,
             "retries": 10,
+            # إضافة الريموت لحل مشاكل التوقيع والحظر
+            "remote_components": ["ejs:github"],
         }
         
-        # --- تحديد الجودة والصيغة (Formats) ---
+        # --- تحديد الجودة ---
         if is_video:
-            # استخدام mp4 حصراً لتجنب مشاكل الدمج
             if quality_arg == "high" or (is_owner and quality_arg == "best"):
                 fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
             elif quality_arg == "mid":
@@ -167,7 +160,6 @@ class YTProcessorAPI:
             else:
                 fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best"
         else:
-            # الصوت (m4a يتم تحويله لاحقاً)
             if is_owner or quality_arg == "high":
                 fmt = "bestaudio[ext=m4a]/bestaudio/best"
                 q_rate = '320'
@@ -191,14 +183,13 @@ class YTProcessorAPI:
                 {
                     'key': 'EmbedThumbnail'
                 },
-                # تحويل الغلاف لـ JPG إجبارياً لضمان ظهوره في تيليجرام
+                # تحويل الغلاف لـ JPG اجباريا
                 {
                     'key': 'FFmpegThumbnailsConvertor',
                     'format': 'jpg'
                 }
             ]
 
-        # للصوت، اللاحقة ستتغير بعد التحويل من m4a إلى mp3
         if not is_video:
             final_file = final_file.replace(".m4a", ".mp3")
 
@@ -206,10 +197,10 @@ class YTProcessorAPI:
 
         loop = asyncio.get_running_loop()
 
-        # --- دالة التحميل الذكية (Smart Download with Rotation) ---
+        # --- دالة التحميل الذكية (Client Rotation + Remote) ---
         def _run_download_with_rotation():
-            # قائمة العملاء لتجاوز الحظر (Anti-Bot)
-            clients = ['android', 'web', 'ios', 'tv_embedded']
+            # الترتيب: ويب (الافضل جودة) -> اندرويد (تجاوز) -> اي او اس
+            clients = ['web', 'android', 'ios', 'tv_embedded']
             
             for client in clients:
                 try:
@@ -219,7 +210,6 @@ class YTProcessorAPI:
                     with yt_dlp.YoutubeDL(opts) as ydl:
                         ydl.download([url])
                     
-                    # التحقق من نجاح التحميل
                     if os.path.exists(final_file) and os.path.getsize(final_file) > 100:
                         return final_file
                 except Exception as e:
@@ -227,7 +217,6 @@ class YTProcessorAPI:
                     continue
             return None
 
-        # تشغيل في الخلفية
         return await loop.run_in_executor(self.pool, _run_download_with_rotation)
 
     async def upload_alexa_style(self, client, mystic_msg, file_path, is_video, title, duration, user_name, vidid=None):
@@ -237,25 +226,23 @@ class YTProcessorAPI:
         caption = f"**الـعـنـوان:** {title}\n**طـلـب:** {user_name}"
         chat_id = mystic_msg.chat.id
         
-        # --- استراتيجية الغلاف المضمونة (Hybrid) ---
+        # --- استراتيجية الغلاف المضمونة ---
         thumb_path = None
         base_name = os.path.splitext(file_path)[0]
         
-        # 1. البحث عن ملف الـ JPG الذي أنتجه FFmpeg (الأولوية القصوى)
+        # 1. البحث عن ملف الـ JPG الناتج عن FFmpeg
         if os.path.exists(f"{base_name}.jpg"):
             thumb_path = f"{base_name}.jpg"
         
-        # 2. محاولة احتياطية شاملة في المجلد
+        # 2. محاولة احتياطية
         elif vidid:
              possible_files = glob.glob(os.path.join(Config.DOWNLOAD_PATH, f"*{vidid}*"))
              for f in possible_files:
                 if f.endswith((".jpg", ".jpeg", ".png")) and not f.endswith((".mp3", ".mp4", ".m4a", ".mkv")):
                     thumb_path = f
                     break
-        # ----------------------------------
 
         try:
-            # محاولة التعديل (Edit Message) - الطريقة الأسرع
             if is_video:
                 media = InputMediaVideo(media=file_path, thumb=thumb_path, caption=caption, duration=duration, supports_streaming=True)
             else:
@@ -264,7 +251,7 @@ class YTProcessorAPI:
             await mystic_msg.edit_media(media=media)
             
         except (MessageIdInvalid, MessageNotModified):
-            # الفشل الآمن: إرسال رسالة جديدة وحذف رسالة الانتظار
+            # محاولة ارسال رسالة جديدة في حالة فشل التعديل
             try:
                 try: await mystic_msg.delete()
                 except: pass
@@ -273,11 +260,9 @@ class YTProcessorAPI:
                     await client.send_video(chat_id, video=file_path, caption=caption, duration=duration, thumb=thumb_path, supports_streaming=True)
                 else:
                     await client.send_audio(chat_id, audio=file_path, caption=caption, duration=duration, title=title, performer=user_name, thumb=thumb_path)
-            except Exception as e:
-                print(f"Upload Failed: {e}")
+            except:
                 return False
         except Exception:
-            # محاولة يائسة أخيرة بدون غلاف
             try:
                 if is_video:
                     await client.send_video(chat_id, video=file_path, caption=caption, duration=duration)
