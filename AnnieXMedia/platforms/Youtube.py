@@ -132,25 +132,28 @@ class YouTubeAPI:
         return d.get("thumb")
 
     def _background_download(self, link, final_path, is_video):
+        """التحميل الخلفي مع التحويل لـ MP3 باستخدام FFmpeg"""
         try:
-            aria2_args = [
-                "-x", "16", "-s", "16", "-j", "16", "-k", "1M",
-                "--file-allocation=none", "--disable-ipv6=true"
-            ]
-            
-            # دعم الجودات العالية تلقائياً (720p مستقر للرفع)
-            fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]" if is_video else "bestaudio[ext=m4a]/bestaudio/best"
-            
-            ydl_opts = {
-                "format": fmt,
-                "outtmpl": final_path,
-                "cookiefile": get_cookie_file(),
-                "geo_bypass": True,
-                "nocheckcertificate": True,
-                "quiet": True,
-                "external_downloader": "aria2c",
-                "external_downloader_args": aria2_args,
-            }
+            aria2_args = ["-x", "16", "-s", "16", "-j", "16", "-k", "1M"]
+            if is_video:
+                ydl_opts = {
+                    "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]",
+                    "outtmpl": final_path,
+                    "external_downloader": "aria2c",
+                    "external_downloader_args": aria2_args,
+                    "cookiefile": get_cookie_file(),
+                }
+            else:
+                ydl_opts = {
+                    "format": "bestaudio/best",
+                    "outtmpl": final_path.replace(".mp3", ""),
+                    "cookiefile": get_cookie_file(),
+                    "postprocessors": [{
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": "mp3",
+                        "preferredquality": "320",
+                    }],
+                }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([link])
         except Exception:
@@ -170,42 +173,37 @@ class YouTubeAPI:
         
         if videoid: link = self.base + link
         loop = asyncio.get_running_loop()
+        is_vid = (video or songvideo)
 
         try:
             if "v=" in link: vid_id = link.split("v=")[1].split("&")[0]
-            elif "youtu.be/" in link: vid_id = link.split("youtu.be/")[1].split("?")[0]
             else: vid_id = str(int(time.time()))
         except: vid_id = str(int(time.time()))
 
-        ext = "mp4" if video or songvideo else "m4a"
+        ext = "mp4" if is_vid else "mp3"
         ram_path = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
 
         if os.path.exists(ram_path) and os.path.getsize(ram_path) > 1024:
             return ram_path, False
 
         try:
-            cmd = ["yt-dlp", "-g", "--cookies", get_cookie_file() or ""]
-            if video or songvideo:
-                cmd.extend(["-f", "best[height<=720]"])
-            else:
-                cmd.extend(["-f", "bestaudio[ext=m4a]/bestaudio"])
+            cmd = ["yt-dlp", "-g", "--cookies", get_cookie_file() or "", "--remote-components", "ejs:github"]
+            cmd.extend(["-f", "best[height<=720]" if is_vid else "bestaudio"])
             cmd.append(link)
 
-            process = await asyncio.create_subprocess_exec(
-                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
+            process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
             stdout, _ = await process.communicate()
 
             if stdout:
                 direct_link = stdout.decode().split("\n")[0].strip()
-                loop.run_in_executor(self.pool, self._background_download, link, ram_path, (video or songvideo))
+                loop.run_in_executor(self.pool, self._background_download, link, ram_path, is_vid)
                 return direct_link, True
         except Exception:
             pass
 
         def _fallback_download():
             try:
-                fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]" if (video or songvideo) else "bestaudio[ext=m4a]"
+                fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]" if is_vid else "bestaudio/best"
                 ydl_opts = {"format": fmt, "outtmpl": ram_path, "cookiefile": get_cookie_file(), "quiet": True}
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([link])
@@ -217,7 +215,6 @@ class YouTubeAPI:
 
     async def formats(self, link: str, videoid: Union[bool, str] = None):
         if videoid: link = self.base + link
-        # إضافة خيار التشفير لضمان جلب كل الجودات حتى 4K
         ytdl_opts = {"quiet": True, "cookiefile": get_cookie_file(), "remote_components": "ejs:github"}
         with yt_dlp.YoutubeDL(ytdl_opts) as ydl:
             formats_available = []
@@ -235,30 +232,26 @@ class YouTubeAPI:
         return formats_available, link
 
     async def get_quality_buttons(self, vidid, stype):
-        """توليد أزرار الجودات من داخل المحرك"""
+        """توليد أزرار الجودات من داخل المحرك بنسق مطول"""
         formats_available, _ = await self.formats(vidid, True)
         keyboard = []
         if stype == "audio":
             done = []
             for x in formats_available:
-                check = x.get("format")
-                if "audio" in check:
+                if "audio" in x.get("format"):
                     if x.get("filesize") is None: continue
                     form = x.get("format_note", "Audio").title()
-                    if form not in done: done.append(form)
-                    else: continue
-                    sz = convert_bytes(x.get("filesize"))
-                    keyboard.append([InlineKeyboardButton(text=f"صوت {form} الحجم {sz}", callback_data=f"song_download {stype}|{x.get('format_id')}|{vidid}")])
+                    if form not in done: 
+                        done.append(form)
+                        keyboard.append([InlineKeyboardButton(text=f"صـوت {form} الـحـجـم {convert_bytes(x.get('filesize'))}", callback_data=f"song_download {stype}|{x.get('format_id')}|{vidid}")])
         else:
             allowed_ids = [160, 133, 134, 135, 136, 137, 298, 299, 264, 304, 266]
             for x in formats_available:
                 if x.get("filesize") is None or int(x.get("format_id")) not in allowed_ids: continue
-                sz = convert_bytes(x.get("filesize"))
                 res = x.get("format").split("-")[1] if "-" in x.get("format") else "Video"
-                keyboard.append([InlineKeyboardButton(text=f"فيديو {res} الحجم {sz}", callback_data=f"song_download {stype}|{x.get('format_id')}|{vidid}")])
-
-        keyboard.append([InlineKeyboardButton(text="رجوع", callback_data=f"song_back {stype}|{vidid}")])
-        keyboard.append([InlineKeyboardButton(text="إغلاق", callback_data="close")])
+                keyboard.append([InlineKeyboardButton(text=f"فـيـديـو {res} الـحـجـم {convert_bytes(x.get('filesize'))}", callback_data=f"song_download {stype}|{x.get('format_id')}|{vidid}")])
+        keyboard.append([InlineKeyboardButton(text="رجـوع", callback_data=f"song_back {stype}|{vidid}")])
+        keyboard.append([InlineKeyboardButton(text="إغـلاق", callback_data="close")])
         return keyboard
 
     async def send_nuclear_file(self, client, chat_id, file_path, is_direct, is_video, title, duration, thumb, user_name):
@@ -271,12 +264,11 @@ class YouTubeAPI:
                 await client.send_video(chat_id=chat_id, video=file_path, caption=caption, duration=duration, thumb=thumb, supports_streaming=True)
             else:
                 await client.send_chat_action(chat_id, enums.ChatAction.UPLOAD_AUDIO)
-                await client.send_audio(chat_id=chat_id, audio=file_path, caption=caption, duration=duration, title=title, performer="محرك البحث النووي", thumb=thumb)
-            
+                await client.send_audio(chat_id=chat_id, audio=file_path, caption=caption, duration=duration, title=title, performer="الـمـحـرك الـنـووي", thumb=thumb)
             if not is_direct and os.path.exists(file_path): os.remove(file_path)
             if thumb and os.path.exists(thumb): os.remove(thumb)
             return True
-        except Exception: return False
+        except: return False
 
     async def slider(self, link: str, query_type: int, videoid: Union[bool, str] = None):
         if videoid: link = self.base + link
