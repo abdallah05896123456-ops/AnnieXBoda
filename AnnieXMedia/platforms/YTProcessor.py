@@ -1,10 +1,10 @@
 # تم التطوير بواسطة Certified Coders 2026
-# معالج العمليات النووي: نظام المحاولة المزدوجة (Fallback System)
-# يحل مشكلة "Sign in to confirm" عبر التبديل التلقائي بين العملاء
+# معالج الكوكيز الذكي: تدوير عشوائي + حذف التالف تلقائياً + 16 نواة
 
 import asyncio
 import os
 import time
+import random
 import yt_dlp
 from typing import Union, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor
@@ -17,8 +17,8 @@ from AnnieXMedia.utils.formatters import convert_bytes
 
 class Config:
     DOWNLOAD_PATH = "/dev/shm/AnnieDownloads" if os.path.exists("/dev/shm") else "downloads"
-    # استخدام User-Agent عام جداً لتقليل الشكوك
-    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    # متصفح حديث جداً
+    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
     MAX_WORKERS = 16
 
 if not os.path.exists(Config.DOWNLOAD_PATH):
@@ -29,59 +29,64 @@ class YTProcessorAPI:
         self.pool = ThreadPoolExecutor(max_workers=Config.MAX_WORKERS)
 
     def get_cookie_file(self):
-        """البحث عن الكوكيز"""
-        paths = ["cookies.txt", "AnnieXMedia/assets/cookies.txt", "assets/cookies.txt"]
-        for p in paths:
-            if os.path.exists(p) and os.path.getsize(p) > 0:
-                return p
-        return None
+        """نظام تدوير الكوكيز العشوائي"""
+        # التأكد من وجود المجلد
+        cookie_dir = "cookies"
+        if not os.path.exists(cookie_dir):
+            os.makedirs(cookie_dir, exist_ok=True)
+            
+        # البحث عن ملفات txt
+        files = [f for f in os.listdir(cookie_dir) if f.endswith(".txt")]
+        
+        # البحث في مسارات بديلة أيضاً
+        if not files:
+            alternate_paths = ["AnnieXMedia/assets/cookies.txt", "assets/cookies.txt", "cookies.txt"]
+            for p in alternate_paths:
+                if os.path.exists(p) and os.path.getsize(p) > 0:
+                    return p
+            return None
+
+        # اختيار ملف عشوائي لتوزيع الحمل
+        selected = random.choice(files)
+        return os.path.join(cookie_dir, selected)
+
+    def remove_bad_cookie(self, cookie_path):
+        """حذف الكوكيز التالفة لعدم استخدامها مرة أخرى"""
+        if cookie_path and os.path.exists(cookie_path) and "cookies" in cookie_path:
+            try:
+                os.remove(cookie_path)
+                LOGGER(__name__).warning(f"🗑️ تم حذف كوكيز تالف: {cookie_path}")
+            except:
+                pass
 
     async def get_quality_buttons(self, vidid, stype):
-        """جلب الجودات مع نظام المحاولة المزدوجة لتجاوز الحظر"""
         yturl = f"https://www.youtube.com/watch?v={vidid}"
         cookie_file = self.get_cookie_file()
         
-        # المحاولة الأولى: إعدادات قوية (ويب + كوكيز + ريموت)
-        ydl_opts_1 = {
+        ydl_opts = {
             "quiet": True,
             "cookiefile": cookie_file,
             "user_agent": Config.USER_AGENT,
             "remote_components": ["ejs:github"],
+            "nocheckcertificate": True,
             "extractor_args": {"youtube": {"player_client": ["web", "ios"]}}
-        }
-
-        # المحاولة الثانية: وضع التخفي (أندرويد + بدون كوكيز)
-        ydl_opts_2 = {
-            "quiet": True,
-            "cookiefile": None, # إلغاء الكوكيز عمداً لتجاوز الحظر
-            "user_agent": Config.USER_AGENT,
-            "extractor_args": {"youtube": {"player_client": ["android"]}}
         }
         
         loop = asyncio.get_running_loop()
-
-        def _fetch(opts):
-            with yt_dlp.YoutubeDL(opts) as ydl:
+        def _fetch():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 return ydl.extract_info(yturl, download=False)
         
         try:
-            # المحاولة الأولى
-            info = await loop.run_in_executor(self.pool, lambda: _fetch(ydl_opts_1))
+            info = await loop.run_in_executor(self.pool, _fetch)
+            formats = info.get("formats", [])
         except Exception as e:
-            err_str = str(e).lower()
-            if "sign in" in err_str or "bot" in err_str:
-                LOGGER(__name__).warning("⚠️ كشف البوت! جاري تفعيل وضع التخفي (بدون كوكيز)...")
-                try:
-                    # المحاولة الثانية (Fallback)
-                    info = await loop.run_in_executor(self.pool, lambda: _fetch(ydl_opts_2))
-                except Exception as e2:
-                    LOGGER(__name__).error(f"❌ فشلت المحاولة الثانية أيضاً: {e2}")
-                    return [[InlineKeyboardButton(text="فـشل الـجـلـب (حـظـر)", callback_data="close")]]
-            else:
-                LOGGER(__name__).error(f"❌ خطأ غير متعلق بالحظر: {e}")
-                return [[InlineKeyboardButton(text="خـطـأ فـني", callback_data="close")]]
+            # إذا كان الخطأ بسبب الحظر، نحذف الكوكيز ونحاول مرة أخرى
+            if "Sign in" in str(e) and cookie_file:
+                self.remove_bad_cookie(cookie_file)
+            LOGGER(__name__).error(f"خطأ الجودات: {e}")
+            return [[InlineKeyboardButton(text="جـودة تـلـقـائـيـة", callback_data=f"song_download audio|bestaudio|{vidid}")]]
 
-        formats = info.get("formats", [])
         keyboard = []
         if stype == "audio":
             done = []
@@ -102,16 +107,17 @@ class YTProcessorAPI:
         return keyboard
 
     async def download_file(self, url, format_id, is_video, title):
-        """تحميل مع نظام المحاولة المزدوجة"""
         vid_id = str(int(time.time()))
         ext = "mp4" if is_video else "mp3"
         final_file = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
         cookie_file = self.get_cookie_file()
         
-        # إعدادات أساسية
-        base_opts = {
+        ydl_opts = {
+            "format": f"{format_id}+bestaudio/best" if is_video else format_id,
             "outtmpl": os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.%(ext)s"),
+            "cookiefile": cookie_file,
             "user_agent": Config.USER_AGENT,
+            "remote_components": ["ejs:github"],
             "quiet": True,
             "nocheckcertificate": True,
             "external_downloader": "aria2c",
@@ -119,55 +125,34 @@ class YTProcessorAPI:
         }
         
         if not is_video:
-            base_opts["postprocessors"] = [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "320"}]
+            ydl_opts["postprocessors"] = [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "320",
+            }]
 
-        # المحاولة 1: كوكيز + ويب
-        opts_1 = base_opts.copy()
-        opts_1.update({
-            "format": f"{format_id}+bestaudio/best" if is_video else format_id,
-            "cookiefile": cookie_file,
-            "remote_components": ["ejs:github"],
-            "extractor_args": {"youtube": {"player_client": ["web", "ios"]}}
-        })
-
-        # المحاولة 2: بدون كوكيز + أندرويد
-        opts_2 = base_opts.copy()
-        opts_2.update({
-            "format": f"{format_id}+bestaudio/best" if is_video else format_id,
-            "cookiefile": None,
-            "extractor_args": {"youtube": {"player_client": ["android"]}}
-        })
-
-        loop = asyncio.get_running_loop()
-        
-        def _run(opts):
-            with yt_dlp.YoutubeDL(opts) as ydl:
+        def _run():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
             return final_file
 
+        loop = asyncio.get_running_loop()
         try:
-            await loop.run_in_executor(self.pool, lambda: _run(opts_1))
+            return await loop.run_in_executor(self.pool, _run)
         except Exception as e:
-            if "Sign in" in str(e) or "bot" in str(e).lower():
-                LOGGER(__name__).warning("⚠️ فشل التحميل بالكوكيز، جاري المحاولة بدون كوكيز...")
-                try:
-                    await loop.run_in_executor(self.pool, lambda: _run(opts_2))
-                except Exception as e2:
-                    LOGGER(__name__).error(f"❌ فشل التحميل النهائي: {e2}")
-            else:
-                LOGGER(__name__).error(f"❌ خطأ تحميل: {e}")
-
-        return final_file
+             if "Sign in" in str(e) and cookie_file:
+                self.remove_bad_cookie(cookie_file)
+             return None
 
     async def send_smart_file(self, client, chat_id, file_path, is_video, title, duration, thumb, user_name):
-        if not os.path.exists(file_path):
-            LOGGER(__name__).error(f"الملف غير موجود للإرسال: {file_path}")
+        if not file_path or not os.path.exists(file_path):
             return False
 
         from AnnieXMedia import userbot
         caption = f"الـعـنـوان: {title}\nطـلـب: {user_name}"
+        filesize = os.path.getsize(file_path) / (1024 * 1024)
+        
         try:
-            filesize = os.path.getsize(file_path) / (1024 * 1024)
             if filesize < 50:
                 action = ChatAction.UPLOAD_VIDEO if is_video else ChatAction.UPLOAD_AUDIO
                 await client.send_chat_action(chat_id, action)
@@ -187,8 +172,7 @@ class YTProcessorAPI:
 
             if os.path.exists(file_path): os.remove(file_path)
             return True
-        except Exception as e:
-            LOGGER(__name__).error(f"خطأ الإرسال: {e}")
+        except Exception:
             return False
 
 Processor = YTProcessorAPI()
