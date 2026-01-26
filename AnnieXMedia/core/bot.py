@@ -8,16 +8,18 @@ from ..logging import LOGGER
 
 class MusicBotClient(Client):
     def __init__(self):
-        # حذف الوسائط التي سببت TypeError لضمان التوافق مع نسختك
+        # استدعاء البناء الأساسي بدون الوسائط التي تسبب أخطاء في النسخ القديمة
         super().__init__(
             name="AnnieXMusic",
             api_id=config.API_ID,
             api_hash=config.API_HASH,
             bot_token=config.BOT_TOKEN,
-            workers=48, # استغلال الـ 16 نواة بالكامل
+            workers=48, # استغلال الـ 16 نواة بالكامل لمعالجة الطلبات
             max_concurrent_transmissions=7,
         )
-        # 🔥 حقن إعدادات السيرفر المحلي يدوياً لتخطي ليميت الـ 50MB 🔥
+        
+        # 🔥 الإجبار النووي: تفعيل السيرفر المحلي يدوياً لتخطي ليميت الـ 50MB 🔥
+        # هذا يضمن أن البوت سيتصل بالسيرفر الذي يعمل على منفذ 8081
         self.is_local = True
         self.local_server = True
         self.base_url = "http://127.0.0.1:8081"
