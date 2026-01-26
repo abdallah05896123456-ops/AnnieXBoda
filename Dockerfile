@@ -10,41 +10,33 @@ ENV PATH="${DENO_INSTALL}/bin:${PATH}"
 
 WORKDIR /app
 
-# 1. تثبيت "محركات السرعة" وأدوات النظام
-# - aria2: عشان السرعة الجنونية (أهم حاجة كانت ناقصة).
-# - nodejs & deno: عشان فك تشفير يوتيوب الجديد.
-# - ffmpeg: عشان معالجة الصوت والفيديو.
+# تثبيت محركات السرعة وأدوات النظام + سيرفر التيليجرام المحلي
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         git ffmpeg curl unzip build-essential python3-dev \
         libffi-dev libxml2-dev libxslt-dev zlib1g-dev gcc \
-        aria2 && \
-    # تثبيت Node.js (المحرك 1 لفك التشفير)
+        aria2 telegram-bot-api && \
+    # تثبيت Node.js و Deno لفك التشفير
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs && \
-    # تثبيت Deno (المحرك 2 لفك التشفير - مهم جداً حالياً)
     curl -fsSL https://deno.land/install.sh | sh && \
-    # تنظيف المخلفات لتقليل حجم الصورة
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 2. تحديث أدوات بايثون الأساسية
 RUN pip install --upgrade pip setuptools wheel
 
-# 3. نسخ مجلد pytgcalls (النسخة المحلية المعدلة)
 COPY pytgcalls /app/pytgcalls
-
-# 4. تثبيت المكتبات (مع استثناء pytgcalls لتجنب التعارض)
 COPY requirements.txt .
 RUN grep -v -i '^py-tgcalls\|pytgcalls' requirements.txt > filtered.txt && \
     pip install --no-cache-dir -r filtered.txt
 
-# 5. 🔥 الضربة القاضية: إعدادات yt-dlp الإجبارية 🔥
-# هذا السطر يجبر البوت على تحميل أدوات فك التشفير تلقائياً دون انتظار إذن
+# إعدادات yt-dlp الإجبارية لفك التشفير تلقائياً
 RUN mkdir -p /etc/yt-dlp && \
     echo "--remote-components ejs:github" > /etc/yt-dlp.conf
 
-# 6. نسخ باقي ملفات البوت
 COPY . .
 
-# 7. انطلاق الصاروخ 🚀
-CMD ["python3", "run.py"]
+# منح صلاحية التنفيذ لسكربت التشغيل
+RUN chmod +x entrypoint.sh
+
+# انطلاق الصاروخ النووي عبر سكربت التشغيل المزدوج
+CMD ["./entrypoint.sh"]
