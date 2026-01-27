@@ -10,7 +10,8 @@ from pyrogram import Client
 from pyrogram.errors import FloodWait, ChatAdminRequired
 from pyrogram.types import InlineKeyboardMarkup
 from pytgcalls import PyTgCalls
-from pytgcalls.exceptions import NoActiveGroupCall, NoAudioSourceFound, NoVideoSourceFound, AlreadyJoinedError
+# 🔥 تم إزالة AlreadyJoinedError لأنها غير موجودة في مكتبتك
+from pytgcalls.exceptions import NoActiveGroupCall, NoAudioSourceFound, NoVideoSourceFound
 from pytgcalls.types import (
     AudioQuality, 
     ChatUpdate, 
@@ -23,7 +24,6 @@ from pytgcalls.types import (
 
 import config
 from strings import get_string
-# 🔥 استيراد userbot لربط الحسابات المفتوحة
 from AnnieXMedia import LOGGER, YouTube, app, userbot
 from AnnieXMedia.misc import db
 from AnnieXMedia.utils.database import (
@@ -50,7 +50,6 @@ counter = {}
 
 # --- Helper Function for Streams ---
 def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
-    # إعدادات FFMPEG المحسنة للسرعة والجودة
     titan_flags = "-threads 16 -ac 2"
     if str(path).startswith("http"):
         titan_flags += " -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
@@ -58,7 +57,6 @@ def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = No
     if ffmpeg_params:
         titan_flags += f" {ffmpeg_params}"
 
-    # تحديد الأعلام (Flags)
     video_flags = MediaStream.Flags.REQUIRED if video else MediaStream.Flags.IGNORE
     audio_flags = MediaStream.Flags.REQUIRED
 
@@ -82,14 +80,13 @@ async def _clear_(chat_id: int) -> None:
 
 class Call:
     def __init__(self):
-        # 🔥 الربط المباشر مع userbot.py لمنع "Session Busy"
+        # استخدام اليوزربوت الموجود مسبقاً
         self.userbot1 = userbot.one
         self.userbot2 = userbot.two
         self.userbot3 = userbot.three
         self.userbot4 = userbot.four
         self.userbot5 = userbot.five
 
-        # تهيئة PyTgCalls على الكلاينت الموجود بالفعل
         self.one = PyTgCalls(self.userbot1, cache_duration=100)
         self.two = PyTgCalls(self.userbot2, cache_duration=100)
         self.three = PyTgCalls(self.userbot3, cache_duration=100)
@@ -161,7 +158,6 @@ class Call:
         assistant = await group_assistant(self, chat_id)
         ksk = GroupCallConfig(auto_start=False)
         stream = dynamic_media_stream(path=link, video=bool(video))
-        # 🔥 استخدام play للتخطي
         await assistant.play(chat_id, stream, config=ksk)
 
     @capture_internal_err
@@ -176,7 +172,6 @@ class Call:
         ffmpeg_params = f"-ss {to_seek} -to {duration}"
         is_video = mode == "video"
         stream = dynamic_media_stream(path=file_path, video=is_video, ffmpeg_params=ffmpeg_params)
-        # 🔥 استخدام play للتقديم
         await assistant.play(chat_id, stream)
 
     @capture_internal_err
@@ -208,7 +203,6 @@ class Call:
         stream = dynamic_media_stream(path=out, video=is_video, ffmpeg_params=ffmpeg_params)
 
         if chat_id in db and db[chat_id] and db[chat_id][0].get("file") == file_path:
-            # 🔥 استخدام play للسرعة
             await assistant.play(chat_id, stream)
             db[chat_id][0].update({
                 "played": con_seconds,
@@ -250,16 +244,11 @@ class Call:
         ksk = GroupCallConfig(auto_start=False)
 
         try:
-            # 🔥 الحل النهائي: استخدام play بدلاً من join_group_call
+            # 🔥 الدالة play هنا تقوم بالانضمام أو التغيير تلقائياً
+            # لا حاجة لـ try...except AlreadyJoinedError لأن المكتبة تعالجها داخلياً
             await assistant.play(chat_id, stream, config=ksk)
         except NoActiveGroupCall:
             raise AssistantErr(_["call_8"])
-        except AlreadyJoinedError:
-             # إذا كان منضماً بالفعل، نقوم بتحديث الستريم فقط
-            try:
-                await assistant.play(chat_id, stream)
-            except:
-                raise AssistantErr(_["call_10"])
         except (NoAudioSourceFound, NoVideoSourceFound):
             raise AssistantErr(_["call_11"])
         except (ConnectionNotFound, TelegramServerError):
@@ -337,7 +326,6 @@ class Call:
 
             video = True if str(streamtype) == "video" else False
             
-            # Helper to handle playback
             async def _play_stream(stream_obj):
                 try:
                     await client.play(chat_id, stream_obj)
@@ -488,7 +476,6 @@ class Call:
 
     async def start(self) -> None:
         LOGGER(__name__).info("Starting PyTgCalls Clients...")
-        # فقط نقوم ببدء الـ Wrapper لأن الـ Client بدأ بالفعل في userbot.py
         if config.STRING1:
             await self.one.start()
         if config.STRING2:
