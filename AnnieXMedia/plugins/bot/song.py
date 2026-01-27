@@ -81,7 +81,7 @@ async def unlock_inline_search(client, message):
 # الـمـعـالـج الـذكـي الـمـوحـد (Regex Engine)
 # ==========================================================
 
-@app.on_message(filters.regex(r"^/?(اغنية|اغنيه|هات|هاتلي|ابعتلي|song|video|تحميل|play)(?:\s+(فيد|فيديو|video))?(?:\s+(.+))?$") & ~BANNED_USERS, group=5)
+@app.on_message(filters.regex(r"^/?(اغنية|اغنيه|هات|هاتلي|ابعتلي|song|video|تحميل|يوتيوب)(?:\s+(فيد|فيديو|video))?(?:\s+(.+))?$") & ~BANNED_USERS, group=5)
 async def unified_song_processor(client, message: Message):
     
     # 1. فحص القفل العام
@@ -89,7 +89,7 @@ async def unified_song_processor(client, message: Message):
     if is_search_locked and message.from_user.id not in SUDO_USERS:
         return await message.reply_text("**عـذراً، الـقـسـم مـغـلـق حـالـيـاً مـن قـبـل الـمـطـور.**")
 
-    match = re.match(r"^/?(اغنية|اغنيه|هات|هاتلي|ابعتلي|song|video|تحميل|play)(?:\s+(فيد|فيديو|video))?(?:\s+(.+))?$", message.text)
+    match = re.match(r"^/?(اغنية|اغنيه|هات|هاتلي|ابعتلي|song|video|تحميل|ابعتلي)(?:\s+(فيد|فيديو|video))?(?:\s+(.+))?$", message.text)
     if not match: return
     
     command_trigger = match.group(1).lower()
