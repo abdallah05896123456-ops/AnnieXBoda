@@ -20,7 +20,6 @@ from .az_utils import (
 )
 
 # --- [ 0. نظام التشغيل الآمن ] ---
-# متغير للتأكد من أن النظام بدأ مرة واحدة فقط
 is_azan_system_started = False
 
 @app.on_message(group=AZAN_GROUP + 1)
@@ -38,7 +37,6 @@ async def auto_start_azan_system_safe(_, __):
 
 @app.on_message(filters.regex(r"^(الصلاة|مواعيد الصلاة|اوقات الصلاة|الصلاه)$") & filters.group, group=AZAN_GROUP)
 async def next_prayer_info(client, message):
-    """عرض مواقيت الصلاة لليوم والوقت المتبقي للصلاة القادمة"""
     chat_id = message.chat.id
     doc = await get_chat_doc(chat_id)
     
@@ -47,29 +45,21 @@ async def next_prayer_info(client, message):
 
     times = await get_azan_times()
     if not times:
-        return await message.reply_text("تعذر الوصول إلى خادم المواقيت في الوقت الحالي، يرجى المحاولة لاحقاً.")
+        return await message.reply_text("تعذر الوصول إلى خادم المواقيت في الوقت الحالي.")
 
     now = datetime.now()
-    
-    # تنسيق الرسالة
     text = "مواقيت الصلاة بتوقيت مدينة القاهرة لهذا اليوم:\n\n"
     next_prayer = None
     min_diff = float('inf')
 
     for key, name in PRAYER_NAMES_AR.items():
-        t = times[key] # Format: HH:MM
-        # تحويل الوقت لـ datetime للمقارنة
+        t = times[key]
         prayer_time = datetime.strptime(t, "%H:%M").replace(year=now.year, month=now.month, day=now.day)
-        
-        # تنسيق الوقت لـ 12 ساعة
         display_time = prayer_time.strftime("%I:%M %p")
-        
-        # تحديد الصلاة القادمة
         diff = (prayer_time - now).total_seconds()
         if 0 < diff < min_diff:
             min_diff = diff
             next_prayer = (name, diff)
-
         text += f"- {name}: {display_time}\n"
 
     text += "\n"
@@ -77,107 +67,87 @@ async def next_prayer_info(client, message):
         name, seconds = next_prayer
         hours = int(seconds // 3600)
         minutes = int((seconds % 3600) // 60)
-        text += f"الصلاة القادمة هي صلاة {name} (يتبقى {hours} ساعة و {minutes} دقيقة على رفع الأذان)."
+        text += f"الصلاة القادمة هي صلاة {name} (يتبقى {hours} ساعة و {minutes} دقيقة)."
     else:
-        text += "انتهت كافة الصلوات لهذا اليوم، موعدنا مع صلاة الفجر ليوم الغد بإذن الله."
+        text += "انتهت كافة الصلوات لهذا اليوم."
 
     await message.reply_text(text)
 
-# --- [ 2. أوامر المشرفين (التحكم) ] ---
+# --- [ 2. أوامر المشرفين (التحكم النصي) ] ---
 
 @app.on_message(filters.regex(r"^تفعيل الاذان$") & filters.group & ~BANNED_USERS, group=AZAN_GROUP)
 async def admin_enable_azan(_, m):
-    if not await check_rights(m.from_user.id, m.chat.id):
-        return await m.reply_text("عذراً، هذا الأمر مخصص للمشرفين فقط.")
-    
+    if not await check_rights(m.from_user.id, m.chat.id): return
     doc = await get_chat_doc(m.chat.id)
-    if doc.get("azan_active"): 
-        return await m.reply_text("خدمة الأذان مفعلة بالفعل في هذه المجموعة.")
-    
+    if doc.get("azan_active"): return await m.reply_text("الخدمة مفعلة بالفعل.")
     await update_doc(m.chat.id, "azan_active", True)
-    await m.reply_text("تم تفعيل خدمة الأذان والتنبيهات بنجاح في هذه المجموعة.")
+    await m.reply_text("تم تفعيل خدمة الأذان.")
 
 @app.on_message(filters.regex(r"^قفل الاذان$") & filters.group & ~BANNED_USERS, group=AZAN_GROUP)
 async def admin_disable_azan(_, m):
-    if not await check_rights(m.from_user.id, m.chat.id):
-        return await m.reply_text("عذراً، هذا الأمر مخصص للمشرفين فقط.")
-    
+    if not await check_rights(m.from_user.id, m.chat.id): return
     doc = await get_chat_doc(m.chat.id)
-    
-    # حماية التفعيل الإجباري
-    if doc.get("forced_active", False):
-        if m.from_user.id not in DEVS:
-            return await m.reply_text("عذراً، لا يمكنك إيقاف الخدمة لأنها مفعلة إجبارياً من قبل مطور البوت.")
-
-    if not doc.get("azan_active"): 
-        return await m.reply_text("خدمة الأذان متوقفة بالفعل.")
-        
+    if doc.get("forced_active", False) and m.from_user.id not in DEVS:
+        return await m.reply_text("عذراً، الخدمة مفعلة إجبارياً.")
+    if not doc.get("azan_active"): return await m.reply_text("الخدمة متوقفة بالفعل.")
     await update_doc(m.chat.id, "azan_active", False)
-    await m.reply_text("تم تعطيل خدمة الأذان في هذه المجموعة بناءً على طلبك.")
+    await m.reply_text("تم تعطيل خدمة الأذان.")
 
 @app.on_message(filters.regex(r"^(تفعيل الاذكار|تفعيل الدعاء)$") & filters.group & ~BANNED_USERS, group=AZAN_GROUP)
 async def admin_enable_duas(_, m):
     if not await check_rights(m.from_user.id, m.chat.id): return
     await update_doc(m.chat.id, "dua_active", True)
     await update_doc(m.chat.id, "night_dua_active", True)
-    await m.reply_text("تم تفعيل خدمة نشر الأذكار والأدعية اليومية (الصباح والمساء).")
+    await m.reply_text("تم تفعيل الأذكار.")
 
 @app.on_message(filters.regex(r"^(قفل الاذكار|قفل الدعاء)$") & filters.group & ~BANNED_USERS, group=AZAN_GROUP)
 async def admin_disable_duas(_, m):
     if not await check_rights(m.from_user.id, m.chat.id): return
     doc = await get_chat_doc(m.chat.id)
-
     if doc.get("forced_dua_active", False) and m.from_user.id not in DEVS:
-        return await m.reply_text("عذراً، الأذكار مفعلة إجبارياً من قبل مطور البوت.")
-
+        return await m.reply_text("عذراً، الأذكار مفعلة إجبارياً.")
     await update_doc(m.chat.id, "dua_active", False)
     await update_doc(m.chat.id, "night_dua_active", False)
-    await m.reply_text("تم تعطيل خدمة نشر الأذكار والأدعية التلقائية.")
+    await m.reply_text("تم تعطيل الأذكار.")
 
 
-# --- [ 3. لوحة التحكم التفاعلية ] ---
+# --- [ 3. لوحة التحكم المركزية (أوامر الاذان) ] ---
 
 @app.on_message(filters.regex(r"^(اعدادات الاذان|انلاين الاذان|الاذان|أوامر الاذان)$") & filters.group & ~BANNED_USERS, group=AZAN_GROUP)
 async def azan_commands_panel(_, m):
     text = (
-        "مرحباً بك في لوحة تحكم الأذان.\n"
-        "يمكنك التحكم في تفعيل وتعطيل الصلوات والأذكار من هنا.\n\n"
-        "يرجى اختيار القسم المناسب لصلاحياتك:"
+        "**مرحباً بك في لوحة تحكم الأذان 🕌**\n\n"
+        "من هنا يمكنك الوصول لكافة الأوامر والتحكم في الإعدادات.\n"
+        "اختر القسم المناسب:"
     )
     
+    # 🔥 القائمة الرئيسية النظيفة
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("أوامر المطور", callback_data="cmd_owner")],
-        [InlineKeyboardButton("إعدادات المجموعة", callback_data="cmd_admin")],
-        [InlineKeyboardButton("إغلاق اللوحة", callback_data="cmd_close")]
+        [InlineKeyboardButton("• اوامـر الـمـالـك •", callback_data="cmd_owner"), InlineKeyboardButton("• اوامـر الادمـن •", callback_data="cmd_admin")],
+        [InlineKeyboardButton("• اغـلاق •", callback_data="cmd_close")]
     ])
     await m.reply_text(text, reply_markup=kb)
 
-# استقبال رابط الإعدادات في الخاص (لتجنب زحمة الجروب)
+# استقبال رابط الإعدادات في الخاص
 @app.on_message(filters.regex("^/start azset_") & filters.private, group=AZAN_GROUP)
 async def open_panel_private(_, m):
     try: target_cid = int(m.text.split("azset_")[1])
     except: return
-    
-    # التحقق من أن المستخدم مشرف في الجروب المستهدف
     if not await check_rights(m.from_user.id, target_cid):
-        return await m.reply("يجب أن تكون مشرفاً في المجموعة لتتمكن من تعديل إعداداتها.")
-        
+        return await m.reply("يجب أن تكون مشرفاً لتعديل الإعدادات.") 
     await show_panel(m, target_cid)
 
 async def show_panel(m, chat_id):
-    """عرض لوحة التحكم بالأزرار مع الحالة الحالية"""
+    """عرض لوحة التحكم بالأزرار (تفعيل/تعطيل الصلوات)"""
     if chat_id in local_cache: del local_cache[chat_id]
     doc = await get_chat_doc(chat_id)
     prayers = doc.get("prayers", {})
     if not prayers: prayers = {k: True for k in CURRENT_RESOURCES.keys()}
     
     kb = []
-    
-    # الصف الأول: التحكم العام
     st_main = "مفعل" if doc.get("azan_active", True) else "معطل"
     kb.append([InlineKeyboardButton(f"الاذان العام : {st_main}", callback_data=f"set_main_{chat_id}")])
     
-    # الصف الثاني: الأذكار
     st_dua = "مفعل" if doc.get("dua_active", True) else "معطل"
     st_ndua = "مفعل" if doc.get("night_dua_active", True) else "معطل"
     kb.append([
@@ -185,7 +155,6 @@ async def show_panel(m, chat_id):
         InlineKeyboardButton(f"المساء : {st_ndua}", callback_data=f"set_ndua_{chat_id}")
     ])
 
-    # الصفوف التالية: الصلوات الفردية
     row = []
     for k, name in PRAYER_NAMES_AR.items():
         is_active = prayers.get(k, True)
@@ -197,20 +166,14 @@ async def show_panel(m, chat_id):
     kb.append([InlineKeyboardButton("تجربة الأذان", callback_data=f"test_azan_single_{chat_id}")])
     kb.append([InlineKeyboardButton("تحديث", callback_data=f"refresh_{chat_id}")])
     
-    chat_title = str(chat_id)
-    try:
-        chat = await app.get_chat(chat_id)
-        chat_title = chat.title
-    except: pass
-
-    text = f"إعدادات الأذان الخاصة بمجموعة: {chat_title}"
-    
+    text = "إعدادات الأذان التفصيلية للمجموعة:"
     try:
         if isinstance(m, Message): await m.reply_text(text, reply_markup=InlineKeyboardMarkup(kb))
         else: await m.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb))
     except: pass
 
-# معالج الضغط على الأزرار
+# --- [ معالجة الكيبورد والزراير ] ---
+
 @app.on_callback_query(filters.regex(r"^(set_|help_|close_|devset_|dev_cancel|test_azan|test_global|cmd_|refresh_|inline_azan_)"), group=AZAN_GROUP)
 async def cb_handler(_, q):
     data = q.data
@@ -218,31 +181,50 @@ async def cb_handler(_, q):
     chat_id = q.message.chat.id
     
     if data == "cmd_close":
-        if not await check_rights(uid, chat_id):
-            return await q.answer("هذا الزر للمشرفين فقط", show_alert=True)
+        if not await check_rights(uid, chat_id): return await q.answer("للمشرفين فقط")
         return await q.message.delete()
-        
+    
+    # --- [ زرار الرجوع ] ---
+    if data == "cmd_back_main":
+        text = "القائمة الرئيسية للأذان 🕌:\nاختر القسم:"
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("• اوامـر الـمـالـك •", callback_data="cmd_owner"), InlineKeyboardButton("• اوامـر الادمـن •", callback_data="cmd_admin")],
+            [InlineKeyboardButton("• اغـلاق •", callback_data="cmd_close")]
+        ])
+        return await q.edit_message_text(text, reply_markup=kb)
+
+    # --- [ قسم المالك (أوامر + تحكم) ] ---
     if data == "cmd_owner":
         if uid != MAIN_OWNER and uid not in DEVS:
-            return await q.answer("هذا القسم خاص بمطور البوت فقط", show_alert=True)
-        
-        # إحصائيات سريعة للمطور
-        active_count = await settings_db.count_documents({"azan_active": True})
+            return await q.answer("هذا القسم خاص بالمطور فقط", show_alert=True)
         
         text = (
-            "لوحة تحكم المطور:\n\n"
-            f"عدد المجموعات المفعلة: {active_count}\n\n"
-            "التحكم الكامل متاح عبر الأزرار أدناه:"
+            "**⚜️ أوامر المالك (المطورين فقط):**\n\n"
+            "**📡 أوامر النشر:**\n"
+            "- `نشر الصلاة علي النبي`\n"
+            "- `نشر اذكار`\n"
+            "- `نشر عام [الرسالة]`\n\n"
+            "**⚙️ أوامر التحكم الإجباري:**\n"
+            "- `تفعيل الاذان الاجباري`\n"
+            "- `قفل الاذان الاجباري`\n"
+            "- `تفعيل الدعاء الاجباري`\n\n"
+            "**🛠 أوامر التخصيص:**\n"
+            "- `تغيير رابط الاذان [اسم الصلاة]`\n"
+            "- `تست دعاء صباح`\n"
+            "- `تست دعاء مساء`\n\n"
+            "**👇 أدوات التحكم السريعة:**"
         )
+        # دمجنا الأوامر مع الزراير في صفحة واحدة
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("تفعيل انلاين اذان", callback_data="inline_azan_enable"), InlineKeyboardButton("قفل انلاين اذان", callback_data="inline_azan_disable")],
             [InlineKeyboardButton("تجربة الأذان (هنا)", callback_data=f"test_azan_single_{chat_id}")],
             [InlineKeyboardButton("تجربة عامة (للكل)", url=f"https://t.me/{(await app.get_me()).username}?start=test_global")],
             [InlineKeyboardButton("تغيير الاستيكر", callback_data="devset_menu_sticker")],
-            [InlineKeyboardButton("رجوع", callback_data="cmd_back_main")]
+            [InlineKeyboardButton("• رجوع •", callback_data="cmd_back_main")]
         ])
         return await q.edit_message_text(text, reply_markup=kb)
 
+    # --- [ قسم الادمن (أوامر + تحكم) ] ---
     if data == "cmd_admin":
         if not await check_rights(uid, chat_id):
             return await q.answer("هذا القسم للمشرفين فقط", show_alert=True)
@@ -251,45 +233,58 @@ async def cb_handler(_, q):
         settings_link = f"https://t.me/{bot_username}?start=azset_{chat_id}"
         
         text = (
-            "أوامر المشرفين:\n"
-            "يمكنك التحكم السريع عبر الأزرار.\n"
-            "لضبط صلوات محددة يرجى الانتقال للإعدادات المتقدمة في الخاص."
+            "**👮‍♂️ أوامر المشرفين (داخل المجموعة):**\n\n"
+            "**🕌 التحكم في الأذان:**\n"
+            "- `تفعيل الاذان`\n"
+            "- `قفل الاذان`\n"
+            "- `اعدادات الاذان`\n\n"
+            "**📿 التحكم في الأذكار:**\n"
+            "- `تفعيل الاذكار`\n"
+            "- `قفل الاذكار`\n\n"
+            "**🩺 التشخيص:**\n"
+            "- `فحص الاذان`\n\n"
+            "**👥 أوامر الأعضاء:**\n"
+            "- `الصلاة` أو `مواعيد الصلاة`\n"
+            "- `قرآن` أو `اية`\n"
+            "- `اذكار الصباح`\n"
+            "- `اذكار المساء`\n\n"
+            "**👇 إعدادات المجموعة:**"
         )
+        
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("الإعدادات المتقدمة (خاص)", url=settings_link)],
-            [InlineKeyboardButton("رجوع", callback_data="cmd_back_main")]
+            [InlineKeyboardButton("• رجوع •", callback_data="cmd_back_main")]
         ])
         return await q.edit_message_text(text, reply_markup=kb)
 
-    if data == "cmd_back_main":
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("أوامر المطور", callback_data="cmd_owner")],
-            [InlineKeyboardButton("إعدادات المشرفين", callback_data="cmd_admin")],
-            [InlineKeyboardButton("إغلاق اللوحة", callback_data="cmd_close")]
-        ])
-        return await q.edit_message_text("القائمة الرئيسية:", reply_markup=kb)
+    # ... (معالجة أزرار التفعيل والقفل والاختبار كما هي) ...
 
-    # معالجة أزرار تفعيل/قفل انلاين اذان
     if data == "inline_azan_enable":
         if uid != MAIN_OWNER and uid not in DEVS: return await q.answer("للمطور فقط")
-        await q.answer("جاري التفعيل الإجباري...")
-        # استدعاء دالة التفعيل الإجباري
+        await q.answer("جاري التفعيل...")
         async for doc in settings_db.find({}):
             await settings_db.update_one({"_id": doc["_id"]}, {"$set": {"azan_active": True, "forced_active": True}})
         local_cache.clear()
-        await q.message.edit_text("تم تفعيل انلاين اذان (إجبارياً) لجميع المجموعات بنجاح.")
+        await q.message.edit_text("تم تفعيل انلاين اذان (إجبارياً) للجميع.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("• رجوع •", callback_data="cmd_owner")]]))
         return
 
     if data == "inline_azan_disable":
         if uid != MAIN_OWNER and uid not in DEVS: return await q.answer("للمطور فقط")
-        await q.answer("جاري الإيقاف الإجباري...")
-        # استدعاء دالة الإيقاف الإجباري
+        await q.answer("جاري الإيقاف...")
         async for doc in settings_db.find({}):
             await settings_db.update_one({"_id": doc["_id"]}, {"$set": {"azan_active": False, "forced_active": False}})
         local_cache.clear()
-        await q.message.edit_text("تم قفل انلاين اذان (إجبارياً) لجميع المجموعات بنجاح.")
+        await q.message.edit_text("تم قفل انلاين اذان (إجبارياً) للجميع.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("• رجوع •", callback_data="cmd_owner")]]))
         return
 
+    if data.startswith("test_azan_single_"):
+        target_id = int(data.split("_")[3])
+        if not await check_rights(uid, target_id): return await q.answer("للمشرفين فقط")
+        await q.answer("جاري التجربة...")
+        try: await start_azan_stream(target_id, "Fajr", force_test=True)
+        except Exception as e: await q.message.reply(f"خطأ: {e}")
+        return
+        
     if data.startswith("refresh_"):
         target = int(data.split("_")[1])
         if not await check_rights(uid, target): return await q.answer("لا تملك صلاحية")
@@ -297,77 +292,58 @@ async def cb_handler(_, q):
         await q.answer("تم تحديث البيانات")
         return
 
-    if data.startswith("test_azan_single_"):
-        target_id = int(data.split("_")[3])
-        if not await check_rights(uid, target_id):
-             return await q.answer("للمشرفين فقط", show_alert=True)
-        
-        await q.answer("جاري بدء البث التجريبي...", show_alert=False)
-        try:
-            await start_azan_stream(target_id, "Fajr", force_test=True)
-        except Exception as e:
-            await q.message.reply(f"حدث خطأ: {e}")
-        return
-
-    # معالجة تغيير الإعدادات (Setters)
     if data.startswith("set_"):
         parts = data.split("_")
+        target_cid = int(parts[-1])
+        if not await check_rights(uid, target_cid): return await q.answer("لا تملك صلاحية")
         
-        if "_p_" in data:
+        if "main" in data:
+            doc = await get_chat_doc(target_cid)
+            await update_doc(target_cid, "azan_active", not doc.get("azan_active", True))
+        elif "dua" in data:
+            doc = await get_chat_doc(target_cid)
+            new_val = not doc.get("dua_active", True)
+            await update_doc(target_cid, "dua_active", new_val)
+            await update_doc(target_cid, "night_dua_active", new_val)
+        elif "_p_" in data:
             pkey = parts[2]
-            target_cid = int(parts[3])
-            
-            if not await check_rights(uid, target_cid): return await q.answer("لا تملك صلاحية")
-
             doc = await get_chat_doc(target_cid)
             new_st = not doc.get("prayers", {}).get(pkey, True)
             await update_doc(target_cid, new_st, new_st, sub_key=pkey)
-            await show_panel(q, target_cid)
-            await q.answer(f"تم تغيير حالة صلاة {PRAYER_NAMES_AR[pkey]}")
             
-        elif "main" in data:
-            target_cid = int(parts[-1])
-            if not await check_rights(uid, target_cid): return await q.answer("لا تملك صلاحية")
-            doc = await get_chat_doc(target_cid)
-            new_val = not doc.get("azan_active", True)
-            await update_doc(target_cid, "azan_active", new_val)
-            await show_panel(q, target_cid)
-            await q.answer("تم تغيير الحالة العامة")
-            
-        elif "_dua_" in data or "_ndua_" in data:
-            target_cid = int(parts[-1])
-            if not await check_rights(uid, target_cid): return await q.answer("لا تملك صلاحية")
-            doc = await get_chat_doc(target_cid)
-            key = "dua_active" if "_dua_" in data else "night_dua_active"
-            new_val = not doc.get(key, True)
-            await update_doc(target_cid, key, new_val)
-            await show_panel(q, target_cid)
+        await show_panel(q, target_cid)
+        return
 
-    # معالجة أدوات المطور
-    elif data == "dev_cancel":
+    # --- [ 🔥 زرار الإلغاء الذكي (مسح الحالة) ] ---
+    if data == "dev_cancel":
         if uid in admin_state: del admin_state[uid]
         return await q.message.delete()
     
-    elif data == "devset_menu_sticker":
+    # --- [ قائمة اختيار الاستيكر ] ---
+    if data == "devset_menu_sticker":
         kb = []
         for k, n in PRAYER_NAMES_AR.items():
             kb.append([InlineKeyboardButton(f"استيكر {n}", callback_data=f"devset_sticker_{k}")])
         kb.append([InlineKeyboardButton("استيكر الأذكار", callback_data="devset_sticker_dua")])
-        kb.append([InlineKeyboardButton("إلغاء", callback_data="dev_cancel")])
+        kb.append([InlineKeyboardButton("• الـغـاء •", callback_data="dev_cancel")])
         await q.edit_message_text("اختر الاستيكر الذي تريد تغييره:", reply_markup=InlineKeyboardMarkup(kb))
         
+    # --- [ وضع الانتظار (مع زر الإلغاء) ] ---
     elif data.startswith("devset_"):
         if uid not in DEVS: return await q.answer("للمطورين فقط", show_alert=True)
         parts = data.split("_")
         atype, pkey = parts[1], parts[2]
         
+        # 🔥 هنا الإضافة: زرار إلغاء يظهر تحت طلب الاستيكر
+        cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton("• الـغـاء •", callback_data="dev_cancel")]])
+        
         if pkey == "dua":
             admin_state[uid] = {"action": "wait_dua_sticker"}
-            await q.message.edit_text("قم بإرسال الاستيكر الجديد للأذكار الآن:")
+            await q.message.edit_text("قم بإرسال الاستيكر الجديد للأذكار الآن:", reply_markup=cancel_kb)
         else:
             admin_state[uid] = {"action": f"wait_azan_{atype}", "key": pkey}
             req = "استيكر" if atype == "sticker" else "رابط"
-            await q.message.edit_text(f"قم بإرسال {req} صلاة {PRAYER_NAMES_AR[pkey]} الآن:")
+            await q.message.edit_text(f"قم بإرسال {req} صلاة {PRAYER_NAMES_AR[pkey]} الآن:", reply_markup=cancel_kb)
 
 
 # --- [ 4. استقبال مدخلات المطور ] ---
