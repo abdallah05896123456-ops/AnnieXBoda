@@ -10,7 +10,7 @@ from pyrogram import Client
 from pyrogram.errors import FloodWait, ChatAdminRequired
 from pyrogram.types import InlineKeyboardMarkup
 from pytgcalls import PyTgCalls
-from pytgcalls.exceptions import NoActiveGroupCall, NoAudioSourceFound, NoVideoSourceFound
+from pytgcalls.exceptions import NoActiveGroupCall, NoAudioSourceFound, NoVideoSourceFound, AlreadyJoinedError
 from pytgcalls.types import (
     AudioQuality, 
     ChatUpdate, 
@@ -57,23 +57,18 @@ def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = No
     if ffmpeg_params:
         titan_flags += f" {ffmpeg_params}"
 
-    if video:
-        return MediaStream(
-            media_path=path,
-            audio_parameters=AudioQuality.STUDIO, # Alexa uses better quality
-            video_parameters=VideoQuality.HD_720p,
-            audio_flags=MediaStream.Flags.REQUIRED,
-            video_flags=MediaStream.Flags.REQUIRED,
-            ffmpeg_parameters=titan_flags,
-        )
-    else:
-        return MediaStream(
-            media_path=path,
-            audio_parameters=AudioQuality.STUDIO, # Alexa uses better quality
-            audio_flags=MediaStream.Flags.REQUIRED,
-            video_flags=MediaStream.Flags.IGNORE,
-            ffmpeg_parameters=titan_flags,
-        )
+    # تحديد الأعلام (Flags) بشكل صريح
+    video_flags = MediaStream.Flags.REQUIRED if video else MediaStream.Flags.IGNORE
+    audio_flags = MediaStream.Flags.REQUIRED
+
+    return MediaStream(
+        media_path=path,
+        audio_parameters=AudioQuality.STUDIO, # جودة استوديو
+        video_parameters=VideoQuality.HD_720p if video else None,
+        audio_flags=audio_flags,
+        video_flags=video_flags,
+        ffmpeg_parameters=titan_flags,
+    )
 
 async def _clear_(chat_id: int) -> None:
     popped = db.pop(chat_id, None)
@@ -180,6 +175,7 @@ class Call:
         # 🔥 ALEXA OPTIMIZATION: Using GroupCallConfig
         ksk = GroupCallConfig(auto_start=False)
         stream = dynamic_media_stream(path=link, video=bool(video))
+        # استخدام play بدلاً من change_stream
         await assistant.play(chat_id, stream, config=ksk)
 
     @capture_internal_err
@@ -194,11 +190,11 @@ class Call:
         ffmpeg_params = f"-ss {to_seek} -to {duration}"
         is_video = mode == "video"
         stream = dynamic_media_stream(path=file_path, video=is_video, ffmpeg_params=ffmpeg_params)
+        # استخدام play للتقديم
         await assistant.play(chat_id, stream)
 
     @capture_internal_err
     async def speedup_stream(self, chat_id: int, file_path: str, speed: float, playing: list) -> None:
-        # Code kept from Annie for compatibility
         if not isinstance(playing, list) or not playing or not isinstance(playing[0], dict):
             raise AssistantErr("Invalid stream info for speedup.")
 
@@ -226,6 +222,7 @@ class Call:
         stream = dynamic_media_stream(path=out, video=is_video, ffmpeg_params=ffmpeg_params)
 
         if chat_id in db and db[chat_id] and db[chat_id][0].get("file") == file_path:
+            # استخدام play للسرعة
             await assistant.play(chat_id, stream)
             db[chat_id][0].update({
                 "played": con_seconds,
@@ -269,6 +266,7 @@ class Call:
         ksk = GroupCallConfig(auto_start=False)
 
         try:
+            # الانضمام باستخدام play
             await assistant.play(chat_id, stream, config=ksk)
         except (NoActiveGroupCall, ChatAdminRequired):
             raise AssistantErr(_["call_8"])
@@ -354,6 +352,18 @@ class Call:
 
             video = True if str(streamtype) == "video" else False
             
+            # Helper to play stream safely
+            async def _play_stream(stream_obj):
+                try:
+                    await client.play(chat_id, stream_obj)
+                except Exception:
+                    try:
+                        await client.leave_call(chat_id)
+                        await asyncio.sleep(0.5)
+                        await client.play(chat_id, stream_obj)
+                    except:
+                        return await app.send_message(original_chat_id, text=_["call_6"])
+
             # 🔥 ALEXA OPTIMIZATION: Pre-calculate stream to save time
             try:
                 if "live_" in queued:
@@ -361,11 +371,7 @@ class Call:
                     if n == 0:
                         return await app.send_message(original_chat_id, text=_["call_6"])
                     stream = dynamic_media_stream(path=link, video=video)
-                    
-                    try:
-                        await client.play(chat_id, stream)
-                    except Exception:
-                        return await app.send_message(original_chat_id, text=_["call_6"])
+                    await _play_stream(stream)
 
                     img = await get_thumb(videoid)
                     button = stream_markup(_, chat_id)
@@ -396,10 +402,7 @@ class Call:
                         return await mystic.edit_text(_["call_6"], disable_web_page_preview=True)
 
                     stream = dynamic_media_stream(path=file_path, video=video)
-                    try:
-                        await client.play(chat_id, stream)
-                    except:
-                        return await app.send_message(original_chat_id, text=_["call_6"])
+                    await _play_stream(stream)
 
                     img = await get_thumb(videoid)
                     button = stream_markup(_, chat_id)
@@ -420,10 +423,7 @@ class Call:
 
                 elif "index_" in queued:
                     stream = dynamic_media_stream(path=videoid, video=video)
-                    try:
-                        await client.play(chat_id, stream)
-                    except:
-                        return await app.send_message(original_chat_id, text=_["call_6"])
+                    await _play_stream(stream)
 
                     button = stream_markup(_, chat_id)
                     run = await app.send_photo(
@@ -437,10 +437,7 @@ class Call:
 
                 else:
                     stream = dynamic_media_stream(path=queued, video=video)
-                    try:
-                        await client.play(chat_id, stream)
-                    except:
-                        return await app.send_message(original_chat_id, text=_["call_6"])
+                    await _play_stream(stream)
 
                     if videoid == "telegram":
                         button = stream_markup(_, chat_id)
