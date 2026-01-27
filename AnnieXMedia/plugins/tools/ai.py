@@ -1,6 +1,6 @@
 # Authored By Certified Coders © 2026
-# AnnieX Core - Extreme Detailed Edition
-# Features: Ultra-Long Responses, Vision, Multi-Provider Failover, No-Prefix
+# TITAN AI SYSTEM - SUPREME DETAILED EDITION
+# Optimized for 16-Core Docker Environment | Multi-Provider Failover
 
 import asyncio, os, time, re
 from pyrogram import filters, enums
@@ -8,112 +8,144 @@ from pyrogram.types import Message
 from g4f.client import AsyncClient
 from g4f.Provider import DuckDuckGo, Blackbox, Bing, You, Liaobots
 
+# استيراد كائن البوت والكونفنج لضمان الربط البرمجي الكامل
 from AnnieXMedia import app
 import config
 
-# --- الإعدادات الفنية ---
-SUDO_USERS = config.OWNER_ID if isinstance(config.OWNER_ID, list) else [config.OWNER_ID]
-AI_STATUS = True
-LIMIT_STATUS = True
-DAILY_LIMIT = 100 
-AI_GROUP = 20 # الأولوية المثالية لعدم التعارض
+# ==========================================================
+# الإعـدادات الـتـقـنـيـة والـسـيـطـرة
+# ==========================================================
 
-# مخازن البيانات
-context, counter = {}, {}
-unlocked_users, continuous_mode = set(), set()
-client_ai = AsyncClient()
+# جلب أيدي المطور (يدعم القائمة أو الرقم المفرد)
+OWNER_ID = config.OWNER_ID if isinstance(config.OWNER_ID, list) else [config.OWNER_ID]
 
-# --- محرك المعالجة العميق (Logic Core) ---
-async def process_ai_request(u_id, prompt, img=None):
-    if u_id not in context: context[u_id] = []
-    
-    # التعليمات البرمجية لإجبار البوت على التطويل والتفصيل
+AI_STATUS = True        # حالة النظام العامة
+LIMIT_STATUS = True     # نظام القيود اليومية
+DAILY_LIMIT = 100       # حد الاستخدام للسيرفرات القوية
+AI_GROUP = 30           # مجموعة المعالجة (لتجنب التعارض مع الميوزك والحماية)
+
+# مخازن البيانات الرقمية (تخزين لحظي في الرام لسرعة الوصول)
+user_context = {}         # حفظ سياق المحادثات لضمان الفهم العميق
+usage_counter = {}        # تتبع عدد الاستخدامات لكل مستخدم
+permanent_users = set()   # قائمة المستخدمين في وضع الاستجابة الدائمة
+unlocked_users = set()    # المستخدمين المستثنين من القيود
+
+# تهيئة عميل الذكاء الاصطناعي
+ai_client = AsyncClient()
+
+# ==========================================================
+# مـحـرك الـتـفـكـيـر والـمـعـالـجـة (Logic Core)
+# ==========================================================
+
+async def fetch_ai_logic(user_id, prompt, image_path=None):
+    """المحرك الرئيسي: معالجة متوازية مع نظام تبديل الخوادم اللحظي"""
+    if user_id not in user_context:
+        user_context[user_id] = []
+        
+    # التعليمات البرمجية الصارمة لإجبار المحرك على التفصيل الممل
     system_instruction = (
-        "أنت نظام ذكاء اصطناعي فائق التطور مدمج داخل سورس AnnieXMedia. "
-        "يجب أن تكون إجاباتك مطولة جداً، مفصلة، وشاملة لكل جوانب الموضوع. "
-        "استخدم لغة عربية قوية أو عامية مصرية ذكية حسب السياق، "
-        "وفي حال وجود صور، قم بتحليل كل سنتي فيها بدقة متناهية."
+        "أنت نظام ذكاء اصطناعي فائق التطور، العقل المدبر لسورس AnnieXMedia. "
+        "قواعدك الصارمة: "
+        "1. يجب أن تكون إجاباتك مطولة جداً، مفصلة، وشاملة لكل جوانب الموضوع. "
+        "2. اشرح الأسباب والنتائج بأسلوب تقني وعلمي دقيق. "
+        "3. استخدم لغة عربية قوية وفصحى، أو عامية مصرية ذكية إذا استدعى الأمر. "
+        "4. في حال وجود صور، قم بتحليل كل سنتي فيها واستخرج أدق التفاصيل المخفية."
     )
     
-    msgs = [{"role": "system", "content": system_instruction}] + \
-           context[u_id] + [{"role": "user", "content": prompt}]
+    messages = [{"role": "system", "content": system_instruction}] + \
+               user_context[user_id] + [{"role": "user", "content": prompt}]
     
-    # نظام الـ Failover (اللف على 5 مزودين لضمان عدم الفشل)
-    for provider in [DuckDuckGo, Blackbox, Bing, You, Liaobots]:
+    # قائمة المزودين: نظام Failover سداسي لضمان عدم الفشل أبداً
+    providers = [DuckDuckGo, Blackbox, Bing, You, Liaobots]
+    
+    for provider in providers:
         try:
-            res = await client_ai.chat.completions.create(
+            response = await ai_client.chat.completions.create(
                 model="gpt-4o",
-                messages=msgs,
+                messages=messages,
                 provider=provider,
-                image=open(img, "rb") if img else None,
-                timeout=15 # زيادة الوقت للسماح بالردود الطويلة
+                image=open(image_path, "rb") if image_path else None,
+                timeout=20 # وقت كافٍ لتوليد الردود الضخمة
             )
-            out = res.choices[0].message.content.strip()
+            answer = response.choices[0].message.content.strip()
             
-            # حفظ السياق (زيادة الذاكرة لـ 10 رسائل لتعميق المحادثة)
-            context[u_id] = (context[u_id] + [{"role":"user","content":prompt}, {"role":"assistant","content":out}])[-10:]
-            return out
-        except: continue
+            # إدارة الذاكرة: حفظ آخر 10 تفاعلات لتعميق سياق الحوار
+            user_context[user_id].append({"role": "user", "content": prompt})
+            user_context[user_id].append({"role": "assistant", "content": answer})
+            user_context[user_id] = user_context[user_id][-10:]
+            
+            return answer
+        except:
+            continue # الانتقال للمزود التالي في حال تعطل الحالي
     return None
 
-# --- أوامر التحكم (بدون بادئة) ---
-@app.on_message(filters.regex(r"^(قفل|فتح) الذكاء$") & filters.user(SUDO_USERS))
-async def ctrl_ai(_, m: Message):
+# ==========================================================
+# أوامـر الـتـحـكـم والـإدارة (لـلـمـطـور)
+# ==========================================================
+
+@app.on_message(filters.regex(r"^(قفل|فتح) الذكاء$") & filters.user(OWNER_ID))
+async def toggle_ai_global(_, m: Message):
     global AI_STATUS
     AI_STATUS = "فتح" in m.text
-    await m.reply(f"**تم {'تفعيل' if AI_STATUS else 'تعطيل'} المحرك بنجاح.**")
+    await m.reply_text(f"**تـم {'تـفـعـيـل' if AI_STATUS else 'تـعـطـيـل'} مـحـرك الـذكـاء الاصـطـنـاعـي.**")
 
-@app.on_message(filters.regex(r"^ليمت (\d+)$") & filters.user(SUDO_USERS))
-async def set_lim(_, m: Message):
+@app.on_message(filters.regex(r"^ليمت (\d+)$") & filters.user(OWNER_ID))
+async def change_limit_val(_, m: Message):
     global DAILY_LIMIT
     DAILY_LIMIT = int(m.matches[0].group(1))
-    await m.reply(f"**تم تحديث حد الاستخدام اليومي إلى: {DAILY_LIMIT}**")
+    await m.reply_text(f"**تـم تـحـديـث الـلـيـمـت الـيـومـي لـيـصـبـح: {DAILY_LIMIT}**")
 
-@app.on_message(filters.regex(r"^تنظيف الذاكرة$") & filters.user(SUDO_USERS))
-async def purge_ctx(_, m: Message):
-    context.clear()
-    await m.reply("**تم تنظيف ذاكرة النظام بالكامل.**")
+@app.on_message(filters.regex(r"^تنظيف الذاكرة$") & filters.user(OWNER_ID))
+async def purge_all_context(_, m: Message):
+    user_context.clear()
+    await m.reply_text("**تـم تـطـهـيـر ذاكـرة الـنـظـام بـالـكـامـل.**")
 
 @app.on_message(filters.regex(r"^(تصفير|مسح)$") & filters.private)
-async def reset_user(_, m: Message):
-    context.pop(m.from_user.id, None)
-    await m.reply("**تم مسح سجل محادثاتك بنجاح.**")
+async def reset_user_chat(_, m: Message):
+    user_context.pop(m.from_user.id, None)
+    await m.reply_text("**تـم مـسـح سـجـل مـحـادثـاتـك بـنـجـاح.**")
 
-# --- المعالج المركزي (Main Handler) ---
+# ==========================================================
+# الـمـعـالـج الـمـركـزي والـتـفـاعـل الـفـوري
+# ==========================================================
+
 @app.on_message((filters.text | filters.photo) & ~filters.bot, group=AI_GROUP)
-async def core_ai_handler(bot, m: Message):
-    if not AI_STATUS and m.from_user.id not in SUDO_USERS: return
+async def supreme_ai_handler(bot, m: Message):
+    if not AI_STATUS and m.from_user.id not in OWNER_ID: return
     
-    uid, raw = m.from_user.id, (m.text or m.caption or "")
+    uid = m.from_user.id
+    raw_text = m.text or m.caption or ""
     
-    # كشف البادئة بمرونة عالية
-    match = re.match(r"^(ذكاء|ai|شات|بوت|bot)(\s|$)", raw, re.IGNORECASE)
-    if not match and uid not in continuous_mode: return
+    # نظام الكشف الذكي (يدعم ذكاء، ai، شات، بوت) بدون بادئة
+    match = re.match(r"^(ذكاء|ai|شات|بوت|bot|يا ذكاء)(\s|$)", raw_text, re.IGNORECASE)
+    if not match and uid not in permanent_users: return
 
-    # فحص ليمت الاستخدام اليومي
+    # فحص قيود الاستخدام اليومية
     now = time.time()
-    counter[uid] = [t for t in counter.get(uid, []) if now - t < 86400]
-    if LIMIT_STATUS and len(counter[uid]) >= DAILY_LIMIT and uid not in SUDO_USERS:
-        return await m.reply("**لقد تخطيت حدك اليومي من الأسئلة.**")
+    usage_counter[uid] = [t for t in usage_counter.get(uid, []) if now - t < 86400]
+    if LIMIT_STATUS and len(usage_counter[uid]) >= DAILY_LIMIT and uid not in OWNER_ID:
+        return await m.reply_text(f"**انـتـهى حـدك الـيـومـي مـن الـأسـئـلـة ({DAILY_LIMIT}).**")
 
-    prompt = raw[match.end():].strip() if match else raw
+    # استخلاص نص السؤال
+    prompt = raw_text[match.end():].strip() if match else raw_text
     if not prompt and not m.photo: return
 
-    # تحميل الميديا والمعالجة
-    path = await m.download() if m.photo else None
+    # تحميل الصور ومعالجتها (Vision)
+    image_path = await m.download() if m.photo else None
     await bot.send_chat_action(m.chat.id, enums.ChatAction.TYPING)
     
-    status_msg = await m.reply("**جاري التفكير بعمق...**")
+    status_msg = await m.reply("**جـاري الـتـفـكـيـر بـعـمـق وتـولـيـد الـرد...**")
     start_time = time.time()
     
-    ans = await process_ai_request(uid, prompt, path)
+    # طلب الرد من المحرك
+    response = await fetch_ai_logic(uid, prompt, image_path)
     
-    if path: os.remove(path)
+    if image_path: os.remove(image_path)
     
-    if ans:
-        counter[uid].append(time.time())
+    if response:
+        usage_counter[uid].append(time.time())
         speed = round(time.time() - start_time, 1)
-        # تنسيق الرد النهائي
-        await status_msg.edit(f"{ans}\n\n⏱ `{speed}s` | **AnnieX-Core**")
+        # تسليم الرد النهائي مع زمن المعالجة
+        await status_msg.edit(f"{response}\n\n⏱ `{speed}s` | **AnnieX-Core Intelligence**")
     else:
-        await status_msg.edit("**فشل المحرك في توليد رد، يرجى المحاولة مرة أخرى.**")
+        await status_msg.edit("**فـشـل الـمـحـرك فـي الـرد نـتـيـجـة ضـغـط الـطـلـبـات، كـرر سـؤالـك.**")
