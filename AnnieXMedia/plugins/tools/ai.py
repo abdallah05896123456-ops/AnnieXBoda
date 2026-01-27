@@ -1,211 +1,119 @@
 # Authored By Certified Coders © 2026
-# TITAN AI SYSTEM - AnnieXMedia PREMIUM EDITION
-# Features: Vision, Continuous Chat, Global/User Limit Controls, No-Prefix Commands
+# AnnieX Core - Extreme Detailed Edition
+# Features: Ultra-Long Responses, Vision, Multi-Provider Failover, No-Prefix
 
-import asyncio
-import os
-import time
-import re
+import asyncio, os, time, re
 from pyrogram import filters, enums
 from pyrogram.types import Message
 from g4f.client import AsyncClient
+from g4f.Provider import DuckDuckGo, Blackbox, Bing, You, Liaobots
 
-# استيراد كائن البوت والكونفنج لإنهاء مشكلة "app is not defined"
 from AnnieXMedia import app
 import config
 
-# ==========================================================
-# الإعـدادات الـتـقـنـيـة والـمـتـغـيـرات الـعـالـمـيـة
-# ==========================================================
+# --- الإعدادات الفنية ---
+SUDO_USERS = config.OWNER_ID if isinstance(config.OWNER_ID, list) else [config.OWNER_ID]
+AI_STATUS = True
+LIMIT_STATUS = True
+DAILY_LIMIT = 100 
+AI_GROUP = 20 # الأولوية المثالية لعدم التعارض
 
-# جلب أيدي المطور من الكونفنج (يدعم القائمة أو الرقم المفرد)
-OWNER_ID = config.OWNER_ID[0] if isinstance(config.OWNER_ID, list) else config.OWNER_ID
+# مخازن البيانات
+context, counter = {}, {}
+unlocked_users, continuous_mode = set(), set()
+client_ai = AsyncClient()
 
-# حالات النظام البرمجية
-AI_STATUS = True        # حالة نظام الذكاء العام
-LIMIT_STATUS = True     # حالة نظام القيود اليومية
-DAILY_LIMIT = 40        # الحد الأقصى المسموح به للمستخدم العادي
-
-# مخازن البيانات الرقمية (تعتمد على RAM لسرعة المعالجة)
-user_context = {}         # حفظ سياق المحادثات لضمان الفهم المستمر
-usage_counter = {}        # تتبع عدد الاستخدامات لكل هوية رقمية
-permanent_users = set()   # قائمة المستخدمين في وضع الاستجابة المستمرة
-unlocked_users = set()    # المستخدمين المستثنين من القيود اليومية يدوياً
-
-# تهيئة المحرك البرمجي للذكاء الاصطناعي
-ai_engine = AsyncClient()
-
-# ==========================================================
-# دالات الـمـنـطـق والـتـحـقـق مـن الـقـيـود
-# ==========================================================
-
-def is_user_limited(user_id):
-    """التحقق البرمجي من تجاوز المستخدم للحد المسموح به"""
-    if user_id == OWNER_ID or user_id in unlocked_users:
-        return False
+# --- محرك المعالجة العميق (Logic Core) ---
+async def process_ai_request(u_id, prompt, img=None):
+    if u_id not in context: context[u_id] = []
     
-    if not LIMIT_STATUS:
-        return False
-        
-    now_timestamp = time.time()
-    if user_id not in usage_counter:
-        usage_counter[user_id] = []
-        
-    # تطهير السجلات القديمة التي تجاوزت دورة الـ 24 ساعة
-    usage_counter[user_id] = [t for t in usage_counter[user_id] if now_timestamp - t < 86400]
-    
-    return len(usage_counter[user_id]) >= DAILY_LIMIT
-
-def update_usage_record(user_id):
-    """تسجيل عملية استخدام جديدة في قاعدة بيانات الرام"""
-    if user_id != OWNER_ID and user_id not in unlocked_users:
-        if user_id not in usage_counter:
-            usage_counter[user_id] = []
-        usage_counter[user_id].append(time.time())
-
-async def fetch_ai_logic(user_id, prompt, image_data=None):
-    """المحرك الرئيسي لعمليات المعالجة العصبية (نص + رؤية)"""
-    if user_id not in user_context:
-        user_context[user_id] = []
-        
-    # بناء هيكل الرسالة البرمجية
-    input_message = [{"role": "user", "content": prompt}]
+    # التعليمات البرمجية لإجبار البوت على التطويل والتفصيل
     system_instruction = (
         "أنت نظام ذكاء اصطناعي فائق التطور مدمج داخل سورس AnnieXMedia. "
-        "يجب أن تكون إجاباتك مطولة، دقيقة، وباللغة العربية الفصحى أو العامية المصرية الذكية. "
-        "في حال تزويدك بصورة، قم بتحليلها بدقة متناهية واستخرج منها كافة التفاصيل."
+        "يجب أن تكون إجاباتك مطولة جداً، مفصلة، وشاملة لكل جوانب الموضوع. "
+        "استخدم لغة عربية قوية أو عامية مصرية ذكية حسب السياق، "
+        "وفي حال وجود صور، قم بتحليل كل سنتي فيها بدقة متناهية."
     )
     
-    try:
-        # طلب المعالجة من موديل GPT-4o المتطور
-        execution = await ai_engine.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "system", "content": system_instruction}] + user_context[user_id] + input_message,
-            image=open(image_data, "rb") if image_data else None
-        )
-        
-        result_text = execution.choices[0].message.content.strip()
-        
-        # إدارة الذاكرة الدورية (حفظ آخر 10 تفاعلات لضمان استمرارية السياق)
-        user_context[user_id].append({"role": "user", "content": prompt})
-        user_context[user_id].append({"role": "assistant", "content": result_text})
-        user_context[user_id] = user_context[user_id][-10:]
-        
-        return result_text
-    except Exception as error_log:
-        print(f"Critical AI Engine Error: {error_log}")
-        return None
+    msgs = [{"role": "system", "content": system_instruction}] + \
+           context[u_id] + [{"role": "user", "content": prompt}]
+    
+    # نظام الـ Failover (اللف على 5 مزودين لضمان عدم الفشل)
+    for provider in [DuckDuckGo, Blackbox, Bing, You, Liaobots]:
+        try:
+            res = await client_ai.chat.completions.create(
+                model="gpt-4o",
+                messages=msgs,
+                provider=provider,
+                image=open(img, "rb") if img else None,
+                timeout=15 # زيادة الوقت للسماح بالردود الطويلة
+            )
+            out = res.choices[0].message.content.strip()
+            
+            # حفظ السياق (زيادة الذاكرة لـ 10 رسائل لتعميق المحادثة)
+            context[u_id] = (context[u_id] + [{"role":"user","content":prompt}, {"role":"assistant","content":out}])[-10:]
+            return out
+        except: continue
+    return None
 
-# ==========================================================
-# أوامـر الـتـحـكـم والـسـيـطـرة (لـلـمـطـور فـقـط)
-# ==========================================================
-
-@app.on_message(filters.regex(r"^(قفل الذكاء|تعطيل الذكاء)$") & filters.user(OWNER_ID))
-async def cmd_lock_ai_global(_, message: Message):
+# --- أوامر التحكم (بدون بادئة) ---
+@app.on_message(filters.regex(r"^(قفل|فتح) الذكاء$") & filters.user(SUDO_USERS))
+async def ctrl_ai(_, m: Message):
     global AI_STATUS
-    AI_STATUS = False
-    await message.reply_text("تـم إيـقـاف وتـعـطـيل مـحـرك الـذكـاء الاصـطـنـاعـي بـشـكـل كـلـي.")
+    AI_STATUS = "فتح" in m.text
+    await m.reply(f"**تم {'تفعيل' if AI_STATUS else 'تعطيل'} المحرك بنجاح.**")
 
-@app.on_message(filters.regex(r"^(فتح الذكاء|تفعيل الذكاء)$") & filters.user(OWNER_ID))
-async def cmd_unlock_ai_global(_, message: Message):
-    global AI_STATUS
-    AI_STATUS = True
-    await message.reply_text("تـم تـفـعـيل ونـشـر مـحـرك الـذكـاء الاصـطـنـاعـي لـلـجـمـيـع.")
+@app.on_message(filters.regex(r"^ليمت (\d+)$") & filters.user(SUDO_USERS))
+async def set_lim(_, m: Message):
+    global DAILY_LIMIT
+    DAILY_LIMIT = int(m.matches[0].group(1))
+    await m.reply(f"**تم تحديث حد الاستخدام اليومي إلى: {DAILY_LIMIT}**")
 
-@app.on_message(filters.regex(r"^(قفل الليمت|تفعيل القيود)$") & filters.user(OWNER_ID))
-async def cmd_lock_limit_global(_, message: Message):
-    global LIMIT_STATUS
-    LIMIT_STATUS = True
-    await message.reply_text("تـم تـفـعـيل نـظـام الـقـيـود والـحـدود الـيـومـيـة.")
+@app.on_message(filters.regex(r"^تنظيف الذاكرة$") & filters.user(SUDO_USERS))
+async def purge_ctx(_, m: Message):
+    context.clear()
+    await m.reply("**تم تنظيف ذاكرة النظام بالكامل.**")
 
-@app.on_message(filters.regex(r"^(فتح الليمت|تعطيل القيود)$") & filters.user(OWNER_ID))
-async def cmd_unlock_limit_global(_, message: Message):
-    global LIMIT_STATUS
-    LIMIT_STATUS = False
-    await message.reply_text("تـم إلـغـاء وتـعـطـيل نـظـام الـقـيـود الـيـومـيـة.")
+@app.on_message(filters.regex(r"^(تصفير|مسح)$") & filters.private)
+async def reset_user(_, m: Message):
+    context.pop(m.from_user.id, None)
+    await m.reply("**تم مسح سجل محادثاتك بنجاح.**")
 
-@app.on_message(filters.regex(r"^(فتح ليمت)$") & filters.user(OWNER_ID))
-async def cmd_grant_access(_, message: Message):
-    if not message.reply_to_message:
-        return await message.reply_text("يـجـب الـرد عـلـى رسـالـة الـمـسـتـخـدم لـمـنـحـه الـصـلاحـيـات.")
+# --- المعالج المركزي (Main Handler) ---
+@app.on_message((filters.text | filters.photo) & ~filters.bot, group=AI_GROUP)
+async def core_ai_handler(bot, m: Message):
+    if not AI_STATUS and m.from_user.id not in SUDO_USERS: return
     
-    target_uid = message.reply_to_message.from_user.id
-    unlocked_users.add(target_uid)
-    await message.reply_text(f"تـم مـنـح الـمـسـتـخـدم ذو الأيـدي {target_uid} صـلاحـيـة الـوصـول الـدائم.")
-
-# ==========================================================
-# أوامـر الـمـسـتـخـدمـيـن والـوظـائف الـعـامـة
-# ==========================================================
-
-@app.on_message(filters.regex(r"^(مسح|تصفير)$") & filters.private)
-async def cmd_clear_history(_, message: Message):
-    uid = message.from_user.id
-    if uid in user_context:
-        user_context[uid] = []
-    await message.reply_text("تـم تـصـفـيـر ذاكرة الـمـحـادثـة الـخـاصـة بـك.")
-
-@app.on_message(filters.regex(r"^(ذكاء دائم)$"))
-async def cmd_toggle_permanent(_, message: Message):
-    if not AI_STATUS and message.from_user.id != OWNER_ID:
-        return
+    uid, raw = m.from_user.id, (m.text or m.caption or "")
     
-    uid = message.from_user.id
-    if uid in permanent_users:
-        permanent_users.remove(uid)
-        await message.reply_text("تـم إيـقـاف وضـع الاسـتـجـابة الـمـسـتـمـرة.")
+    # كشف البادئة بمرونة عالية
+    match = re.match(r"^(ذكاء|ai|شات|بوت|bot)(\s|$)", raw, re.IGNORECASE)
+    if not match and uid not in continuous_mode: return
+
+    # فحص ليمت الاستخدام اليومي
+    now = time.time()
+    counter[uid] = [t for t in counter.get(uid, []) if now - t < 86400]
+    if LIMIT_STATUS and len(counter[uid]) >= DAILY_LIMIT and uid not in SUDO_USERS:
+        return await m.reply("**لقد تخطيت حدك اليومي من الأسئلة.**")
+
+    prompt = raw[match.end():].strip() if match else raw
+    if not prompt and not m.photo: return
+
+    # تحميل الميديا والمعالجة
+    path = await m.download() if m.photo else None
+    await bot.send_chat_action(m.chat.id, enums.ChatAction.TYPING)
+    
+    status_msg = await m.reply("**جاري التفكير بعمق...**")
+    start_time = time.time()
+    
+    ans = await process_ai_request(uid, prompt, path)
+    
+    if path: os.remove(path)
+    
+    if ans:
+        counter[uid].append(time.time())
+        speed = round(time.time() - start_time, 1)
+        # تنسيق الرد النهائي
+        await status_msg.edit(f"{ans}\n\n⏱ `{speed}s` | **AnnieX-Core**")
     else:
-        permanent_users.add(uid)
-        await message.reply_text("تـم تـفـعـيل وضـع الاسـتـجـابة الـمـسـتـمـرة.")
-
-# ==========================================================
-# الـمـعـالـج الـمركـزي والـتـفـاعـل الـذكـي
-# ==========================================================
-
-@app.on_message((filters.text | filters.photo) & ~filters.bot)
-async def main_engine_handler(client, message: Message):
-    global AI_STATUS
-    
-    if not AI_STATUS and message.from_user.id != OWNER_ID:
-        return
-
-    uid = message.from_user.id
-    cid = message.chat.id
-    raw_text = message.text or message.caption or ""
-    
-    is_chat_cmd = raw_text.startswith(("شات ", "ذكاء ", "ai "))
-    is_ai_active = uid in permanent_users
-    
-    if not is_chat_cmd and not is_ai_active:
-        return
-        
-    if is_user_limited(uid):
-        return await message.reply_text("تـم تـخـطـي الـحـد الأقـصـى لـاسـتـخـدام الأداة لـهـذا الـيـوم.")
-
-    if is_chat_cmd:
-        prompt_content = raw_text.split(None, 1)[1] if " " in raw_text else "ماذا يمكنني أن أفعل لك؟"
-    else:
-        prompt_content = raw_text if raw_text else "حلل المحتوى المرفق"
-
-    media_file = None
-    if message.photo:
-        loading_msg = await message.reply_text("جـاري تـحـميل الـمـيـديـا لـلـمـعـالـجـة...")
-        media_file = await message.download()
-        await loading_msg.delete()
-
-    await client.send_chat_action(cid, enums.ChatAction.TYPING)
-    processing_msg = await message.reply_text("جـاري الـتـفـكـيـر")
-
-    final_output = await fetch_ai_logic(uid, prompt_content, media_file)
-    
-    if media_file and os.path.exists(media_file):
-        os.remove(media_file)
-
-    if final_output:
-        update_usage_record(uid)
-        await processing_msg.edit(f"{final_output}\n\nAnnieXMedia AI System")
-    else:
-        await processing_msg.edit("نـعـتـذر، فـشـل الـمـحـرك فـي جـلـب الـرد.")
-
-# ==========================================================
-# نـهـايـة الـمـلـف الـبـرمـجـي - AnnieXMedia
-# ==========================================================
+        await status_msg.edit("**فشل المحرك في توليد رد، يرجى المحاولة مرة أخرى.**")
