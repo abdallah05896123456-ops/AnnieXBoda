@@ -42,7 +42,7 @@ AUTO_DOWNLOADS_CLEAR = getenv("AUTO_DOWNLOADS_CLEAR", "True")
 MONGO_DB_URI = getenv("MONGO_DB_URI")
 LOGGER_ID = int(getenv("LOGGER_ID", -1003339220169))
 
-# ── Limits & Groups (تعديل الحدود لتناسب مواصفات سيرفرك) ────────────────────────
+# ── Limits & AI Groups ────────────────────────────────────────────────────────
 DURATION_LIMIT_MIN = int(getenv("DURATION_LIMIT", 600)) 
 SONG_DOWNLOAD_DURATION = int(getenv("SONG_DOWNLOAD_DURATION", "3600"))
 SONG_DOWNLOAD_DURATION_LIMIT = int(getenv("SONG_DOWNLOAD_DURATION_LIMIT", "5400"))
@@ -50,14 +50,15 @@ TG_AUDIO_FILESIZE_LIMIT = int(getenv("TG_AUDIO_FILESIZE_LIMIT", "2147483648"))
 TG_VIDEO_FILESIZE_LIMIT = int(getenv("TG_VIDEO_FILESIZE_LIMIT", "2147483648")) 
 PLAYLIST_FETCH_LIMIT = int(getenv("PLAYLIST_FETCH_LIMIT", "100"))
 
-# مجموعة معالجة الذكاء الاصطناعي (لتجنب التعارض مع الميوزك)
+# مجموعة معالجة الذكاء الاصطناعي (لتجنب التعارض)
 AI_HANDLER_GROUP = int(getenv("AI_HANDLER_GROUP", 30))
 
-# ── External APIs & AI Configuration ──────────────────────────────────────────
+# ── External APIs ──────────────────────────────────────────────────────────────
 COOKIE_URL = getenv("COOKIE_URL")
 API_URL = "https://hyperionengine.fly.dev"
 VIDEO_API_URL = "https://hyperionengine.fly.dev"
 API_KEY = getenv("API_KEY")
+DEEP_API = getenv("DEEP_API")
 
 # مفتاح الذكاء الاصطناعي الرسمي (GPT-4) من السكرتس
 AI_API_KEY = getenv("GPT_4")
@@ -107,11 +108,10 @@ STICKERS = [
 
 UNIFIED_IMG = "https://files.catbox.moe/tvmyz6.jpg"
 
-START_IMG_URL = HELP_IMG_URL = PING_VID_URL = UNIFIED_IMG
-PLAYLIST_IMG_URL = STATS_VID_URL = TELEGRAM_AUDIO_URL = UNIFIED_IMG
-TELEGRAM_VIDEO_URL = STREAM_IMG_URL = SOUNCLOUD_IMG_URL = UNIFIED_IMG
-YOUTUBE_IMG_URL = SPOTIFY_ARTIST_IMG_URL = SPOTIFY_ALBUM_IMG_URL = UNIFIED_IMG
-SPOTIFY_PLAYLIST_IMG_URL = UNIFIED_IMG
+START_IMG_URL = HELP_IMG_URL = PING_VID_URL = PLAYLIST_IMG_URL = UNIFIED_IMG
+STATS_VID_URL = TELEGRAM_AUDIO_URL = TELEGRAM_VIDEO_URL = UNIFIED_IMG
+STREAM_IMG_URL = SOUNCLOUD_IMG_URL = YOUTUBE_IMG_URL = UNIFIED_IMG
+SPOTIFY_ARTIST_IMG_URL = SPOTIFY_ALBUM_IMG_URL = SPOTIFY_PLAYLIST_IMG_URL = UNIFIED_IMG
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 def time_to_seconds(time: str) -> int:
