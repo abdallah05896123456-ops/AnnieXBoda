@@ -1,107 +1,90 @@
+# Authored By Certified Coders 2026
+# AnnieX AI Core - Official API Integrated
+# No Emojis - Technical Logic - High Speed
+
 import asyncio
 import os
 import time
 import re
-import g4f.Provider as Providers
 from pyrogram import filters, enums
 from pyrogram.types import Message
 from g4f.client import AsyncClient
+from g4f.Provider import Openai, Liaobots, Blackbox, DuckDuckGo, RetryProvider
 
 from AnnieXMedia import app
 import config
 
-# الاعدادات الفنية
+# الاعدادات الفنية والتحكم
 SUDO_USERS = config.OWNER_ID if isinstance(config.OWNER_ID, list) else [config.OWNER_ID]
 AI_STATUS = True
-LIMIT_STATUS = True
-DAILY_LIMIT = 100
 AI_GROUP = 30 
 
-context, counter = {}, {}
-client_ai = AsyncClient()
+# المفتاح الرسمي الذي زودته به
+OPENAI_KEY = "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"
 
-def get_active_providers():
-    # التحقق من وجود المزودين داخل المكتبة قبل استخدامهم
-    target = ["DuckDuckGo", "Blackbox", "Bing", "You", "Liaobots", "OpenaiChat"]
-    available = []
-    for name in target:
-        p_class = getattr(Providers, name, None)
-        if p_class:
-            available.append(p_class)
-    return available
+context = {}
+# تهيئة العميل بنظام المحاولات المتعددة
+client_ai = AsyncClient(
+    provider=RetryProvider([Openai, Liaobots, Blackbox, DuckDuckGo], shuffle=False)
+)
 
 async def process_ai_logic(u_id, prompt, img=None):
     if u_id not in context:
         context[u_id] = []
     
-    # تعليمات اجبار الرد المطول والمفصل
+    # تعليمات فرض الرد المطول والمختصر لغويا
     system_instruction = (
-        "انت نظام ذكاء اصطناعي فائق التطور. "
-        "يجب ان تكون اجاباتك مطولة جدا ومفصلة وشاملة لكل جوانب الموضوع مع تقديم شرح تقني وافي. "
-        "استخدم لغة عربية قوية او عامية مصرية ذكية حسب السياق. "
-        "في حال تزويدك بصور قم بتحليل كل سنتيمتر فيها واستخرج كافة التفاصيل."
+        "تعامل كمساعد تقني محترف ومباشر. "
+        "قدم اجابات مطولة تشمل كافة جوانب السؤال بلغة تقنية مختصره وفصحى. "
+        "حلل الصور بدقة هندسية واستخرج كافة البيانات."
     )
     
     msgs = [{"role": "system", "content": system_instruction}] + \
            context[u_id] + [{"role": "user", "content": prompt}]
     
-    active_providers = get_active_providers()
+    image_data = open(img, "rb").read() if img else None
     
-    for provider in active_providers:
-        try:
-            res = await client_ai.chat.completions.create(
-                model="gpt-4o",
-                messages=msgs,
-                provider=provider,
-                image=open(img, "rb") if img else None,
-                timeout=25 
-            )
+    try:
+        res = await client_ai.chat.completions.create(
+            model="gpt-4o",
+            messages=msgs,
+            api_key=OPENAI_KEY,
+            image=image_data,
+            timeout=30
+        )
+        if res and res.choices:
             out = res.choices[0].message.content.strip()
-            # حفظ اخر 10 رسائل لتعميق المحادثة
             context[u_id] = (context[u_id] + [{"role":"user","content":prompt}, {"role":"assistant","content":out}])[-10:]
             return out
-        except:
-            continue
+    except Exception as e:
+        print(f"AI Logic Error: {e}")
     return None
-
-@app.on_message(filters.regex(r"^(قفل|فتح) الذكاء$") & filters.user(SUDO_USERS))
-async def ai_toggle_engine(_, m: Message):
-    global AI_STATUS
-    AI_STATUS = "فتح" in m.text
-    await m.reply(f"تم {'تفعيل' if AI_STATUS else 'تعطيل'} محرك المعالجة بنجاح.")
-
-@app.on_message(filters.regex(r"^تنظيف الذاكرة$") & filters.user(SUDO_USERS))
-async def clear_ai_cache(_, m: Message):
-    context.clear()
-    await m.reply("تم تنظيف ذاكرة الرام لجميع العمليات.")
 
 @app.on_message((filters.text | filters.photo) & ~filters.bot, group=AI_GROUP)
 async def ai_main_handler(bot, m: Message):
-    if not AI_STATUS and m.from_user.id not in SUDO_USERS: return
+    if not AI_STATUS and m.from_user.id not in SUDO_USERS:
+        return
     
     uid, raw = m.from_user.id, (m.text or m.caption or "")
-    match = re.match(r"^(ذكاء|ai|شات|بوت|bot)(\s|$)", raw, re.IGNORECASE)
-    if not match: return
-
-    now = time.time()
-    counter[uid] = [t for t in counter.get(uid, []) if now - t < 86400]
-    if LIMIT_STATUS and len(counter[uid]) >= DAILY_LIMIT and uid not in SUDO_USERS:
-        return await m.reply("لقد تخطيت الحد المسموح به للاستخدام اليومي.")
+    match = re.match(r"^(ذكاء|ai|شات|بوت|bot|يا ذكاء)(\s|$)", raw, re.IGNORECASE)
+    if not match:
+        return
 
     prompt = raw[match.end():].strip() if match else raw
-    if not prompt and not m.photo: return
+    if not prompt and not m.photo:
+        return
 
     path = await m.download() if m.photo else None
     await bot.send_chat_action(m.chat.id, enums.ChatAction.TYPING)
     
-    status_msg = await m.reply("جاري معالجة طلبك وتحليله بعمق يرجى الانتظار.")
+    status_msg = await m.reply("يتم الان معالجة الطلب عبر المحرك الرسمي")
     start_t = time.time()
     
     ans = await process_ai_logic(uid, prompt, path)
-    if path: os.remove(path)
+    if path:
+        os.remove(path)
         
     if ans:
-        counter[uid].append(time.time())
-        await status_msg.edit(f"{ans}\n\nسرعة المعالجة: {round(time.time()-start_t, 1)} ثانية")
+        await status_msg.edit(f"{ans}\n\nزمن المعالجة: {round(time.time()-start_t, 1)} ثانية")
     else:
-        await status_msg.edit("نعتذر منك ولكن المحرك لا يستجيب حاليا يرجى المحاولة لاحقا.")
+        await status_msg.edit("تعذر الحصول على رد من محركات المعالجة حاليا.")
