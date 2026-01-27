@@ -1,6 +1,6 @@
 # Authored By Certified Coders 2026
-# AnnieX AI Core - Official API Integrated
-# No Emojis - Technical Logic - High Speed
+# AnnieX AI Core - Production Edition
+# Optimized for Fly.io Secrets | official API Integration
 
 import asyncio
 import os
@@ -14,16 +14,15 @@ from g4f.Provider import Openai, Liaobots, Blackbox, DuckDuckGo, RetryProvider
 from AnnieXMedia import app
 import config
 
-# الاعدادات الفنية والتحكم
+# الاعدادات الفنية والتحكم في الموارد
 SUDO_USERS = config.OWNER_ID if isinstance(config.OWNER_ID, list) else [config.OWNER_ID]
 AI_STATUS = True
 AI_GROUP = 30 
 
-# المفتاح الرسمي الذي زودته به
-OPENAI_KEY = "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"
-
 context = {}
+
 # تهيئة العميل بنظام المحاولات المتعددة
+# يتم وضع Openai في المقدمة لاستخدام مفتاح GPT_4
 client_ai = AsyncClient(
     provider=RetryProvider([Openai, Liaobots, Blackbox, DuckDuckGo], shuffle=False)
 )
@@ -32,28 +31,33 @@ async def process_ai_logic(u_id, prompt, img=None):
     if u_id not in context:
         context[u_id] = []
     
-    # تعليمات فرض الرد المطول والمختصر لغويا
+    # جلب المفتاح من سكرت Fly.io
+    api_key = os.getenv("GPT_4")
+    
+    # تعليمات فرض الرد التقني المطول والمباشر لغويا
     system_instruction = (
         "تعامل كمساعد تقني محترف ومباشر. "
         "قدم اجابات مطولة تشمل كافة جوانب السؤال بلغة تقنية مختصره وفصحى. "
-        "حلل الصور بدقة هندسية واستخرج كافة البيانات."
+        "حلل الصور بدقة واستخرج كافة البيانات التقنية المتاحة."
     )
     
     msgs = [{"role": "system", "content": system_instruction}] + \
            context[u_id] + [{"role": "user", "content": prompt}]
     
+    # معالجة بيانات الصورة إن وجدت
     image_data = open(img, "rb").read() if img else None
     
     try:
         res = await client_ai.chat.completions.create(
             model="gpt-4o",
             messages=msgs,
-            api_key=OPENAI_KEY,
+            api_key=api_key,
             image=image_data,
             timeout=30
         )
         if res and res.choices:
             out = res.choices[0].message.content.strip()
+            # حفظ السياق لتعميق المحادثة
             context[u_id] = (context[u_id] + [{"role":"user","content":prompt}, {"role":"assistant","content":out}])[-10:]
             return out
     except Exception as e:
@@ -77,7 +81,7 @@ async def ai_main_handler(bot, m: Message):
     path = await m.download() if m.photo else None
     await bot.send_chat_action(m.chat.id, enums.ChatAction.TYPING)
     
-    status_msg = await m.reply("يتم الان معالجة الطلب عبر المحرك الرسمي")
+    status_msg = await m.reply("يتم الان معالجة الطلب")
     start_t = time.time()
     
     ans = await process_ai_logic(uid, prompt, path)
@@ -87,4 +91,4 @@ async def ai_main_handler(bot, m: Message):
     if ans:
         await status_msg.edit(f"{ans}\n\nزمن المعالجة: {round(time.time()-start_t, 1)} ثانية")
     else:
-        await status_msg.edit("تعذر الحصول على رد من محركات المعالجة حاليا.")
+        await status_msg.edit("نعتذر منك ولكن المحرك لا يستجيب حاليا.")
