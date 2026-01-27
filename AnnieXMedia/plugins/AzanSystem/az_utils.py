@@ -9,7 +9,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from pyrogram import enums
 from pyrogram.errors import FloodWait
 
-
+# استدعاء مكتبات السورس الأساسية
 from AnnieXMedia import app
 from AnnieXMedia.utils.stream.stream import stream
 
@@ -38,7 +38,6 @@ async def load_resources():
         
         dua_res = await resources_db.find_one({"type": "dua_sticker"})
         if dua_res:
-            # نستخدم خدعة لتحديث المتغير العام في ملف الكونفج
             import AnnieXMedia.plugins.AzanSystem.az_conf as conf_module
             conf_module.CURRENT_DUA_STICKER = dua_res.get("sticker_id")
             global CURRENT_DUA_STICKER
@@ -102,12 +101,11 @@ async def check_rights(user_id, chat_id):
     except: pass
     return False
 
-# --- [ دالة تشغيل الأذان المتطورة ] ---
+# --- [ دالة تشغيل الأذان (مع إصلاح الأزرار) ] ---
 async def start_azan_stream(chat_id, prayer_key, force_test=False):
-    """تشغيل بث الأذان في الجروب مع التعامل مع الأخطاء"""
+    """تشغيل بث الأذان في الجروب مع منع ظهور الأخطاء"""
     res = CURRENT_RESOURCES[prayer_key]
     
-    # تجهيز بيانات وهمية للستريم عشان يشتغل كأنه يوتيوب
     fake_result = {
         "link": res["link"], 
         "vidid": res["vidid"], 
@@ -116,11 +114,24 @@ async def start_azan_stream(chat_id, prayer_key, force_test=False):
         "thumb": f"https://img.youtube.com/vi/{res['vidid']}/hqdefault.jpg"
     }
     
-    # قواميس مساعدة للستريم (مطلوبة في دالة stream)
-    _ = {"queue_4": "<b>🔢 الترتيب: #{}</b>", "stream_1": "<b>🔘 جاري التشغيل...</b>", "play_3": "<b>❌ فشل.</b>"}
+    # --- [ الحل الجذري: تعريف مفاتيح الترجمة للأزرار ] ---
+    # هذا القاموس يمنع KeyError في ملفات السورس الأساسية
+    _ = {
+        "queue_4": "<b>🔢 الترتيب: #{}</b>",
+        "stream_1": "<b>🔘 جاري التشغيل...</b>",
+        "play_3": "<b>❌ فشل.</b>",
+        "CLOSE_BUTTON": "إغلاق ❌", 
+        "BACK_BUTTON": "رجوع",
+        "S_B_1": "تشغيل ▶️",
+        "S_B_2": "إيقاف ⏸",
+        "S_B_3": "تخطي ⏭",
+        "S_B_4": "إنهاء ⏹",
+        "PL_1": "قائمة التشغيل",
+        "QM_2": "تمت الإضافة"
+    }
 
     try:
-        # إرسال الاستيكر أولاً
+        # إرسال الاستيكر
         if res.get("sticker"):
             await app.send_sticker(chat_id, res["sticker"])
     except: pass
@@ -130,7 +141,7 @@ async def start_azan_stream(chat_id, prayer_key, force_test=False):
     try:
         mystic = await app.send_message(chat_id, caption)
         try:
-            # استخدام forceplay=True لقطع أي أغنية شغالة وتشغيل الأذان
+            # تشغيل الستريم مع Force Play لقطع الأغنية الحالية
             await stream(
                 _, 
                 mystic, 
@@ -144,16 +155,19 @@ async def start_azan_stream(chat_id, prayer_key, force_test=False):
                 forceplay=True
             )
             logger.info(f"تم تشغيل أذان {res['name']} في الجروب {chat_id}")
+        
         except FloodWait as e:
-            # حماية من الفلود (الانتظار ثم المحاولة)
+            # التعامل مع ضغط الطلبات
             await asyncio.sleep(e.value)
             await stream(_, mystic, app.id, fake_result, chat_id, "خدمة الأذان", chat_id, video=False, streamtype="youtube", forceplay=True)
+        
         except Exception as e:
+            # تجاهل أخطاء تعديل الرسالة البسيطة
             if "CLOSE_BUTTON" in str(e) or "EditMessage" in str(e):
                 return
             if force_test:
-                await app.send_message(chat_id, f"خطأ غير متوقع في الستريم: {e}")
-            logger.error(f"فشل تشغيل الستريم في {chat_id}: {e}")
+                await app.send_message(chat_id, f"خطأ في الستريم: {e}")
+            logger.error(f"Stream Error in {chat_id}: {e}")
             
     except Exception as e:
         if force_test:
@@ -161,7 +175,7 @@ async def start_azan_stream(chat_id, prayer_key, force_test=False):
             except: pass
         return
 
-    # تسجيل العملية في السجل (للمتابعة فقط)
+    # تسجيل العملية في السجلات (للمتابعة فقط)
     if not force_test:
         try:
             now = datetime.now()
@@ -169,10 +183,7 @@ async def start_azan_stream(chat_id, prayer_key, force_test=False):
             if not await azan_logs_db.find_one({"key": log_key}):
                 await azan_logs_db.insert_one({
                     "chat_id": chat_id,
-                    "chat_title": "مجموعة",
                     "date": now.strftime("%Y-%m-%d"),
-                    "time": now.strftime("%I:%M %p"),
-                    "timestamp": time.time(),
                     "key": log_key
                 })
         except: pass
@@ -189,23 +200,20 @@ async def get_azan_times():
                     if response.status == 200:
                         data = await response.json()
                         return data["data"]["timings"]
-        except Exception as e:
-            logger.warning(f"محاولة {attempt+1} لجلب المواقيت فشلت: {e}")
+        except Exception:
             await asyncio.sleep(2)
     return None
 
 async def broadcast_azan(prayer_key):
     """دالة المجدول: تدور على كل الجروبات وتشغل الأذان"""
-    logger.info(f"بدء بث أذان {prayer_key}...")
     async for entry in settings_db.find({"azan_active": True}):
         c_id = entry.get("chat_id")
         prayers = entry.get("prayers", {})
         
         # التأكد من أن الجروب مفعل هذه الصلاة تحديداً
         if c_id and prayers.get(prayer_key, True):
-            # استخدام create_task عشان مفيش جروب يعطل التاني
             asyncio.create_task(start_azan_stream(c_id, prayer_key, force_test=False))
-            # تأخير بسيط جداً لمنع الـ Flood
+            # تأخير بسيط لمنع الحظر
             await asyncio.sleep(2)
 
 async def send_duas_batch(dua_list, setting_key, title, target_chat_id=None):
