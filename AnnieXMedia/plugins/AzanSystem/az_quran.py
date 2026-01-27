@@ -1,7 +1,7 @@
 import random
 from pyrogram import filters
 from pyrogram.types import Message
-from BrandrdXMusic import app
+from AnnieXMedia import app
 
 # استيراد مجموعة المعالجة
 from .az_conf import AZAN_GROUP
