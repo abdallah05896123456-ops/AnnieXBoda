@@ -23,7 +23,8 @@ from pytgcalls.types import (
 
 import config
 from strings import get_string
-from AnnieXMedia import LOGGER, YouTube, app
+# 🔥 استيراد userbot لربط الحسابات المفتوحة
+from AnnieXMedia import LOGGER, YouTube, app, userbot
 from AnnieXMedia.misc import db
 from AnnieXMedia.utils.database import (
     add_active_chat,
@@ -47,9 +48,9 @@ from AnnieXMedia.utils.errors import capture_internal_err
 autoend = {}
 counter = {}
 
-# --- Helper Function for Streams (Optimized for TitanOS) ---
+# --- Helper Function for Streams ---
 def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = None) -> MediaStream:
-    # إجبار الاستيريو واستغلال الـ 16 كور وتقليل التقطيع
+    # إعدادات FFMPEG المحسنة للسرعة والجودة
     titan_flags = "-threads 16 -ac 2"
     if str(path).startswith("http"):
         titan_flags += " -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
@@ -57,13 +58,13 @@ def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = No
     if ffmpeg_params:
         titan_flags += f" {ffmpeg_params}"
 
-    # تحديد الأعلام (Flags) بشكل صريح
+    # تحديد الأعلام (Flags)
     video_flags = MediaStream.Flags.REQUIRED if video else MediaStream.Flags.IGNORE
     audio_flags = MediaStream.Flags.REQUIRED
 
     return MediaStream(
         media_path=path,
-        audio_parameters=AudioQuality.STUDIO, # جودة استوديو
+        audio_parameters=AudioQuality.STUDIO,
         video_parameters=VideoQuality.HD_720p if video else None,
         audio_flags=audio_flags,
         video_flags=video_flags,
@@ -81,34 +82,21 @@ async def _clear_(chat_id: int) -> None:
 
 class Call:
     def __init__(self):
-        # 🔥 TitanOS Update: Cache maintained at 100 for stability
-        self.userbot1 = Client(
-            "AnnieXAssis1", config.API_ID, config.API_HASH, session_string=config.STRING1
-        ) if config.STRING1 else None
-        self.one = PyTgCalls(self.userbot1, cache_duration=100) if self.userbot1 else None
+        # 🔥 الربط المباشر مع userbot.py لمنع "Session Busy"
+        self.userbot1 = userbot.one
+        self.userbot2 = userbot.two
+        self.userbot3 = userbot.three
+        self.userbot4 = userbot.four
+        self.userbot5 = userbot.five
 
-        self.userbot2 = Client(
-            "AnnieXAssis2", config.API_ID, config.API_HASH, session_string=config.STRING2
-        ) if config.STRING2 else None
-        self.two = PyTgCalls(self.userbot2, cache_duration=100) if self.userbot2 else None
-
-        self.userbot3 = Client(
-            "AnnieXAssis3", config.API_ID, config.API_HASH, session_string=config.STRING3
-        ) if config.STRING3 else None
-        self.three = PyTgCalls(self.userbot3, cache_duration=100) if self.userbot3 else None
-
-        self.userbot4 = Client(
-            "AnnieXAssis4", config.API_ID, config.API_HASH, session_string=config.STRING4
-        ) if config.STRING4 else None
-        self.four = PyTgCalls(self.userbot4, cache_duration=100) if self.userbot4 else None
-
-        self.userbot5 = Client(
-            "AnnieXAssis5", config.API_ID, config.API_HASH, session_string=config.STRING5
-        ) if config.STRING5 else None
-        self.five = PyTgCalls(self.userbot5, cache_duration=100) if self.userbot5 else None
+        # تهيئة PyTgCalls على الكلاينت الموجود بالفعل
+        self.one = PyTgCalls(self.userbot1, cache_duration=100)
+        self.two = PyTgCalls(self.userbot2, cache_duration=100)
+        self.three = PyTgCalls(self.userbot3, cache_duration=100)
+        self.four = PyTgCalls(self.userbot4, cache_duration=100)
+        self.five = PyTgCalls(self.userbot5, cache_duration=100)
 
         self.active_calls: set[int] = set()
-        # 🔥 TitanOS: Turbo Variable added for Web Control
         self.turbo_mode = {} 
 
     @capture_internal_err
@@ -119,7 +107,6 @@ class Call:
     @capture_internal_err
     async def resume_stream(self, chat_id: int) -> None:
         assistant = await group_assistant(self, chat_id)
-        # 🔥 TitanOS Fix: Force Resume (If resume fails, unmute)
         try:
             await assistant.resume(chat_id)
         except:
@@ -172,10 +159,9 @@ class Call:
     @capture_internal_err
     async def skip_stream(self, chat_id: int, link: str, video: Union[bool, str] = None, image: Union[bool, str] = None) -> None:
         assistant = await group_assistant(self, chat_id)
-        # 🔥 ALEXA OPTIMIZATION: Using GroupCallConfig
         ksk = GroupCallConfig(auto_start=False)
         stream = dynamic_media_stream(path=link, video=bool(video))
-        # استخدام play بدلاً من change_stream
+        # 🔥 استخدام play للتخطي
         await assistant.play(chat_id, stream, config=ksk)
 
     @capture_internal_err
@@ -190,7 +176,7 @@ class Call:
         ffmpeg_params = f"-ss {to_seek} -to {duration}"
         is_video = mode == "video"
         stream = dynamic_media_stream(path=file_path, video=is_video, ffmpeg_params=ffmpeg_params)
-        # استخدام play للتقديم
+        # 🔥 استخدام play للتقديم
         await assistant.play(chat_id, stream)
 
     @capture_internal_err
@@ -222,7 +208,7 @@ class Call:
         stream = dynamic_media_stream(path=out, video=is_video, ffmpeg_params=ffmpeg_params)
 
         if chat_id in db and db[chat_id] and db[chat_id][0].get("file") == file_path:
-            # استخدام play للسرعة
+            # 🔥 استخدام play للسرعة
             await assistant.play(chat_id, stream)
             db[chat_id][0].update({
                 "played": con_seconds,
@@ -261,23 +247,24 @@ class Call:
         lang = await get_lang(chat_id)
         _ = get_string(lang)
         stream = dynamic_media_stream(path=link, video=bool(video))
-        
-        # 🔥 ALEXA OPTIMIZATION: Config added here
         ksk = GroupCallConfig(auto_start=False)
 
         try:
-            # الانضمام باستخدام play
+            # 🔥 الحل النهائي: استخدام play بدلاً من join_group_call
             await assistant.play(chat_id, stream, config=ksk)
-        except (NoActiveGroupCall, ChatAdminRequired):
+        except NoActiveGroupCall:
             raise AssistantErr(_["call_8"])
-        except NoAudioSourceFound:
+        except AlreadyJoinedError:
+             # إذا كان منضماً بالفعل، نقوم بتحديث الستريم فقط
+            try:
+                await assistant.play(chat_id, stream)
+            except:
+                raise AssistantErr(_["call_10"])
+        except (NoAudioSourceFound, NoVideoSourceFound):
             raise AssistantErr(_["call_11"])
-        except NoVideoSourceFound:
-            raise AssistantErr(_["call_12"])
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
         except Exception as e:
-            # 🚨 Watchdog: طباعة الخطأ الكامل في اللوجز لو حصل فشل
             LOGGER(__name__).error(f"💣 [JOIN ERROR] Chat: {chat_id}\n{traceback.format_exc()}")
             try:
                  await asyncio.sleep(1)
@@ -302,7 +289,6 @@ class Call:
 
     @capture_internal_err
     async def play(self, client, chat_id: int) -> None:
-        # 🔥 Refactored to match Alexa's `change_stream` logic but with Annie's vars
         check = db.get(chat_id)
         popped = None
         loop = await get_loop(chat_id)
@@ -313,7 +299,6 @@ class Call:
                 loop = loop - 1
                 await set_loop(chat_id, loop)
             
-            # Using auto_clean from Alexa's logic context (if config allows)
             await auto_clean(popped)
             
             if not check:
@@ -352,7 +337,7 @@ class Call:
 
             video = True if str(streamtype) == "video" else False
             
-            # Helper to play stream safely
+            # Helper to handle playback
             async def _play_stream(stream_obj):
                 try:
                     await client.play(chat_id, stream_obj)
@@ -364,7 +349,6 @@ class Call:
                     except:
                         return await app.send_message(original_chat_id, text=_["call_6"])
 
-            # 🔥 ALEXA OPTIMIZATION: Pre-calculate stream to save time
             try:
                 if "live_" in queued:
                     n, link = await YouTube.video(videoid, True)
@@ -372,7 +356,6 @@ class Call:
                         return await app.send_message(original_chat_id, text=_["call_6"])
                     stream = dynamic_media_stream(path=link, video=video)
                     await _play_stream(stream)
-
                     img = await get_thumb(videoid)
                     button = stream_markup(_, chat_id)
                     run = await app.send_photo(
@@ -500,12 +483,12 @@ class Call:
                         db[chat_id][0]["mystic"] = run
                         db[chat_id][0]["markup"] = "stream"
             except Exception:
-                # 🚨 Watchdog: طباعة الخطأ الكامل لو حصل كراش أثناء التشغيل
                 LOGGER(__name__).error(f"💣 [PLAY ERROR] Chat: {chat_id}\n{traceback.format_exc()}")
                 return await app.send_message(original_chat_id, text=_["call_6"])
 
     async def start(self) -> None:
         LOGGER(__name__).info("Starting PyTgCalls Clients...")
+        # فقط نقوم ببدء الـ Wrapper لأن الـ Client بدأ بالفعل في userbot.py
         if config.STRING1:
             await self.one.start()
         if config.STRING2:
