@@ -5,7 +5,7 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, 
 from pyrogram.errors import FloodWait
 
 # استدعاء مكتبات السورس الأساسية
-from BrandrdXMusic import app
+from AnnieXMedia import app
 from config import BANNED_USERS
 
 # استدعاء المتغيرات والدوال من ملفات الأذان
