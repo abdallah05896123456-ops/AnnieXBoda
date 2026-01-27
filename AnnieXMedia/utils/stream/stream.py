@@ -46,6 +46,16 @@ async def stream(
     forceplay = bool(forceplay)
     is_video = True if video else False
 
+    # --- [ تعديل نظام الأذان الذكي ] ---
+    # التحقق مما إذا كان الأذان يطلب إخفاء الأزرار (يأتي من az_utils.py)
+    should_hide_buttons = result.get("no_buttons") is True if isinstance(result, dict) else False
+
+    # دالة مساعدة لاختيار وضع الأزرار بناءً على الإعدادات
+    def get_smart_markup(buttons_list):
+        if should_hide_buttons:
+            return None # لا ترسل أي كيبورد
+        return InlineKeyboardMarkup(buttons_list) # الوضع الطبيعي
+
     if forceplay:
         await StreamController.force_stop_stream(chat_id)
 
@@ -94,7 +104,6 @@ async def stream(
                         vidid, mystic, video=is_video, videoid=vidid
                     )
                 except Exception:
-                    # ❌ REMOVED safe_delete here to prevent crash
                     raise AssistantErr(_["play_14"])
 
                 await StreamController.join_call(
@@ -121,7 +130,6 @@ async def stream(
                 img = await get_thumb(vidid)
                 button = stream_markup(_, chat_id)
                 
-                # الحذف هنا آمن لأننا نجحنا وسنرسل رسالة جديدة
                 await safe_delete(mystic)
                 
                 caption_text = "🧚 " + _["stream_1"].format(
@@ -131,11 +139,12 @@ async def stream(
                     user_name,
                 )
                 try:
+                    # تطبيق الفلتر الذكي
                     run = await app.send_photo(
                         original_chat_id,
                         photo=img,
                         caption=caption_text,
-                        reply_markup=InlineKeyboardMarkup(button),
+                        reply_markup=get_smart_markup(button),
                     )
                     db[chat_id][0]["mystic"] = run
                     db[chat_id][0]["markup"] = "stream"
@@ -176,11 +185,9 @@ async def stream(
                 vidid, mystic, video=is_video, videoid=vidid
             )
         except Exception:
-            # ❌ REMOVED safe_delete here to prevent crash
             raise AssistantErr(_["play_14"])
 
         if not file_path:
-             # ❌ REMOVED safe_delete here to prevent crash
              raise AssistantErr(_["play_14"])
 
         if await is_active_chat(chat_id):
@@ -230,7 +237,6 @@ async def stream(
             img = await get_thumb(vidid)
             button = stream_markup(_, chat_id)
             
-            # الحذف هنا آمن فقط عند النجاح
             await safe_delete(mystic)
             
             caption_text = "🧚 " + _["stream_1"].format(
@@ -240,11 +246,12 @@ async def stream(
                 user_name,
             )
             try:
+                # تطبيق الفلتر الذكي
                 run = await app.send_photo(
                     original_chat_id,
                     photo=img,
                     caption=caption_text,
-                    reply_markup=InlineKeyboardMarkup(button),
+                    reply_markup=get_smart_markup(button),
                 )
                 db[chat_id][0]["mystic"] = run
                 db[chat_id][0]["markup"] = "stream"
@@ -297,13 +304,14 @@ async def stream(
             button = stream_markup(_, chat_id)
             await safe_delete(mystic)
             
+            # تطبيق الفلتر الذكي
             run = await app.send_photo(
                 original_chat_id,
                 photo=config.SOUNCLOUD_IMG_URL,
                 caption="🧚 " + _["stream_1"].format(
                     config.SUPPORT_CHAT, title[:23], duration_min, user_name
                 ),
-                reply_markup=InlineKeyboardMarkup(button),
+                reply_markup=get_smart_markup(button),
             )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
@@ -358,11 +366,12 @@ async def stream(
             button = stream_markup(_, chat_id)
             await safe_delete(mystic)
             
+            # تطبيق الفلتر الذكي
             run = await app.send_photo(
                 original_chat_id,
                 photo=config.TELEGRAM_VIDEO_URL if is_video else config.TELEGRAM_AUDIO_URL,
                 caption="🧚 " + _["stream_1"].format(link, title[:23], duration_min, user_name),
-                reply_markup=InlineKeyboardMarkup(button),
+                reply_markup=get_smart_markup(button),
             )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
@@ -427,6 +436,7 @@ async def stream(
             button = stream_markup(_, chat_id)
             await safe_delete(mystic)
             
+            # تطبيق الفلتر الذكي
             run = await app.send_photo(
                 original_chat_id,
                 photo=img,
@@ -436,7 +446,7 @@ async def stream(
                     duration_min,
                     user_name,
                 ),
-                reply_markup=InlineKeyboardMarkup(button),
+                reply_markup=get_smart_markup(button),
             )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
@@ -486,11 +496,12 @@ async def stream(
             button = stream_markup(_, chat_id)
             await safe_delete(mystic)
             
+            # تطبيق الفلتر الذكي
             run = await app.send_photo(
                 original_chat_id,
                 photo=config.STREAM_IMG_URL,
                 caption="🧚 " + _["stream_2"].format(user_name),
-                reply_markup=InlineKeyboardMarkup(button),
+                reply_markup=get_smart_markup(button),
             )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
