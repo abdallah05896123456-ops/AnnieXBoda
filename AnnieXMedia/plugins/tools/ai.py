@@ -1,421 +1,242 @@
-# plugins/ai.py
-# AnnieXMedia - Gemini-backed AI core
-# جميع الأوامر بالعربية الفصحى بدون سلاش. سياق حتى 50 رسالة. رسالة انتظار: "جـاري الـتـفكير ...."
-# يعتمد على واجهة HTTP لـ Gemini (أو أي مزود جنيريتيف) عبر متغيرات البيئة.
+# تم التطوير بواسطة الزملاء المبرمجين 2026
+# محرك الذكاء الاصطناعي الفائق - نسخة Gemini 2.0 Flash النووية
+# النظام: رد وتعديل فوري | لغة عربية فصحى | حفظ حالة دائم (Persistence)
 
+import asyncio
 import os
+import time
 import re
 import json
-import asyncio
 import logging
-from typing import Dict, List, Optional
-from collections import deque, defaultdict
-from datetime import date
-import aiohttp
+from datetime import datetime
+from collections import deque
 
-from pyrogram import filters
-from pyrogram.types import Message
+import google.generativeai as genai
+from pyrogram import filters, enums
+from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
+
 from AnnieXMedia import app
 import config
+from config import OWNER_ID, AI_HANDLER_GROUP
 
-# ---------- سجل التشغيل ----------
+# --- إعدادات السجلات والتقارير ---
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("ai_gemini")
+logger = logging.getLogger("AnnieX_AI_Core")
 
-# ---------- إعدادات بيئية ----------
-GEMINI_API_URL = os.getenv("GEMINI_API_URL")  # واجهة الـ generate endpoint
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or getattr(config, "GEMINI_API_KEY", None)
-OWNER_ENV = os.getenv("OWNER_ID") or getattr(config, "OWNER_ID", None)
-try:
-    OWNER_ID = int(OWNER_ENV) if OWNER_ENV is not None else None
-except Exception:
-    OWNER_ID = None
+# --- تهيئة المحرك وربط المفتاح السري ---
+# يتم سحب المفتاح من السكرتس GEMINI_API_KEY أو من ملف config.py
+GEMINI_KEY = os.getenv("GEMINI_API_KEY") or getattr(config, "GEMINI_API_KEY", None)
+if GEMINI_KEY:
+    genai.configure(api_key=GEMINI_KEY)
+else:
+    logger.error("خطأ فادح: لم يتم العثور على مفتاح GEMINI_API_KEY في السكرتس.")
 
-if OWNER_ID is None:
-    logger.warning("OWNER_ID غير مهيأ؛ تأكد من تعيين SECRET OWNER_ID في بيئة النشر.")
+# استخدام موديل Gemini 2.0 Flash الأحدث والأسرع عالمياً
+model = genai.GenerativeModel('gemini-2.0-flash')
 
-if not GEMINI_API_URL:
-    logger.warning("GEMINI_API_URL غير مهيأ. ضع URL الواجهة في ENV: GEMINI_API_URL")
-if not GEMINI_API_KEY:
-    logger.warning("GEMINI_API_KEY غير مهيأ. يمكن تعيينه لاحقًا بأمر المالك.")
-
-# ---------- ضبط السلوك ----------
-MAX_CONTEXT = int(os.getenv("AI_MAX_CONTEXT", "50"))
-MAX_CONCURRENT = int(os.getenv("AI_MAX_CONCURRENT", "4"))
-DAILY_LIMIT_DEFAULT = int(os.getenv("DAILY_LIMIT", "150"))
-MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")  # يمكن تغييره عبر env
-
-# ---------- ذاكرة وسجل ----------
-contexts: Dict[int, deque] = defaultdict(lambda: deque(maxlen=MAX_CONTEXT))
-daily_counts: Dict[int, int] = defaultdict(int)
-daily_date: Dict[int, date] = defaultdict(lambda: date.today())
-permanent_users: Dict[int, bool] = {}  # user_id -> True
-user_mode: Dict[int, str] = defaultdict(lambda: "عام")  # "عام" أو "تقني"
-
+# --- متغيرات التحكم والذاكرة العميقة ---
+SUDO_USERS = OWNER_ID if isinstance(OWNER_ID, list) else [OWNER_ID]
 AI_STATUS = True
-LIMIT_STATUS = False
-DAILY_LIMIT = DAILY_LIMIT_DEFAULT
+LIMIT_STATUS = True
+DAILY_LIMIT = 150
+AI_MODE = "عام" 
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "ai_data")
-os.makedirs(DATA_DIR, exist_ok=True)
-STATE_FILE = os.path.join(DATA_DIR, "state.json")
+# ذاكرة المحادثات (حفظ سياق يصل لـ 50 رسالة لكل مستخدم)
+user_contexts = {}
+user_usage = {} # {uid: {"count": 0, "date": "YYYY-MM-DD"}}
+PERMANENT_USERS = set() 
+STATE_FILE = "ai_data/ai_master_state.json"
 
-# ---------- طابور ومعالج ----------
-_semaphore = asyncio.Semaphore(MAX_CONCURRENT)
-pending_queue: asyncio.Queue = asyncio.Queue()
-
-# ---------- حفظ/تحميل الحالة ----------
-def save_state():
-    try:
-        s = {
-            "permanent_users": list(permanent_users.keys()),
-            "daily_limit": DAILY_LIMIT,
-            "ai_status": AI_STATUS,
-            "limit_status": LIMIT_STATUS,
-            "model": MODEL_NAME,
-        }
-        with open(STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump(s, f, ensure_ascii=False, indent=2)
-    except Exception:
-        logger.exception("فشل حفظ الحالة")
-
-def load_state():
-    try:
-        if os.path.exists(STATE_FILE):
+# --- وظائف إدارة البيانات وحفظ الحالة (Persistence) ---
+def load_system_state():
+    """استعادة إعدادات النظام وقائمة المستخدمين الدائمين من الملف"""
+    global PERMANENT_USERS, DAILY_LIMIT, AI_STATUS, LIMIT_STATUS, AI_MODE
+    if os.path.exists(STATE_FILE):
+        try:
             with open(STATE_FILE, "r", encoding="utf-8") as f:
-                s = json.load(f)
-            for uid in s.get("permanent_users", []):
-                try:
-                    permanent_users[int(uid)] = True
-                except:
-                    pass
-    except Exception:
-        logger.exception("فشل تحميل الحالة")
+                state = json.load(f)
+            PERMANENT_USERS = set(state.get("PERMANENT_USERS", []))
+            DAILY_LIMIT = state.get("DAILY_LIMIT", 150)
+            AI_STATUS = state.get("AI_STATUS", True)
+            LIMIT_STATUS = state.get("LIMIT_STATUS", True)
+            AI_MODE = state.get("AI_MODE", "عام")
+            logger.info("تمت استعادة حالة النظام بالكامل.")
+        except Exception as e:
+            logger.error(f"فشل استعادة الحالة: {e}")
 
-load_state()
+def save_system_state():
+    """حفظ إعدادات النظام الحالية في ملف JSON لضمان عدم ضياعها"""
+    os.makedirs("ai_data", exist_ok=True)
+    try:
+        with open(STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "PERMANENT_USERS": list(PERMANENT_USERS),
+                "DAILY_LIMIT": DAILY_LIMIT,
+                "AI_STATUS": AI_STATUS,
+                "LIMIT_STATUS": LIMIT_STATUS,
+                "AI_MODE": AI_MODE
+            }, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        logger.error(f"فشل حفظ حالة النظام: {e}")
 
-# ---------- مساعد بناء الطلب لمزود Gemini ----------
-def build_system_prompt(uid: int) -> str:
-    # نوجه النموذج ليكون فصيحاً، حساساً لنبرة المستخدم، ويطابق المزاج
-    default = (
-        "أنت مساعد ذكي فصيح باللغة العربية. اكتشف مزاج المستخدم من نص سؤاله "
-        "(حزين، فرحان، غاضب، محايد) واطرح الإجابة بنبرة مطابقة وباحترام وتعاطف "
-        "عند الحاجة. كن موجزًا مفيدًا وواضحًا، ولا تستخدم رموزًا تعبيرية."
+load_system_state()
+
+# --- محرك المعالجة والاستنتاج ---
+async def generate_ai_response(u_id, prompt, img_path=None):
+    """إرسال الطلب لمحرك Gemini ومعالجة الرد مع الحفاظ على السياق"""
+    if u_id not in user_contexts:
+        user_contexts[u_id] = model.start_chat(history=[])
+    
+    chat = user_contexts[u_id]
+    
+    # صياغة التعليمات البرمجية لنبرة الصوت (لغة فصحى راقية)
+    system_instruction = (
+        "أنت مساعد ذكي متمكن جداً، تتحدث اللغة العربية الفصحى بأسلوب مباشر وراقٍ. "
+        "قدم إجابات مطولة، شاملة، ومنظمة جيداً. تجنب الاختصار المخل. "
+        "لا تستخدم الرموز التعبيرية (Emojis) بتاتاً."
     )
-    if user_mode.get(uid) == "تقني":
-        return (
-            "أنت خبير تقني محترف، اشرح الحلول الهندسية بدقة وبالفصحى. إذا اشتمل سؤال المستخدم "
-            "على عاطفة، اذكرها بإيجاز ثم انتقل للتحليل التقني."
-        )
-    return default
+    if AI_MODE == "تقني":
+        system_instruction = "أنت كبير مهندسي برمجيات، اشرح الحلول التقنية بدقة هندسية عالية وبالفصحى."
 
-def build_messages(uid: int, user_text: str) -> List[Dict]:
-    msgs = [{"role": "system", "content": build_system_prompt(uid)}]
-    msgs.extend(list(contexts[uid]))
-    msgs.append({"role": "user", "content": user_text})
-    return msgs
-
-# ---------- استدعاء HTTP إلى Gemini (مرن) ----------
-async def call_gemini_api(messages: List[Dict], model: Optional[str] = None, timeout: int = 30) -> Optional[str]:
-    """
-    يتوقع JSON خروج بصيغة مرنة. تحتاج أن تُعرّف GEMINI_API_URL لتشير إلى نقطة توليد صحيحة.
-    """
-    url = GEMINI_API_URL
-    key = GEMINI_API_KEY
-    if not url or not key:
-        logger.error("Gemini URL أو KEY غير موجودين.")
+    try:
+        full_query = f"{system_instruction}\n\nالمستخدم يسأل: {prompt}"
+        
+        if img_path:
+            from PIL import Image
+            img = Image.open(img_path)
+            # Gemini 2.0 Flash يعالج النصوص والصور بسرعة فائقة في طلب واحد
+            response = await asyncio.to_thread(model.generate_content, [full_query, img])
+        else:
+            response = await asyncio.to_thread(chat.send_message, full_query)
+            
+        # تقليم السياق لـ 50 رسالة فقط لتوفير موارد السيرفر
+        if len(chat.history) > 50:
+            chat.history = chat.history[-50:]
+            
+        return response.text.strip()
+    except Exception as e:
+        logger.error(f"خطأ في استجابة Gemini: {e}")
         return None
 
-    payload = {
-        # بنية مبسطة: مزودك قد يطلب شي مختلف، اضبط حسب واجهتك
-        "model": model or MODEL_NAME,
-        "messages": messages,
-        "temperature": 0.4,
-        "max_output_tokens": 1024
-    }
+# --- لوحة التحكم الإدارية (للمطورين فقط - بدون سلاش) ---
 
-    headers = {
-        "Authorization": f"Bearer {key}",
-        "Content-Type": "application/json"
-    }
-
-    # محاولات مع backoff قصير
-    delay = 1.0
-    for attempt in range(1, 4):
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, headers=headers, timeout=timeout) as resp:
-                    text = await resp.text()
-                    status = resp.status
-                    if status >= 200 and status < 300:
-                        # نحاول تفكيك أشكال مختلفة من الاستجابة
-                        try:
-                            j = await resp.json()
-                        except Exception:
-                            j = None
-                        # محتمل حقول: candidates[0].content, outputText, text, content
-                        if j:
-                            # Android-style generative responses
-                            if "candidates" in j and isinstance(j["candidates"], list) and j["candidates"]:
-                                c = j["candidates"][0]
-                                if isinstance(c, dict):
-                                    # قد تحتوي على 'content' أو 'message' أو 'output'
-                                    if "content" in c:
-                                        return c["content"].get("text") if isinstance(c["content"], dict) and "text" in c["content"] else c["content"]
-                                    if "message" in c and isinstance(c["message"], dict):
-                                        return c["message"].get("content") or c["message"].get("text")
-                                    if "output" in c:
-                                        return c["output"]
-                            # بعض واجهات تعيد 'outputText'
-                            if "outputText" in j:
-                                return j["outputText"]
-                            if "text" in j:
-                                return j["text"]
-                            # generic
-                            # search for first string in json
-                            def find_first_str(obj):
-                                if isinstance(obj, str):
-                                    return obj
-                                if isinstance(obj, dict):
-                                    for v in obj.values():
-                                        r = find_first_str(v)
-                                        if r:
-                                            return r
-                                if isinstance(obj, list):
-                                    for i in obj:
-                                        r = find_first_str(i)
-                                        if r:
-                                            return r
-                                return None
-                            r = find_first_str(j)
-                            return r
-                        else:
-                            # fallback: نص خام
-                            return text.strip()
-                    else:
-                        logger.warning("Gemini API returned status %s: %s", status, text[:300])
-                        # لو 401 أو 403 افصل فورًا
-                        if status in (401, 403):
-                            return None
-        except asyncio.TimeoutError:
-            logger.warning("Timeout calling Gemini attempt %s", attempt)
-        except Exception as e:
-            logger.exception("Error calling Gemini attempt %s: %s", attempt, e)
-        await asyncio.sleep(delay)
-        delay *= 2.0
-    return None
-
-# ---------- عامل الطابور ----------
-async def worker():
-    while True:
-        job = await pending_queue.get()
-        msg_obj, user_id, messages, status_msg = job
-        try:
-            async with _semaphore:
-                result = await call_gemini_api(messages)
-                if result:
-                    # حفظ السياق بعد نجاح الرد
-                    contexts[user_id].append({"role": "user", "content": messages[-1]["content"]})
-                    contexts[user_id].append({"role": "assistant", "content": result})
-                    # تحديث العداد اليومي
-                    daily_counts[user_id] += 1
-                    try:
-                        await status_msg.edit_text(result)
-                    except Exception:
-                        try:
-                            await msg_obj.reply_text(result)
-                        except Exception:
-                            logger.exception("فشل إرسال الرد للمستخدم %s", user_id)
-                else:
-                    try:
-                        await status_msg.edit_text("نعتذر، المحرك لا يستجيب حالياً. يرجى إعادة المحاولة لاحقاً.")
-                    except Exception:
-                        pass
-        except Exception:
-            logger.exception("عامل الطابور حدث له خطأ")
-            try:
-                await status_msg.edit_text("حدث خطأ غير متوقع أثناء المعالجة.")
-            except:
-                pass
-        finally:
-            pending_queue.task_done()
-
-asyncio.get_event_loop().create_task(worker())
-
-# ---------- أوامر إدارة (بدون سلاش) ----------
-def is_owner(uid: int) -> bool:
-    return OWNER_ID is not None and uid == OWNER_ID
-
-@app.on_message(filters.regex(r"^(قفل الذكاء|فتح الذكاء)$"))
-async def cmd_toggle_ai(_, m: Message):
+@app.on_message(filters.regex(r"^(قفل الذكاء|فتح الذكاء)$") & filters.user(SUDO_USERS))
+async def admin_toggle_ai(_, m: Message):
     global AI_STATUS
-    uid = m.from_user.id
-    if not is_owner(uid):
-        return await m.reply_text("ليس لديك صلاحية تنفيذ هذا الأمر.")
     AI_STATUS = "فتح" in m.text
-    save_state()
-    await m.reply_text("تم تنفيذ الطلب.")
+    save_system_state()
+    await m.reply_text(f"تم تنفيذ أمر المطور: {'تشغيل' if AI_STATUS else 'إيقاف'} الذكاء الاصطناعي.")
 
-@app.on_message(filters.regex(r"^(فتح الليمت|قفل الليمت)$"))
-async def cmd_toggle_limit(_, m: Message):
+@app.on_message(filters.regex(r"^(فتح الليمت|قفل الليمت)$") & filters.user(SUDO_USERS))
+async def admin_toggle_limit(_, m: Message):
     global LIMIT_STATUS
-    uid = m.from_user.id
-    if not is_owner(uid):
-        return await m.reply_text("ليس لديك صلاحية تنفيذ هذا الأمر.")
     LIMIT_STATUS = "فتح" in m.text
-    save_state()
-    await m.reply_text("تم تحديث حالة الحد اليومي.")
+    save_system_state()
+    await m.reply_text(f"تم {'تفعيل' if LIMIT_STATUS else 'تعطيل'} نظام الحد اليومي للرسائل.")
 
-@app.on_message(filters.regex(r"^وضع ليميت (\d+)$"))
-async def cmd_set_limit(_, m: Message):
+@app.on_message(filters.regex(r"^وضع ليميت (\d+)$") & filters.user(SUDO_USERS))
+async def admin_set_limit(_, m: Message):
     global DAILY_LIMIT
-    uid = m.from_user.id
-    if not is_owner(uid):
-        return await m.reply_text("ليس لديك صلاحية تنفيذ هذا الأمر.")
     DAILY_LIMIT = int(m.matches[0].group(1))
-    save_state()
-    await m.reply_text(f"تم ضبط الحد اليومي إلى {DAILY_LIMIT} رسالة.")
+    save_system_state()
+    await m.reply_text(f"تم تحديث سقف الاستخدام اليومي ليصبح {DAILY_LIMIT} رسالة.")
 
-@app.on_message(filters.regex(r"^فتح الذكاء الدائم (\d+)$"))
-async def cmd_permanent_enable_id(_, m: Message):
-    uid = m.from_user.id
-    if not is_owner(uid):
-        return await m.reply_text("ليس لديك صلاحية تنفيذ هذا الأمر.")
-    target = int(m.matches[0].group(1))
-    permanent_users[target] = True
-    save_state()
-    await m.reply_text(f"تم تفعيل الذكاء الدائم للمستخدم {target}.")
-
-@app.on_message(filters.regex(r"^قفل الذكاء الدائم (\d+)$"))
-async def cmd_permanent_disable_id(_, m: Message):
-    uid = m.from_user.id
-    if not is_owner(uid):
-        return await m.reply_text("ليس لديك صلاحية تنفيذ هذا الأمر.")
-    target = int(m.matches[0].group(1))
-    permanent_users.pop(target, None)
-    save_state()
-    await m.reply_text(f"تم إيقاف الذكاء الدائم للمستخدم {target}.")
-
-@app.on_message(filters.regex(r"^(فتح الذكاء الدائم|قفل الذكاء الدائم)$"))
-async def cmd_permanent_reply(_, m: Message):
-    uid = m.from_user.id
-    if not is_owner(uid):
-        return await m.reply_text("ليس لديك صلاحية تنفيذ هذا الأمر.")
+@app.on_message(filters.regex(r"^(فتح|قفل) الذكاء الدائم$") & filters.user(SUDO_USERS))
+async def admin_permanent_user(_, m: Message):
     if not m.reply_to_message:
-        return await m.reply_text("يرجى الرد على رسالة المستخدم المطلوب.")
-    target = m.reply_to_message.from_user.id
+        return await m.reply_text("عليك الرد على رسالة الشخص المستهدف لتفعيل الذكاء الدائم له.")
+    uid = m.reply_to_message.from_user.id
     if "فتح" in m.text:
-        permanent_users[target] = True
-        save_state()
-        await m.reply_text(f"تم تفعيل الذكاء الدائم للمستخدم {target}.")
+        PERMANENT_USERS.add(uid)
     else:
-        permanent_users.pop(target, None)
-        save_state()
-        await m.reply_text(f"تم إيقاف الذكاء الدائم للمستخدم {target}.")
+        PERMANENT_USERS.discard(uid)
+    save_system_state()
+    await m.reply_text(f"تم تحديث صلاحيات المستخدم {uid}. الحالة الدائمة: {'مفعلة' if uid in PERMANENT_USERS else 'معطلة'}.")
 
-@app.on_message(filters.regex(r"^تغيير المود (تقني|عام)$"))
-async def cmd_change_mode(_, m: Message):
+@app.on_message(filters.regex(r"^تغيير المود (تقني|عام)$") & filters.user(SUDO_USERS))
+async def admin_switch_mode(_, m: Message):
+    global AI_MODE
+    AI_MODE = m.matches[0].group(1)
+    save_system_state()
+    await m.reply_text(f"تم ضبط نبرة ردود المحرك على النمط الـ{AI_MODE}.")
+
+@app.on_message(filters.regex(r"^(تنظيف الذاكرة|حالة الذكاء)$") & filters.user(SUDO_USERS))
+async def admin_diagnostic(_, m: Message):
+    if "تنظيف" in m.text:
+        user_contexts.clear()
+        user_usage.clear()
+        await m.reply_text("تم تصفير سجلات الحوار وتفريغ ذاكرة الوصول العشوائي.")
+    else:
+        await m.reply_text(
+            f"📊 تقرير النظام الحالي:\n"
+            f"- الحالة العامة: {'نشط' if AI_STATUS else 'متوقف'}\n"
+            f"- نمط الرد: {AI_MODE}\n"
+            f"- الحد اليومي: {DAILY_LIMIT}\n"
+            f"- المستخدمين الدائمين: {len(PERMANENT_USERS)}"
+        )
+
+# --- أوامر المستخدمين العادية ---
+
+@app.on_message(filters.regex(r"^مسح محادثتي$") & ~filters.bot)
+async def user_clear_context(_, m: Message):
     uid = m.from_user.id
-    if not is_owner(uid):
-        return await m.reply_text("ليس لديك صلاحية تنفيذ هذا الأمر.")
-    mode = m.matches[0].group(1)
-    user_mode[uid] = mode
-    save_state()
-    await m.reply_text(f"تم تغيير وضع المالك إلى {mode}.")
+    if uid in user_contexts:
+        del user_contexts[uid]
+        await m.reply_text("تم مسح سجل محادثتك معي بنجاح، يمكنك بدء حوار جديد الآن.")
+    else:
+        await m.reply_text("لا يوجد سجل محادثات نشط خاص بك حالياً.")
 
-@app.on_message(filters.regex(r"^تنظيف الذاكرة$"))
-async def cmd_clear_memory(_, m: Message):
-    uid = m.from_user.id
-    if not is_owner(uid):
-        return await m.reply_text("ليس لديك صلاحية تنفيذ هذا الأمر.")
-    contexts.clear()
-    daily_counts.clear()
-    save_state()
-    await m.reply_text("تم مسح الذاكرة وتصفير العدادات.")
+# --- المعالج المركزي (نظام الرد والتعديل الفوري) ---
 
-@app.on_message(filters.regex(r"^تعيين مفتاح GEMINI\s+(.+)$"))
-async def cmd_set_gemini_key(_, m: Message):
-    global GEMINI_API_KEY, GEMINI_API_URL, openai_client
-    uid = m.from_user.id
-    if not is_owner(uid):
-        return await m.reply_text("ليس لديك صلاحية تنفيذ هذا الأمر.")
-    key = m.matches[0].group(1).strip()
-    if not key:
-        return await m.reply_text("الرجاء تزويد مفتاح صالح.")
-    GEMINI_API_KEY = key
-    # نصيحة: خزنه كـ secret في المضيف
-    save_state()
-    await m.reply_text("تم تفعيل المفتاح موقتا في الذاكرة. ينصح بتخزينه في الـ secrets للمضيف.")
-
-@app.on_message(filters.regex(r"^حالة الذكاء$"))
-async def cmd_status(_, m: Message):
-    uid = m.from_user.id
-    if not is_owner(uid):
-        return await m.reply_text("ليس لديك صلاحية تنفيذ هذا الأمر.")
-    await m.reply_text(
-        f"AI_STATUS={AI_STATUS}\nLIMIT_STATUS={LIMIT_STATUS}\nDAILY_LIMIT={DAILY_LIMIT}\nQueue={pending_queue.qsize()}\nModel={MODEL_NAME}\nGEMINI_URL={GEMINI_API_URL or '<not set>'}"
-    )
-
-# ---------- أمر إعادة المحاولة ----------
-@app.on_message(filters.regex(r"^(أعد المحاولة|retry)$"))
-async def cmd_retry(_, m: Message):
-    uid = m.from_user.id
-    last_user = None
-    for item in reversed(contexts.get(uid, [])):
-        if item.get("role") == "user":
-            last_user = item.get("content")
-            break
-    if not last_user:
-        return await m.reply_text("لا توجد محادثة سابقة لإعادتها.")
-    await queue_user_request(m, uid, last_user)
-    await m.reply_text("تمت إضافة إعادة المحاولة إلى الطابور.")
-
-# ---------- وضع الطلب في الطابور مع رسالة انتظار "جـاري الـتـفكير ...." ----------
-async def queue_user_request(msg_obj: Message, uid: int, prompt: str):
-    messages = build_messages(uid, prompt)
-    # رسالة انتظار مباشرة كما طلبت
-    status = await msg_obj.reply_text("جـاري الـتـفكير ....", quote=True)
-    await pending_queue.put((msg_obj, uid, messages, status))
-
-# ---------- المعالج الرئيسي (ذكاء / بقولك) بدون سلاش ----------
-@app.on_message((filters.text | filters.caption) & ~filters.bot, group=1)
-async def main_handler(_, m: Message):
-    global AI_STATUS, LIMIT_STATUS, DAILY_LIMIT
-    uid = m.from_user.id
-    text = (m.text or m.caption or "").strip()
-    if not text:
+@app.on_message((filters.text | filters.photo) & ~filters.bot, group=AI_HANDLER_GROUP)
+async def central_ai_handler(bot, m: Message):
+    if not AI_STATUS and m.from_user.id not in SUDO_USERS:
+        return
+    
+    uid, raw_text = m.from_user.id, (m.text or m.caption or "")
+    
+    # فحص حالة المناداة أو الذكاء الدائم
+    is_perm = uid in PERMANENT_USERS
+    match = re.match(r"^(ذكاء|بقولك)(\s|$)", raw_text, re.IGNORECASE)
+    
+    if not is_perm and not match:
         return
 
-    # إذا المستخدم مفعل له الذكاء الدائم، نخدمه
-    if uid in permanent_users:
-        prompt = text
+    # استخلاص نص السؤال
+    prompt = raw_text[match.end():].strip() if (match and not is_perm) else raw_text
+    if not prompt and not m.photo:
+        prompt = "أهلاً بك، أنا استمع إليك."
+
+    # تدقيق ليميت الاستهلاك اليومي
+    today = datetime.now().strftime("%Y-%m-%d")
+    if uid not in user_usage or user_usage[uid].get("date") != today:
+        user_usage[uid] = {"count": 0, "date": today}
+
+    if LIMIT_STATUS and user_usage[uid]["count"] >= DAILY_LIMIT and uid not in SUDO_USERS:
+        return await m.reply_text(f"نعتذر، لقد استنفدت حصتك اليومية المحددة بـ {DAILY_LIMIT} رسالة.")
+
+    # معالجة الصور إن وجدت
+    path = await m.download() if m.photo else None
+    
+    # 1. إرسال إشعار الانتظار الفوري كـ Reply
+    status_msg = await m.reply_text("جـاري الـتـفكير ....", quote=True)
+    await bot.send_chat_action(m.chat.id, enums.ChatAction.TYPING)
+    
+    # 2. بدء المعالجة عبر Gemini 2.0 Flash
+    answer = await generate_ai_response(uid, prompt, path)
+    if path: os.remove(path)
+        
+    # 3. التعديل النهائي لرسالة الانتظار بالرد الفصيح
+    if answer:
+        user_usage[uid]["count"] += 1
+        await status_msg.edit(answer)
     else:
-        if not AI_STATUS and not is_owner(uid):
-            return
-        match = re.match(r"^(ذكاء|بقولك)(\s|$)", text, re.IGNORECASE)
-        if not match:
-            return
-        prompt = text[match.end():].strip()
-        if not prompt:
-            return
+        await status_msg.edit("نعتذر، واجه محرك الذكاء صعوبة في الاستجابة حالياً، يرجى المحاولة لاحقاً.")
 
-    # حد يومي
-    if daily_date.get(uid) != date.today():
-        daily_date[uid] = date.today()
-        daily_counts[uid] = 0
-
-    if LIMIT_STATUS and not is_owner(uid):
-        if daily_counts.get(uid, 0) >= DAILY_LIMIT:
-            return await m.reply_text("لقد استنفدت حصتك اليومية.")
-    await queue_user_request(m, uid, prompt)
-
-# ---------- حفظ دوري ----------
-async def periodic_save():
+# --- وظيفة الحفظ الدوري التلقائي للحالة ---
+async def auto_save_task():
     while True:
-        await asyncio.sleep(300)
-        try:
-            save_state()
-        except Exception:
-            logger.exception("فشل الحفظ الدوري")
+        await asyncio.sleep(600) # حفظ كل 10 دقائق لضمان الأمان
+        save_system_state()
 
-asyncio.get_event_loop().create_task(periodic_save())
+asyncio.get_event_loop().create_task(auto_save_task())
