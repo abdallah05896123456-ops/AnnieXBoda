@@ -10,7 +10,6 @@ from pyrogram import Client
 from pyrogram.errors import FloodWait, ChatAdminRequired
 from pyrogram.types import InlineKeyboardMarkup
 from pytgcalls import PyTgCalls
-# 🔥 تم إزالة AlreadyJoinedError لأنها غير موجودة في مكتبتك
 from pytgcalls.exceptions import NoActiveGroupCall, NoAudioSourceFound, NoVideoSourceFound
 from pytgcalls.types import (
     AudioQuality, 
@@ -63,7 +62,7 @@ def dynamic_media_stream(path: str, video: bool = False, ffmpeg_params: str = No
     return MediaStream(
         media_path=path,
         audio_parameters=AudioQuality.STUDIO,
-        video_parameters=VideoQuality.HD_720p if video else None,
+        video_parameters=VideoQuality.HD_720p, 
         audio_flags=audio_flags,
         video_flags=video_flags,
         ffmpeg_parameters=titan_flags,
@@ -80,7 +79,6 @@ async def _clear_(chat_id: int) -> None:
 
 class Call:
     def __init__(self):
-        # استخدام اليوزربوت الموجود مسبقاً
         self.userbot1 = userbot.one
         self.userbot2 = userbot.two
         self.userbot3 = userbot.three
@@ -163,8 +161,11 @@ class Call:
     @capture_internal_err
     async def vc_users(self, chat_id: int) -> list:
         assistant = await group_assistant(self, chat_id)
-        participants = await assistant.get_participants(chat_id)
-        return [p.user_id for p in participants if not p.is_muted]
+        try:
+            participants = await assistant.get_participants(chat_id)
+            return [p.user_id for p in participants if not p.is_muted]
+        except:
+            return []
 
     @capture_internal_err
     async def seek_stream(self, chat_id: int, file_path: str, to_seek: str, duration: str, mode: str) -> None:
@@ -216,12 +217,20 @@ class Call:
         else:
             raise AssistantErr("Stream mismatch during speedup.")
 
+    # --- [ 🔥 تصحيح دالة Logger Stream لمنع الكراش ] ---
     @capture_internal_err
     async def stream_call(self, link: str) -> None:
         assistant = await group_assistant(self, config.LOGGER_ID)
+        # نستخدم الدالة المساعدة لضمان وجود VideoQuality
+        stream = dynamic_media_stream(link)
         try:
-            await assistant.play(config.LOGGER_ID, MediaStream(link))
+            await assistant.play(config.LOGGER_ID, stream)
             await asyncio.sleep(8)
+        except (NoActiveGroupCall, ConnectionNotFound):
+            LOGGER(__name__).warning("⚠️ لم يتمكن البوت من الانضمام لمجموعة السجل (تأكد أن المكالمة مفتوحة).")
+        except Exception as e:
+            # تجاهل أي أخطاء أخرى في اللوجر لمنع توقف البوت
+            pass
         finally:
             try:
                 await assistant.leave_call(config.LOGGER_ID)
@@ -244,8 +253,6 @@ class Call:
         ksk = GroupCallConfig(auto_start=False)
 
         try:
-            # 🔥 الدالة play هنا تقوم بالانضمام أو التغيير تلقائياً
-            # لا حاجة لـ try...except AlreadyJoinedError لأن المكتبة تعالجها داخلياً
             await assistant.play(chat_id, stream, config=ksk)
         except NoActiveGroupCall:
             raise AssistantErr(_["call_8"])
