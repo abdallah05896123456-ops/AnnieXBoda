@@ -56,3 +56,4 @@ g4f
 lyricsgenius
 fuzzywuzzy
 python-Levenshtein
+openai
