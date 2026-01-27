@@ -6,7 +6,7 @@ from pyrogram.types import Message
 from pyrogram.errors import FloodWait, InputUserDeactivated, UserIsBlocked, PeerIdInvalid
 
 # استدعاء مكتبات السورس
-from BrandrdXMusic import app
+from AnnieXMedia import app
 
 # استدعاء المتغيرات من ملف الإعدادات
 from .az_conf import (
