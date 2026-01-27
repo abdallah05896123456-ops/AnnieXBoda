@@ -10,8 +10,8 @@ from pyrogram import enums
 from pyrogram.errors import FloodWait
 
 # استدعاء مكتبات السورس الأساسية
-from BrandrdXMusic import app
-from BrandrdXMusic.utils.stream.stream import stream
+from AnnieXMedia import app
+from AnnieXMedia.utils.stream.stream import stream
 
 # استدعاء المتغيرات من ملف الإعدادات (Relative Import)
 from .az_conf import (
