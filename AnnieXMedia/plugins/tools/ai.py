@@ -1,6 +1,7 @@
-# ai.py - AnnieXMedia AI Core (OpenAI GPT-4)
-# تم التطوير بواسطة الزملاء المبرمجين 2026
-# يركز على محرك الذكاء OpenAI مع صف انتظار، retry، حفظ سياق حتى 50 رسالة، وأوامر إدارية.
+# plugins/ai.py
+# AnnieXMedia - AI core
+# يعتمد على OpenAI الرسمي عبر متغيرات البيئة (OPENAI_API_KEY, OWNER_ID)
+# أوامر بدون سلاش، لغة عربية فصحى، حفظ سياق حتى 50 رسالة، ذاكـرة دائمة لكل user_id.
 
 import os
 import re
@@ -9,109 +10,115 @@ import json
 import asyncio
 import logging
 from typing import Dict, List, Optional
-from pyrogram import filters, enums
+from collections import deque, defaultdict
+from datetime import date
+
+from pyrogram import filters
 from pyrogram.types import Message
 from openai import AsyncOpenAI, OpenAIError
 
 from AnnieXMedia import app
 import config
-from config import OWNER_ID, AI_HANDLER_GROUP
+from config import AI_HANDLER_GROUP
 
-# إعداد السجل
+# -------------------- سجل التشغيل --------------------
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ai_core")
 
-# إعدادات عامة
-SUDO_USERS = OWNER_ID if isinstance(OWNER_ID, list) else [OWNER_ID]
+# -------------------- قراءة السكرتس من البيئة --------------------
+# يفضّل ضبط هذه المتغيرات باستخدام fly secrets أو طريقة آمنة
+OPENAI_KEY = os.getenv("OPENAI_API_KEY") or getattr(config, "AI_API_KEY", None)
+OWNER = os.getenv("OWNER_ID") or getattr(config, "OWNER_ID", None)
+if isinstance(OWNER, str) and OWNER.isdigit():
+    OWNER_ID = int(OWNER)
+elif isinstance(OWNER, int):
+    OWNER_ID = OWNER
+else:
+    OWNER_ID = None
+
+if OWNER_ID is None:
+    logger.error("OWNER_ID غير مهيأ. ضع OWNER_ID كمتغير بيئة أو في config.py")
+if not OPENAI_KEY:
+    logger.warning("OPENAI_API_KEY غير مهيأ. يمكن تفعيل المفتاح لاحقاً بأمر إداري.")
+
+# عميل OpenAI قابل للتحديث عند تعيين مفتاح جديد أثناء التشغيل
+openai_client: Optional[AsyncOpenAI] = AsyncOpenAI(api_key=OPENAI_KEY) if OPENAI_KEY else None
+
+# -------------------- إعدادات السلوك --------------------
+MODEL_NAME = os.getenv("AI_MODEL", "gpt-4")  # يمكن تغييره عبر متغير بيئة
+MAX_CONTEXT = 50
+DAILY_LIMIT_DEFAULT = 150
+MAX_CONCURRENT = int(os.getenv("AI_MAX_CONCURRENT", "4"))
+
+# -------------------- بيانات الذاكرة --------------------
+contexts: Dict[int, deque] = defaultdict(lambda: deque(maxlen=MAX_CONTEXT))
+daily_counts: Dict[int, int] = defaultdict(int)
+daily_date: Dict[int, date] = defaultdict(lambda: date.today())
+permanent_users: Dict[int, bool] = {}  # user_id -> True
+user_mode: Dict[int, str] = defaultdict(lambda: "عام")  # "عام" أو "تقني"
+
 AI_STATUS = True
-LIMIT_STATUS = True
-DAILY_LIMIT = 100
-AI_MODE = "عام"  # أو "تقني"
+LIMIT_STATUS = False
+DAILY_LIMIT = int(os.getenv("DAILY_LIMIT", DAILY_LIMIT_DEFAULT))
 
-# سياق وعدادات
-context: Dict[int, List[Dict]] = {}
-counter: Dict[int, List[float]] = {}
-PERMANENT_USERS: Dict[int, bool] = {}
-
-# ملف الحالة
+# حالة وحفظ بسيط على القرص (مخزن القناع فقط، لا يخزن المفتاح الكامل)
 DATA_DIR = os.path.join(os.path.dirname(__file__), "ai_data")
 os.makedirs(DATA_DIR, exist_ok=True)
 STATE_FILE = os.path.join(DATA_DIR, "state.json")
 
-# إعداد OpenAI
-OPENAI_KEY = getattr(config, "AI_API_KEY", None) or os.environ.get("OPENAI_API_KEY")
-if not OPENAI_KEY:
-    logger.error("OpenAI API key not configured. ضع AI_API_KEY في config أو OPENAI_API_KEY كمتغير بيئة.")
-openai_client = AsyncOpenAI(api_key=OPENAI_KEY)
 
-# موارد تشغيل الطابور
-MAX_CONCURRENT = int(os.environ.get("AI_MAX_CONCURRENT", "4"))
-_semaphore = asyncio.Semaphore(MAX_CONCURRENT)
-pending_queue: asyncio.Queue = asyncio.Queue()
+def mask_key(k: Optional[str]) -> str:
+    if not k:
+        return "<not set>"
+    k = k.strip()
+    if len(k) <= 10:
+        return k[0:2] + "..." + k[-2:]
+    return k[:6] + "..." + k[-4:]
 
-# إعدادات المحرك
-MAX_CONTEXT_MESSAGES = 50  # حفظ حتى 50 رسالة
-RETRY_MAX = 4
-RETRY_TIMEOUT = 30
-MODEL_NAME = os.environ.get("AI_MODEL", "gpt-4")  # يمكن تغييره إلى gpt-4o
 
-# حفظ/تحميل الحالة
 def save_state():
     try:
-        state = {
-            "PERMANENT_USERS": list(PERMANENT_USERS.keys()),
-            "DAILY_LIMIT": DAILY_LIMIT,
-            "AI_MODE": AI_MODE,
-            "AI_STATUS": AI_STATUS,
-            "LIMIT_STATUS": LIMIT_STATUS,
-            "MAX_CONCURRENT": MAX_CONCURRENT
+        s = {
+            "permanent_users": list(permanent_users.keys()),
+            "daily_limit": DAILY_LIMIT,
+            "ai_status": AI_STATUS,
+            "limit_status": LIMIT_STATUS,
+            "user_mode_defaults": {},  # احتياطي
+            "openai_masked": mask_key(OPENAI_KEY)
         }
         with open(STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump(state, f, ensure_ascii=False, indent=2)
-        logger.debug("State saved")
-    except Exception as e:
-        logger.exception("Failed to save state: %s", e)
+            json.dump(s, f, ensure_ascii=False, indent=2)
+    except Exception:
+        logger.exception("فشل حفظ الحالة")
+
 
 def load_state():
-    global PERMANENT_USERS, DAILY_LIMIT, AI_MODE, AI_STATUS, LIMIT_STATUS, MAX_CONCURRENT, _semaphore
     try:
         if os.path.exists(STATE_FILE):
             with open(STATE_FILE, "r", encoding="utf-8") as f:
-                state = json.load(f)
-            PERMANENT_USERS = {int(k): True for k in state.get("PERMANENT_USERS", [])}
-            DAILY_LIMIT = state.get("DAILY_LIMIT", DAILY_LIMIT)
-            AI_MODE = state.get("AI_MODE", AI_MODE)
-            AI_STATUS = state.get("AI_STATUS", AI_STATUS)
-            LIMIT_STATUS = state.get("LIMIT_STATUS", LIMIT_STATUS)
-            MAX_CONCURRENT = state.get("MAX_CONCURRENT", MAX_CONCURRENT)
-            _semaphore = asyncio.Semaphore(MAX_CONCURRENT)
-            logger.debug("State loaded")
-    except Exception as e:
-        logger.exception("Failed to load state: %s", e)
+                s = json.load(f)
+            for uid in s.get("permanent_users", []):
+                try:
+                    permanent_users[int(uid)] = True
+                except:
+                    pass
+    except Exception:
+        logger.exception("فشل تحميل الحالة")
+
 
 load_state()
 
-# إدارة السياق
-def append_context(user_id: int, role: str, content: str):
-    lst = context.get(user_id, [])
-    lst.append({"role": role, "content": content})
-    if len(lst) > MAX_CONTEXT_MESSAGES:
-        lst = lst[-MAX_CONTEXT_MESSAGES:]
-    context[user_id] = lst
+# -------------------- موارد التزامن و الطابور --------------------
+_semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+pending_queue: asyncio.Queue = asyncio.Queue()
 
-def build_system_prompt():
-    if AI_MODE == "تقني":
-        return "أنت خبير برمجيات محترف، قدم تحليلات هندسية دقيقة ومفصلة باللغة العربية الفصحى."
-    return "أنت مساعد ذكي متمكن، قدم إجابات مفيدة وواضحة باللغة العربية الفصحى."
 
-def build_messages_from_context(user_id: int, user_prompt: str) -> List[Dict]:
-    msgs = [{"role": "system", "content": build_system_prompt()}]
-    msgs += context.get(user_id, [])
-    msgs.append({"role": "user", "content": user_prompt})
-    return msgs
+async def call_openai_with_retries(messages: List[Dict], max_retries: int = 4, timeout: int = 30) -> Optional[str]:
+    global openai_client
+    if not openai_client:
+        logger.error("عميل OpenAI غير مهيأ")
+        return None
 
-# استدعاء OpenAI مع retry و backoff
-async def _call_openai_with_retries(messages: List[Dict], user_id: int, max_retries: int = RETRY_MAX, timeout: int = RETRY_TIMEOUT) -> Optional[str]:
     delay = 1.0
     last_err = None
     for attempt in range(1, max_retries + 1):
@@ -119,217 +126,271 @@ async def _call_openai_with_retries(messages: List[Dict], user_id: int, max_retr
             resp = await openai_client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=messages,
-                temperature=0.6,
+                temperature=0.4,
                 max_tokens=1500,
                 timeout=timeout
             )
             if resp and getattr(resp, "choices", None):
-                content = resp.choices[0].message.content.strip()
-                return content
-            last_err = "empty_response"
+                return resp.choices[0].message.content.strip()
+            last_err = "empty"
         except OpenAIError as e:
             last_err = str(e)
             logger.warning("OpenAIError attempt %s: %s", attempt, e)
+            # كشف خطأ مفتاح غير صالح يفصل المحاولات
+            if "invalid_api_key" in str(e) or "Incorrect API key" in str(e):
+                logger.error("مفتاح OpenAI غير صالح (ستتوقف المحاولات).")
+                break
         except asyncio.TimeoutError:
             last_err = "timeout"
             logger.warning("Timeout attempt %s", attempt)
         except Exception as e:
             last_err = str(e)
-            logger.exception("Unexpected error on attempt %s: %s", attempt, e)
+            logger.exception("خطأ غير متوقع attempt %s: %s", attempt, e)
         await asyncio.sleep(delay)
         delay *= 2.0
-    logger.error("All retries failed: %s", last_err)
+    logger.error("فشلت كل المحاولات: %s", last_err)
     return None
 
-# عامل الطابور
-async def _worker_queue():
+
+async def worker():
     while True:
         job = await pending_queue.get()
-        message_obj, user_id, messages, status_msg = job
+        msg_obj, user_id, messages, status_msg = job
         try:
             async with _semaphore:
-                result = await _call_openai_with_retries(messages, user_id)
+                result = await call_openai_with_retries(messages)
                 if result:
-                    append_context(user_id, "user", messages[-1]["content"])
-                    append_context(user_id, "assistant", result)
-                    counter.setdefault(user_id, []).append(time.time())
+                    # حفظ السياق
+                    contexts[user_id].append({"role": "user", "content": messages[-1]["content"]})
+                    contexts[user_id].append({"role": "assistant", "content": result})
+                    # عداد يومي
+                    daily_counts[user_id] += 1
                     try:
-                        await status_msg.edit(result)
+                        await status_msg.edit_text(result)
                     except Exception:
                         try:
-                            await message_obj.reply_text(result)
+                            await msg_obj.reply_text(result)
                         except Exception:
-                            logger.exception("Failed to reply to user %s", user_id)
+                            logger.exception("فشل إرسال الرد للمستخدم %s", user_id)
                 else:
                     try:
-                        await status_msg.edit("نعتذر، المحرك لا يستجيب حالياً. يرجى إعادة المحاولة لاحقاً.")
+                        await status_msg.edit_text("نعتذر، المحرك لا يستجيب حالياً. يرجى إعادة المحاولة لاحقاً.")
                     except Exception:
                         pass
-        except Exception as e:
-            logger.exception("Worker failed: %s", e)
+        except Exception:
+            logger.exception("عامل الطابور تعرّض إلى خطأ")
             try:
-                await status_msg.edit("حدث خطأ غير متوقع أثناء المعالجة.")
-            except Exception:
+                await status_msg.edit_text("حدث خطأ غير متوقع أثناء المعالجة.")
+            except:
                 pass
         finally:
             pending_queue.task_done()
 
-# بدء العامل كخلفية
-asyncio.get_event_loop().create_task(_worker_queue())
 
-# أوامر الإدارة (مقتصرة على OWNER_ID فقط) - بدون سلاش
-@app.on_message(filters.regex(r"^(قفل الذكاء|فتح الذكاء)$") & filters.user(SUDO_USERS))
-async def cmd_toggle_ai(_, m: Message):
+asyncio.get_event_loop().create_task(worker())
+
+# -------------------- مساعدة بناء الرسائل --------------------
+def build_system_prompt(uid: int) -> str:
+    mode = user_mode.get(uid, "عام")
+    if mode == "تقني":
+        return "أنت مساعد تقني، اشرح بمصطلحات هندسية دقيقة وبالفصحى."
+    return "أنت مساعد ذكي، أجب بإيجاز ووضوح وبالفصحى."
+
+def build_messages(uid: int, user_text: str) -> List[Dict]:
+    msgs = [{"role": "system", "content": build_system_prompt(uid)}]
+    msgs.extend(list(contexts[uid]))
+    msgs.append({"role": "user", "content": user_text})
+    return msgs
+
+# -------------------- فحوص يومية للعداد --------------------
+def reset_daily_if_needed(uid: int):
+    if daily_date.get(uid) != date.today():
+        daily_date[uid] = date.today()
+        daily_counts[uid] = 0
+
+# -------------------- مساعدة: مالك أم لا --------------------
+def is_owner(uid: int) -> bool:
+    return OWNER_ID is not None and uid == OWNER_ID
+
+# -------------------- عملية الطلب الذكي --------------------
+async def queue_user_request(msg_obj: Message, uid: int, prompt: str):
+    messages = build_messages(uid, prompt)
+    status = await msg_obj.reply_text("جاري المعالجة، الرجاء الانتظار.")
+    await pending_queue.put((msg_obj, uid, messages, status))
+    await status.edit_text("تم وضع طلبك في قائمة الانتظار. سيتم الرد فور المعالجة.")
+
+# -------------------- أوامر الإدارة والنظام (بدون سلاش) --------------------
+
+# تفعيل/تعطيل الذكاء
+@app.on_message(filters.regex(r"^(قفل الذكاء|فتح الذكاء)$") & filters.user(lambda _, __, m: is_owner(m.from_user.id)))
+async def toggle_ai(_, m: Message):
     global AI_STATUS
     AI_STATUS = "فتح" in m.text
     save_state()
     await m.reply_text("تم تنفيذ الطلب.")
 
-@app.on_message(filters.regex(r"^(فتح الليمت|قفل الليمت)$") & filters.user(SUDO_USERS))
-async def cmd_toggle_limit(_, m: Message):
+# تفعيل/تعطيل الليمت
+@app.on_message(filters.regex(r"^(فتح الليمت|قفل الليمت)$") & filters.user(lambda _, __, m: is_owner(m.from_user.id)))
+async def toggle_limit(_, m: Message):
     global LIMIT_STATUS
     LIMIT_STATUS = "فتح" in m.text
     save_state()
-    await m.reply_text("تم تحديث حالة نظام الحد اليومي.")
+    await m.reply_text("تم تحديث حالة الحد اليومي.")
 
-@app.on_message(filters.regex(r"^وضع ليميت (\d+)$") & filters.user(SUDO_USERS))
-async def cmd_set_limit(_, m: Message):
+# وضع ليميت رقم
+@app.on_message(filters.regex(r"^وضع ليميت (\d+)$") & filters.user(lambda _, __, m: is_owner(m.from_user.id)))
+async def set_limit(_, m: Message):
     global DAILY_LIMIT
     DAILY_LIMIT = int(m.matches[0].group(1))
     save_state()
     await m.reply_text(f"تم ضبط الحد اليومي إلى {DAILY_LIMIT} رسالة.")
 
-@app.on_message(filters.regex(r"^فتح الذكاء الدائم (\d+)$") & filters.user(SUDO_USERS))
-async def cmd_permanent_ai_enable_by_id(_, m: Message):
-    target_id = int(m.matches[0].group(1))
-    PERMANENT_USERS[target_id] = True
-    save_state()
-    await m.reply_text(f"تم تفعيل الذكاء الدائم للمستخدم {target_id}.")
-
-@app.on_message(filters.regex(r"^قفل الذكاء الدائم (\d+)$") & filters.user(SUDO_USERS))
-async def cmd_permanent_ai_disable_by_id(_, m: Message):
-    target_id = int(m.matches[0].group(1))
-    PERMANENT_USERS.pop(target_id, None)
-    save_state()
-    await m.reply_text(f"تم تعطيل الذكاء الدائم للمستخدم {target_id}.")
-
-@app.on_message(filters.regex(r"^(فتح الذكاء الدائم|قفل الذكاء الدائم)$") & filters.user(SUDO_USERS))
-async def cmd_permanent_ai_reply(_, m: Message):
+# تفعيل الذكاء الدائم عن طريق الرد (مالك)
+@app.on_message(filters.regex(r"^(فتح الذكاء الدائم|قفل الذكاء الدائم)$") & filters.user(lambda _, __, m: is_owner(m.from_user.id)))
+async def permanent_reply(_, m: Message):
     if not m.reply_to_message:
-        return await m.reply_text("يرجى الرد على رسالة المستخدم المطلوب لتفعيل أو تعطيل الذكاء الدائم.")
-    target_id = m.reply_to_message.from_user.id
+        return await m.reply_text("يرجى الرد على رسالة المستخدم المطلوب.")
+    target = m.reply_to_message.from_user.id
     if "فتح" in m.text:
-        PERMANENT_USERS[target_id] = True
+        permanent_users[target] = True
         save_state()
-        await m.reply_text(f"تم تفعيل الذكاء الدائم للمستخدم {target_id}.")
+        await m.reply_text(f"تم تفعيل الذكاء الدائم للمستخدم {target}.")
     else:
-        PERMANENT_USERS.pop(target_id, None)
+        permanent_users.pop(target, None)
         save_state()
-        await m.reply_text(f"تم تعطيل الذكاء الدائم للمستخدم {target_id}.")
+        await m.reply_text(f"تم إيقاف الذكاء الدائم للمستخدم {target}.")
 
-@app.on_message(filters.regex(r"^تغيير المود (تقني|عام)$") & filters.user(SUDO_USERS))
-async def cmd_change_mode(_, m: Message):
-    global AI_MODE
-    AI_MODE = m.matches[0].group(1)
+# تفعيل/تعطيل الذكاء الدائم عبر معرف رقمياً (مالك)
+@app.on_message(filters.regex(r"^فتح الذكاء الدائم (\d+)$") & filters.user(lambda _, __, m: is_owner(m.from_user.id)))
+async def permanent_enable_id(_, m: Message):
+    target = int(m.matches[0].group(1))
+    permanent_users[target] = True
     save_state()
-    await m.reply_text(f"تم تغيير وضعية الذكاء إلى {AI_MODE}.")
+    await m.reply_text(f"تم تفعيل الذكاء الدائم للمستخدم {target}.")
 
-@app.on_message(filters.regex(r"^تنظيف الذاكرة$") & filters.user(SUDO_USERS))
-async def cmd_clear_memory(_, m: Message):
-    context.clear()
-    counter.clear()
+@app.on_message(filters.regex(r"^قفل الذكاء الدائم (\d+)$") & filters.user(lambda _, __, m: is_owner(m.from_user.id)))
+async def permanent_disable_id(_, m: Message):
+    target = int(m.matches[0].group(1))
+    permanent_users.pop(target, None)
+    save_state()
+    await m.reply_text(f"تم إيقاف الذكاء الدائم للمستخدم {target}.")
+
+# تغيير المود (مالك)
+@app.on_message(filters.regex(r"^تغيير المود (تقني|عام)$") & filters.user(lambda _, __, m: is_owner(m.from_user.id)))
+async def change_mode_owner(_, m: Message):
+    # يغيّر المود العام العامي (لا وهو ممكن أن نطبقه افتراضياً)
+    mode = m.matches[0].group(1)
+    # يمكن استخدامه لضبط سلوك افتراضي؛ هنا نطبّق فقط على مرسال المالك
+    user_mode[m.from_user.id] = mode
+    save_state()
+    await m.reply_text(f"تم تغيير الوضع إلى {mode}.")
+
+# تنظيف الذاكرة (مالك)
+@app.on_message(filters.regex(r"^تنظيف الذاكرة$") & filters.user(lambda _, __, m: is_owner(m.from_user.id)))
+async def clear_memory(_, m: Message):
+    contexts.clear()
+    daily_counts.clear()
     save_state()
     await m.reply_text("تم مسح الذاكرة وتصفير العدادات.")
 
-@app.on_message(filters.regex(r"^استرجاع الحالة$") & filters.user(SUDO_USERS))
-async def cmd_dump_state(_, m: Message):
-    try:
-        if os.path.exists(STATE_FILE):
-            await m.reply_document(STATE_FILE, caption="ملف حالة النظام")
-        else:
-            await m.reply_text("لا توجد حالة محفوظة حالياً.")
-    except Exception as e:
-        await m.reply_text(f"فشل إرسال ملف الحالة: {e}")
-
-@app.on_message(filters.regex(r"^تعيين التزامن (\d+)$") & filters.user(SUDO_USERS))
-async def cmd_set_concurrency(_, m: Message):
-    global MAX_CONCURRENT, _semaphore
+# تعيين التزامن (مالك)
+@app.on_message(filters.regex(r"^تعيين التزامن (\d+)$") & filters.user(lambda _, __, m: is_owner(m.from_user.id)))
+async def set_concurrency(_, m: Message):
+    global _semaphore
     n = int(m.matches[0].group(1))
     if n < 1 or n > 64:
         return await m.reply_text("الرجاء اختيار قيمة بين 1 و64.")
-    MAX_CONCURRENT = n
-    _semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+    _semaphore = asyncio.Semaphore(n)
     save_state()
-    await m.reply_text(f"تم ضبط التزامن إلى {MAX_CONCURRENT}.")
+    await m.reply_text(f"تم ضبط التزامن إلى {n}.")
 
-# معالج النداء الرئيسي - بدون سلاش: ارسل رسالة تبدأ بـ ذكاء أو بقولك
+# تعيين مفتاح OpenAI أثناء التشغيل (مالك) — يفعّل المفتاح في الذاكرة فوراً (لا يحفظ المفتاح كاملًا على القرص)
+@app.on_message(filters.regex(r"^تعيين مفتاح AI\s+(.+)$") & filters.user(lambda _, __, m: is_owner(m.from_user.id)))
+async def set_openai_key(_, m: Message):
+    global OPENAI_KEY, openai_client, AI_STATUS
+    key = m.matches[0].group(1).strip()
+    if not key:
+        return await m.reply_text("الرجاء تزويد مفتاح صالح.")
+    # نختبر المفتاح سريعاً
+    try:
+        candidate = AsyncOpenAI(api_key=key)
+        # اختبار بسيط
+        test_msgs = [{"role": "system", "content": "test"}, {"role": "user", "content": "hi"}]
+        resp = await candidate.chat.completions.create(model=MODEL_NAME, messages=test_msgs, max_tokens=1, timeout=10)
+        if resp and getattr(resp, "choices", None):
+            openai_client = candidate
+            OPENAI_KEY = key
+            AI_STATUS = True
+            save_state()
+            await m.reply_text("تم تفعيل المفتاح بنجاح. يُنصح بتعيينه كـ secret في بيئة الاستضافة للحفظ الدائم.")
+            return
+    except Exception as e:
+        logger.exception("فشل التحقق من المفتاح أثناء التعيين: %s", e)
+    AI_STATUS = False
+    await m.reply_text("فشل التحقق من المفتاح. الرجاء التحقق من المفتاح والمحاولة مجدداً.")
+
+# أمر حالة النظام (مالك)
+@app.on_message(filters.regex(r"^حالة الذكاء$") & filters.user(lambda _, __, m: is_owner(m.from_user.id)))
+async def status_cmd(_, m: Message):
+    await m.reply_text(
+        f"AI_STATUS={AI_STATUS}\nLIMIT_STATUS={LIMIT_STATUS}\nDAILY_LIMIT={DAILY_LIMIT}\nQueue={pending_queue.qsize()}\nOpenAI_key={mask_key(OPENAI_KEY)}"
+    )
+
+# أمر إعادة المحاولة للمستخدم
+@app.on_message(filters.regex(r"^(أعد المحاولة|retry)$") & ~filters.bot)
+async def retry_cmd(_, m: Message):
+    uid = m.from_user.id
+    # جلب آخر طلب user من السياق
+    last_user = None
+    for item in reversed(contexts.get(uid, [])):
+        if item.get("role") == "user":
+            last_user = item.get("content")
+            break
+    if not last_user:
+        return await m.reply_text("لا توجد محادثة سابقة لإعادتها.")
+    await queue_user_request(m, uid, last_user)
+    await m.reply_text("تمت إضافة إعادة المحاولة إلى الطابور.")
+
+# -------------------- المعالج الرئيسي للنداء (ذكاء / بقولك) بدون سلاش --------------------
 @app.on_message((filters.text | filters.caption) & ~filters.bot, group=AI_HANDLER_GROUP)
-async def ai_handler(bot, m: Message):
-    global counter
+async def main_handler(_, m: Message):
+    global AI_STATUS, LIMIT_STATUS, DAILY_LIMIT
     uid = m.from_user.id
     text = (m.text or m.caption or "").strip()
+    if not text:
+        return
 
-    # إذا المستخدم مفعل له الذكاء الدائم فنعمل له الخدمة مباشرة
-    if uid in PERMANENT_USERS:
-        prompt = text or "استمر في الحديث"
+    # إذا المستخدم مفعل له الذكاء الدائم، نخدم طلبه مهما كان النص
+    if uid in permanent_users:
+        prompt = text
     else:
-        if not AI_STATUS and uid not in SUDO_USERS:
+        if not AI_STATUS and not is_owner(uid):
             return
         match = re.match(r"^(ذكاء|بقولك)(\s|$)", text, re.IGNORECASE)
         if not match:
             return
-        prompt = text[match.end():].strip() or "استمر في الحديث"
+        prompt = text[match.end():].strip()
+        if not prompt:
+            return
 
-    # التحقق من حدود الاستخدام اليومي
-    now = time.time()
-    counter.setdefault(uid, [])
-    counter[uid] = [t for t in counter[uid] if now - t < 86400]
-    if LIMIT_STATUS and uid not in SUDO_USERS and len(counter[uid]) >= DAILY_LIMIT:
-        await m.reply_text(f"لقد استنفدت حصتك اليومية ({DAILY_LIMIT}).")
-        return
+    # التحقق من العداد اليومي
+    reset_daily_if_needed(uid)
+    if LIMIT_STATUS and not is_owner(uid):
+        if daily_counts.get(uid, 0) >= DAILY_LIMIT:
+            return await m.reply_text("لقد استنفدت حصتك اليومية.")
+        # لا نزيد العداد هنا، بل بعد نجاح الرد ضمن العامل worker لضمان عدم الحجز الخاطئ
+    # وضع الطلب في الطابور
+    await queue_user_request(m, uid, prompt)
 
-    status_msg = await m.reply_text("جاري المعالجة، الرجاء الانتظار.", quote=True)
-    messages = build_messages_from_context(uid, prompt)
-    await pending_queue.put((m, uid, messages, status_msg))
-    await status_msg.edit("تم وضع طلبك في قائمة الانتظار. سيتم الرد فور المعالجة.")
-
-# أمر إعادة المحاولة من قبل المستخدم
-@app.on_message(filters.regex(r"^(أعد المحاولة|retry)$") & ~filters.bot)
-async def retry_command(_, m: Message):
-    uid = m.from_user.id
-    last_msgs = context.get(uid)
-    if not last_msgs:
-        await m.reply_text("لا توجد محادثة سابقة لإعادتها.")
-        return
-    last_user = None
-    for msg in reversed(last_msgs):
-        if msg.get("role") == "user":
-            last_user = msg.get("content")
-            break
-    if not last_user:
-        await m.reply_text("لا يوجد نص سابق لإعادة المحاولة.")
-        return
-    status = await m.reply_text("جارٍ إعادة المحاولة، الرجاء الانتظار.")
-    messages = build_messages_from_context(uid, last_user)
-    await pending_queue.put((m, uid, messages, status))
-    await status.edit("تمت إضافة إعادة المحاولة إلى الطابور.")
-
-# أمر حالة النظام للادمن
-@app.on_message(filters.regex(r"^حالة الذكاء$") & filters.user(SUDO_USERS))
-async def cmd_status(_, m: Message):
-    await m.reply_text(
-        f"AI_STATUS={AI_STATUS}\nLIMIT_STATUS={LIMIT_STATUS}\nDAILY_LIMIT={DAILY_LIMIT}\nAI_MODE={AI_MODE}\nPERMANENT_USERS={list(PERMANENT_USERS.keys())}\nQueue={pending_queue.qsize()}"
-    )
-
-# حفظ الحالة دوريًا
-async def periodic_state_save():
+# -------------------- حفظ حالة دوري --------------------
+async def periodic_save():
     while True:
         await asyncio.sleep(300)
         try:
             save_state()
-        except Exception as e:
-            logger.exception("Failed periodic save: %s", e)
+        except Exception:
+            logger.exception("فشل الحفظ الدوري")
 
-asyncio.get_event_loop().create_task(periodic_state_save())
+asyncio.get_event_loop().create_task(periodic_save())
 
-# نهاية الملف
+# النهاية
