@@ -1,6 +1,7 @@
 # plugins/ai.py
-# AnnieXMedia - AI core rebuilt (model fallback + owner commands fixed)
-# باللغة العربية الفصحى، أوامر بدون سلاش، سياق حتى 50 رسالة، صف/retry/semaphore.
+# AnnieXMedia - Gemini-backed AI core
+# جميع الأوامر بالعربية الفصحى بدون سلاش. سياق حتى 50 رسالة. رسالة انتظار: "جـاري الـتـفكير ...."
+# يعتمد على واجهة HTTP لـ Gemini (أو أي مزود جنيريتيف) عبر متغيرات البيئة.
 
 import os
 import re
@@ -10,19 +11,20 @@ import logging
 from typing import Dict, List, Optional
 from collections import deque, defaultdict
 from datetime import date
+import aiohttp
+
 from pyrogram import filters
 from pyrogram.types import Message
-from openai import AsyncOpenAI, OpenAIError
-
 from AnnieXMedia import app
 import config
 
-# -------------------- إعداد السجل --------------------
+# ---------- سجل التشغيل ----------
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("ai_core")
+logger = logging.getLogger("ai_gemini")
 
-# -------------------- تحميل السكرتس من البيئة --------------------
-OPENAI_KEY = os.getenv("OPENAI_API_KEY") or getattr(config, "AI_API_KEY", None)
+# ---------- إعدادات بيئية ----------
+GEMINI_API_URL = os.getenv("GEMINI_API_URL")  # واجهة الـ generate endpoint
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or getattr(config, "GEMINI_API_KEY", None)
 OWNER_ENV = os.getenv("OWNER_ID") or getattr(config, "OWNER_ID", None)
 try:
     OWNER_ID = int(OWNER_ENV) if OWNER_ENV is not None else None
@@ -30,30 +32,20 @@ except Exception:
     OWNER_ID = None
 
 if OWNER_ID is None:
-    logger.error("OWNER_ID غير مهيأ. ضع OWNER_ID في متغيرات البيئة أو في config.py")
+    logger.warning("OWNER_ID غير مهيأ؛ تأكد من تعيين SECRET OWNER_ID في بيئة النشر.")
 
-# -------------------- نماذج مرشحة - يمكن تغييره عبر AI_MODEL_CANDIDATES env --------------------
-candidates_env = os.getenv("AI_MODEL_CANDIDATES", "")
-if candidates_env:
-    MODEL_CANDIDATES = [m.strip() for m in candidates_env.split(",") if m.strip()]
-else:
-    # ترتيب الأولوية: حاول gpt-4 ثم بدائل حديثة
-    MODEL_CANDIDATES = ["gpt-4", "gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"]
+if not GEMINI_API_URL:
+    logger.warning("GEMINI_API_URL غير مهيأ. ضع URL الواجهة في ENV: GEMINI_API_URL")
+if not GEMINI_API_KEY:
+    logger.warning("GEMINI_API_KEY غير مهيأ. يمكن تعيينه لاحقًا بأمر المالك.")
 
-ACTIVE_MODEL: Optional[str] = None
-
-# -------------------- إعداد OpenAI client (يُعاد تهيئته عند تعيين مفتاح جديد) --------------------
-openai_client: Optional[AsyncOpenAI] = AsyncOpenAI(api_key=OPENAI_KEY) if OPENAI_KEY else None
-
-# -------------------- ضبط السلوك --------------------
+# ---------- ضبط السلوك ----------
 MAX_CONTEXT = int(os.getenv("AI_MAX_CONTEXT", "50"))
-DAILY_LIMIT_DEFAULT = int(os.getenv("DAILY_LIMIT", "150"))
 MAX_CONCURRENT = int(os.getenv("AI_MAX_CONCURRENT", "4"))
+DAILY_LIMIT_DEFAULT = int(os.getenv("DAILY_LIMIT", "150"))
+MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")  # يمكن تغييره عبر env
 
-MAX_RETRIES = 4
-RETRY_TIMEOUT = 30
-
-# -------------------- الذاكرة والحالة --------------------
+# ---------- ذاكرة وسجل ----------
 contexts: Dict[int, deque] = defaultdict(lambda: deque(maxlen=MAX_CONTEXT))
 daily_counts: Dict[int, int] = defaultdict(int)
 daily_date: Dict[int, date] = defaultdict(lambda: date.today())
@@ -68,16 +60,11 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "ai_data")
 os.makedirs(DATA_DIR, exist_ok=True)
 STATE_FILE = os.path.join(DATA_DIR, "state.json")
 
+# ---------- طابور ومعالج ----------
+_semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+pending_queue: asyncio.Queue = asyncio.Queue()
 
-def mask_key(k: Optional[str]) -> str:
-    if not k:
-        return "<not set>"
-    k = k.strip()
-    if len(k) <= 10:
-        return k[0:2] + "..." + k[-2:]
-    return k[:6] + "..." + k[-4:]
-
-
+# ---------- حفظ/تحميل الحالة ----------
 def save_state():
     try:
         s = {
@@ -85,14 +72,12 @@ def save_state():
             "daily_limit": DAILY_LIMIT,
             "ai_status": AI_STATUS,
             "limit_status": LIMIT_STATUS,
-            "active_model": ACTIVE_MODEL,
-            "openai_masked": mask_key(OPENAI_KEY),
+            "model": MODEL_NAME,
         }
         with open(STATE_FILE, "w", encoding="utf-8") as f:
             json.dump(s, f, ensure_ascii=False, indent=2)
     except Exception:
         logger.exception("فشل حفظ الحالة")
-
 
 def load_state():
     try:
@@ -104,90 +89,135 @@ def load_state():
                     permanent_users[int(uid)] = True
                 except:
                     pass
-            # لا نستعيد المفتاح الكامل من الملف لأسباب أمنية
     except Exception:
         logger.exception("فشل تحميل الحالة")
 
-
 load_state()
 
-# -------------------- طابور ومعالج --------------------
-_semaphore = asyncio.Semaphore(MAX_CONCURRENT)
-pending_queue: asyncio.Queue = asyncio.Queue()
+# ---------- مساعد بناء الطلب لمزود Gemini ----------
+def build_system_prompt(uid: int) -> str:
+    # نوجه النموذج ليكون فصيحاً، حساساً لنبرة المستخدم، ويطابق المزاج
+    default = (
+        "أنت مساعد ذكي فصيح باللغة العربية. اكتشف مزاج المستخدم من نص سؤاله "
+        "(حزين، فرحان، غاضب، محايد) واطرح الإجابة بنبرة مطابقة وباحترام وتعاطف "
+        "عند الحاجة. كن موجزًا مفيدًا وواضحًا، ولا تستخدم رموزًا تعبيرية."
+    )
+    if user_mode.get(uid) == "تقني":
+        return (
+            "أنت خبير تقني محترف، اشرح الحلول الهندسية بدقة وبالفصحى. إذا اشتمل سؤال المستخدم "
+            "على عاطفة، اذكرها بإيجاز ثم انتقل للتحليل التقني."
+        )
+    return default
 
+def build_messages(uid: int, user_text: str) -> List[Dict]:
+    msgs = [{"role": "system", "content": build_system_prompt(uid)}]
+    msgs.extend(list(contexts[uid]))
+    msgs.append({"role": "user", "content": user_text})
+    return msgs
 
-async def call_openai_model(messages: List[dict], model: str, timeout: int = RETRY_TIMEOUT):
+# ---------- استدعاء HTTP إلى Gemini (مرن) ----------
+async def call_gemini_api(messages: List[Dict], model: Optional[str] = None, timeout: int = 30) -> Optional[str]:
     """
-    استدعاء واحد لنموذج محدد (لا يتضمن retries).
+    يتوقع JSON خروج بصيغة مرنة. تحتاج أن تُعرّف GEMINI_API_URL لتشير إلى نقطة توليد صحيحة.
     """
-    global openai_client
-    if not openai_client:
-        raise RuntimeError("OpenAI client not configured")
-    return await openai_client.chat.completions.create(model=model, messages=messages, timeout=timeout)
+    url = GEMINI_API_URL
+    key = GEMINI_API_KEY
+    if not url or not key:
+        logger.error("Gemini URL أو KEY غير موجودين.")
+        return None
 
+    payload = {
+        # بنية مبسطة: مزودك قد يطلب شي مختلف، اضبط حسب واجهتك
+        "model": model or MODEL_NAME,
+        "messages": messages,
+        "temperature": 0.4,
+        "max_output_tokens": 1024
+    }
 
-async def call_openai_with_fallback(messages: List[dict]) -> Optional[str]:
-    """
-    تجربة النماذج في MODEL_CANDIDATES حتى نجد نموذجاً يعمل.
-    يحتفظ بـ ACTIVE_MODEL لاستخدامه لاحقًا.
-    """
-    global ACTIVE_MODEL
-    last_err = None
-    # إذا تم اختيار نموذج سابقاً، جربه أولاً
-    tried = []
-    if ACTIVE_MODEL:
-        tried.append(ACTIVE_MODEL)
-    for m in MODEL_CANDIDATES:
-        if m in tried:
-            continue
-        tried.append(m)
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json"
+    }
 
-    # أضف أي نموذج مرشح مذكور مسبقًا
-    for model in tried:
-        try:
-            resp = await call_openai_model(messages, model)
-            if resp and getattr(resp, "choices", None):
-                ACTIVE_MODEL = model
-                logger.info(f"تم تفعيل النموذج: {ACTIVE_MODEL}")
-                return resp.choices[0].message.content.strip()
-        except Exception as e:
-            last_err = e
-            logger.warning("فشل النموذج %s: %s", model, str(e))
-            # استمر إلى النموذج التالي
-            continue
-
-    logger.error("فشلت كل النماذج: %s", str(last_err))
-    return None
-
-
-async def _call_with_retries(messages: List[dict], max_retries: int = MAX_RETRIES) -> Optional[str]:
-    """
-    واجهة retry عامة: تحاول call_openai_with_fallback مع backoff بسيط.
-    """
+    # محاولات مع backoff قصير
     delay = 1.0
-    for attempt in range(1, max_retries + 1):
+    for attempt in range(1, 4):
         try:
-            result = await call_openai_with_fallback(messages)
-            if result is not None:
-                return result
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload, headers=headers, timeout=timeout) as resp:
+                    text = await resp.text()
+                    status = resp.status
+                    if status >= 200 and status < 300:
+                        # نحاول تفكيك أشكال مختلفة من الاستجابة
+                        try:
+                            j = await resp.json()
+                        except Exception:
+                            j = None
+                        # محتمل حقول: candidates[0].content, outputText, text, content
+                        if j:
+                            # Android-style generative responses
+                            if "candidates" in j and isinstance(j["candidates"], list) and j["candidates"]:
+                                c = j["candidates"][0]
+                                if isinstance(c, dict):
+                                    # قد تحتوي على 'content' أو 'message' أو 'output'
+                                    if "content" in c:
+                                        return c["content"].get("text") if isinstance(c["content"], dict) and "text" in c["content"] else c["content"]
+                                    if "message" in c and isinstance(c["message"], dict):
+                                        return c["message"].get("content") or c["message"].get("text")
+                                    if "output" in c:
+                                        return c["output"]
+                            # بعض واجهات تعيد 'outputText'
+                            if "outputText" in j:
+                                return j["outputText"]
+                            if "text" in j:
+                                return j["text"]
+                            # generic
+                            # search for first string in json
+                            def find_first_str(obj):
+                                if isinstance(obj, str):
+                                    return obj
+                                if isinstance(obj, dict):
+                                    for v in obj.values():
+                                        r = find_first_str(v)
+                                        if r:
+                                            return r
+                                if isinstance(obj, list):
+                                    for i in obj:
+                                        r = find_first_str(i)
+                                        if r:
+                                            return r
+                                return None
+                            r = find_first_str(j)
+                            return r
+                        else:
+                            # fallback: نص خام
+                            return text.strip()
+                    else:
+                        logger.warning("Gemini API returned status %s: %s", status, text[:300])
+                        # لو 401 أو 403 افصل فورًا
+                        if status in (401, 403):
+                            return None
+        except asyncio.TimeoutError:
+            logger.warning("Timeout calling Gemini attempt %s", attempt)
         except Exception as e:
-            logger.exception("خطأ أثناء المحاولة %s: %s", attempt, e)
+            logger.exception("Error calling Gemini attempt %s: %s", attempt, e)
         await asyncio.sleep(delay)
         delay *= 2.0
     return None
 
-
+# ---------- عامل الطابور ----------
 async def worker():
     while True:
         job = await pending_queue.get()
         msg_obj, user_id, messages, status_msg = job
         try:
             async with _semaphore:
-                result = await _call_with_retries(messages)
-                if result is not None:
+                result = await call_gemini_api(messages)
+                if result:
+                    # حفظ السياق بعد نجاح الرد
                     contexts[user_id].append({"role": "user", "content": messages[-1]["content"]})
                     contexts[user_id].append({"role": "assistant", "content": result})
-                    # عدّاد يومي يُزاد بعد نجاح الرد
+                    # تحديث العداد اليومي
                     daily_counts[user_id] += 1
                     try:
                         await status_msg.edit_text(result)
@@ -210,79 +240,11 @@ async def worker():
         finally:
             pending_queue.task_done()
 
-
 asyncio.get_event_loop().create_task(worker())
 
-# -------------------- اختيار النموذج عند التشغيل --------------------
-async def probe_models_and_notify():
-    """
-    تحاول تفعيل أول نموذج يعمل من MODEL_CANDIDATES عند بدء التشغيل،
-    وتعلم المالك إذا فشل التحقق.
-    """
-    global openai_client, ACTIVE_MODEL
-    if not openai_client:
-        logger.warning("لم يتم تهيئة عميل OpenAI بعد.")
-        return
-
-    test_msgs = [{"role": "system", "content": "test"}, {"role": "user", "content": "ping"}]
-    ok = False
-    for model in MODEL_CANDIDATES:
-        try:
-            resp = await call_openai_model(test_msgs, model, timeout=8)
-            if resp and getattr(resp, "choices", None):
-                ACTIVE_MODEL = model
-                logger.info("النموذج المفعّل عند الإقلاع: %s", ACTIVE_MODEL)
-                ok = True
-                break
-        except Exception as e:
-            logger.warning("فشل اختبار النموذج %s: %s", model, e)
-            continue
-
-    if not ok:
-        # إخطار المالك إن وُجد
-        if OWNER_ID is not None:
-            async def notify_owner():
-                await asyncio.sleep(2)
-                try:
-                    await app.send_message(OWNER_ID,
-                                           "تنبيه: تعذر تفعيل أي نموذج OpenAI من القائمة. يرجى التحقق من المفتاح وصلاحيات الحساب أو تعيين مفتاح جديد عبر الأمر: تعيين مفتاح AI <key>")
-                except Exception:
-                    logger.exception("فشل إشعار المالك")
-            asyncio.get_event_loop().create_task(notify_owner())
-
-
-# شغّل probe فور تحميل الموديول (لو المفتاح موجود)
-if openai_client:
-    asyncio.get_event_loop().create_task(probe_models_and_notify())
-
-# -------------------- بناء الرسائل والسياق --------------------
-def build_system_prompt(uid: int) -> str:
-    mode = user_mode.get(uid, "عام")
-    if mode == "تقني":
-        return "أنت مساعد تقني، اشرح بمصطلحات هندسية دقيقة وبالفصحى."
-    return "أنت مساعد ذكي، أجب بإيجاز ووضوح وبالفصحى."
-
-def build_messages(uid: int, user_text: str) -> List[dict]:
-    msgs = [{"role": "system", "content": build_system_prompt(uid)}]
-    msgs.extend(list(contexts[uid]))
-    msgs.append({"role": "user", "content": user_text})
-    return msgs
-
-def reset_daily_if_needed(uid: int):
-    if daily_date.get(uid) != date.today():
-        daily_date[uid] = date.today()
-        daily_counts[uid] = 0
-
+# ---------- أوامر إدارة (بدون سلاش) ----------
 def is_owner(uid: int) -> bool:
     return OWNER_ID is not None and uid == OWNER_ID
-
-async def queue_user_request(msg_obj: Message, uid: int, prompt: str):
-    messages = build_messages(uid, prompt)
-    status = await msg_obj.reply_text("جاري المعالجة، الرجاء الانتظار.")
-    await pending_queue.put((msg_obj, uid, messages, status))
-    await status.edit_text("تم وضع طلبك في قائمة الانتظار. سيتم الرد فور المعالجة.")
-
-# -------------------- أوامر إدارية مصححة (فحص الصلاحية داخل المعالج) --------------------
 
 @app.on_message(filters.regex(r"^(قفل الذكاء|فتح الذكاء)$"))
 async def cmd_toggle_ai(_, m: Message):
@@ -371,42 +333,19 @@ async def cmd_clear_memory(_, m: Message):
     save_state()
     await m.reply_text("تم مسح الذاكرة وتصفير العدادات.")
 
-@app.on_message(filters.regex(r"^تعيين مفتاح AI\s+(.+)$"))
-async def cmd_set_openai_key(_, m: Message):
-    global OPENAI_KEY, openai_client, ACTIVE_MODEL, AI_STATUS
+@app.on_message(filters.regex(r"^تعيين مفتاح GEMINI\s+(.+)$"))
+async def cmd_set_gemini_key(_, m: Message):
+    global GEMINI_API_KEY, GEMINI_API_URL, openai_client
     uid = m.from_user.id
     if not is_owner(uid):
         return await m.reply_text("ليس لديك صلاحية تنفيذ هذا الأمر.")
     key = m.matches[0].group(1).strip()
     if not key:
         return await m.reply_text("الرجاء تزويد مفتاح صالح.")
-    # جرب المفتاح سريعًا
-    try:
-        candidate = AsyncOpenAI(api_key=key)
-        test_msgs = [{"role": "system", "content": "test"}, {"role": "user", "content": "ping"}]
-        ok = False
-        for model in MODEL_CANDIDATES:
-            try:
-                resp = await candidate.chat.completions.create(model=model, messages=test_msgs, max_tokens=1, timeout=8)
-                if resp and getattr(resp, "choices", None):
-                    # قبول المفتاح والنموذج
-                    openai_client = candidate
-                    OPENAI_KEY = key
-                    ACTIVE_MODEL = model
-                    AI_STATUS = True
-                    save_state()
-                    await m.reply_text(f"تم تفعيل المفتاح والنموذج: {model}. يُنصح بتخزين المفتاح كسِكِرت في مضيفك.")
-                    ok = True
-                    break
-            except Exception:
-                continue
-        if not ok:
-            AI_STATUS = False
-            await m.reply_text("فشل التحقق من المفتاح مع النماذج المرشحة. الرجاء التحقق أو استخدام مفتاح آخر.")
-    except Exception as e:
-        logger.exception("خطأ أثناء تعيين المفتاح: %s", e)
-        AI_STATUS = False
-        await m.reply_text("حدث خطأ أثناء محاولة تفعيل المفتاح.")
+    GEMINI_API_KEY = key
+    # نصيحة: خزنه كـ secret في المضيف
+    save_state()
+    await m.reply_text("تم تفعيل المفتاح موقتا في الذاكرة. ينصح بتخزينه في الـ secrets للمضيف.")
 
 @app.on_message(filters.regex(r"^حالة الذكاء$"))
 async def cmd_status(_, m: Message):
@@ -414,13 +353,13 @@ async def cmd_status(_, m: Message):
     if not is_owner(uid):
         return await m.reply_text("ليس لديك صلاحية تنفيذ هذا الأمر.")
     await m.reply_text(
-        f"AI_STATUS={AI_STATUS}\nLIMIT_STATUS={LIMIT_STATUS}\nDAILY_LIMIT={DAILY_LIMIT}\nQueue={pending_queue.qsize()}\nActiveModel={ACTIVE_MODEL}\nOpenAI_key={mask_key(OPENAI_KEY)}"
+        f"AI_STATUS={AI_STATUS}\nLIMIT_STATUS={LIMIT_STATUS}\nDAILY_LIMIT={DAILY_LIMIT}\nQueue={pending_queue.qsize()}\nModel={MODEL_NAME}\nGEMINI_URL={GEMINI_API_URL or '<not set>'}"
     )
 
+# ---------- أمر إعادة المحاولة ----------
 @app.on_message(filters.regex(r"^(أعد المحاولة|retry)$"))
 async def cmd_retry(_, m: Message):
     uid = m.from_user.id
-    # جلب آخر طلب user من السياق
     last_user = None
     for item in reversed(contexts.get(uid, [])):
         if item.get("role") == "user":
@@ -431,7 +370,14 @@ async def cmd_retry(_, m: Message):
     await queue_user_request(m, uid, last_user)
     await m.reply_text("تمت إضافة إعادة المحاولة إلى الطابور.")
 
-# -------------------- معالج النداء الرئيسي (ذكاء / بقولك) بدون سلاش --------------------
+# ---------- وضع الطلب في الطابور مع رسالة انتظار "جـاري الـتـفكير ...." ----------
+async def queue_user_request(msg_obj: Message, uid: int, prompt: str):
+    messages = build_messages(uid, prompt)
+    # رسالة انتظار مباشرة كما طلبت
+    status = await msg_obj.reply_text("جـاري الـتـفكير ....", quote=True)
+    await pending_queue.put((msg_obj, uid, messages, status))
+
+# ---------- المعالج الرئيسي (ذكاء / بقولك) بدون سلاش ----------
 @app.on_message((filters.text | filters.caption) & ~filters.bot, group=1)
 async def main_handler(_, m: Message):
     global AI_STATUS, LIMIT_STATUS, DAILY_LIMIT
@@ -440,7 +386,7 @@ async def main_handler(_, m: Message):
     if not text:
         return
 
-    # المستخدم مفعل له الذكاء الدائم
+    # إذا المستخدم مفعل له الذكاء الدائم، نخدمه
     if uid in permanent_users:
         prompt = text
     else:
@@ -453,15 +399,17 @@ async def main_handler(_, m: Message):
         if not prompt:
             return
 
-    # التحقق من العد اليومي وإعادة التصفير إذا لزم
-    reset_daily_if_needed(uid)
+    # حد يومي
+    if daily_date.get(uid) != date.today():
+        daily_date[uid] = date.today()
+        daily_counts[uid] = 0
+
     if LIMIT_STATUS and not is_owner(uid):
         if daily_counts.get(uid, 0) >= DAILY_LIMIT:
             return await m.reply_text("لقد استنفدت حصتك اليومية.")
-    # ضع الطلب في الطابور
     await queue_user_request(m, uid, prompt)
 
-# -------------------- حفظ حالة دوري --------------------
+# ---------- حفظ دوري ----------
 async def periodic_save():
     while True:
         await asyncio.sleep(300)
@@ -471,5 +419,3 @@ async def periodic_save():
             logger.exception("فشل الحفظ الدوري")
 
 asyncio.get_event_loop().create_task(periodic_save())
-
-# نهاية الملف
