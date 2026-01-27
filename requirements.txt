@@ -56,4 +56,5 @@ g4f
 lyricsgenius
 fuzzywuzzy
 python-Levenshtein
-openai
+google-generativeai
+pillow>=12.0.0
