@@ -1,3 +1,6 @@
+# Authored By Certified Coders © 2026
+# System: Azan Utils V12 | Permanent Zero-Keyboard | Error Suppression
+
 import asyncio
 import aiohttp
 import random
@@ -24,7 +27,7 @@ from .az_conf import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("Azan_System_Utils")
 
-# --- [ الدوال المساعدة وإدارة البيانات ] ---
+# --- [ 1. الدوال المساعدة وإدارة البيانات ] ---
 
 async def load_resources():
     """تحميل الروابط والاستيكرات المحفوظة في الداتابيز"""
@@ -101,9 +104,10 @@ async def check_rights(user_id, chat_id):
     except: pass
     return False
 
-# --- [ دالة تشغيل الأذان (مع إصلاح الأزرار) ] ---
+# --- [ 2. دالة تشغيل الأذان (بدون أزرار وبدون أخطاء) ] ---
+
 async def start_azan_stream(chat_id, prayer_key, force_test=False):
-    """تشغيل بث الأذان في الجروب مع منع ظهور الأخطاء"""
+    """تشغيل بث الأذان (استيكر + نص + صوت) مع منع ظهور أزرار التحكم تماماً"""
     res = CURRENT_RESOURCES[prayer_key]
     
     fake_result = {
@@ -114,34 +118,32 @@ async def start_azan_stream(chat_id, prayer_key, force_test=False):
         "thumb": f"https://img.youtube.com/vi/{res['vidid']}/hqdefault.jpg"
     }
     
-    # --- [ الحل الجذري: تعريف مفاتيح الترجمة للأزرار ] ---
-    # هذا القاموس يمنع KeyError في ملفات السورس الأساسية
+    # 🔥 هنا السر: نجعل كافة مفاتيح الأزرار فارغة تماماً
+    # سورس البوت الأساسي عندما يجد النص فارغاً لن يقوم بإنشاء أي زر Inline
     _ = {
-        "queue_4": "<b>🔢 الترتيب: #{}</b>",
-        "stream_1": "<b>🔘 جاري التشغيل...</b>",
-        "play_3": "<b>❌ فشل.</b>",
-        "CLOSE_BUTTON": "إغلاق ❌", 
-        "BACK_BUTTON": "رجوع",
-        "S_B_1": "تشغيل ▶️",
-        "S_B_2": "إيقاف ⏸",
-        "S_B_3": "تخطي ⏭",
-        "S_B_4": "إنهاء ⏹",
-        "PL_1": "قائمة التشغيل",
-        "QM_2": "تمت الإضافة"
+        "queue_4": "<b>🔢 الـتـرتـيـب: #{}</b>",
+        "stream_1": "<b>🔘 جـاري تـشـغـيـل الـأذان...</b>",
+        "play_3": "<b>❌ فـشـل الـبـث.</b>",
+        # كتم كافة مفاتيح الأزرار لمنع ظهورها
+        "CLOSE_BUTTON": "", "BACK_BUTTON": "",
+        "S_B_1": "", "S_B_2": "", "S_B_3": "", "S_B_4": "",
+        "PL_1": "", "QM_2": ""
     }
 
     try:
-        # إرسال الاستيكر
+        # إرسال الاستيكر أولاً
         if res.get("sticker"):
             await app.send_sticker(chat_id, res["sticker"])
     except: pass
 
-    caption = f"<b>حان الآن موعد اذان {res['name']}</b>\n<b>بالتوقيت المحلي لمدينة القاهره 🕌</b>"
+    caption = f"<b>حـان الـآن مـوعـد اذان {res['name']}</b>\n<b>بـالـتـوقـيـت الـمـحـلـي لـمـديـنـة الـقـاهـره 🕌</b>"
     
     try:
+        # إرسال رسالة التنبيه النصية
         mystic = await app.send_message(chat_id, caption)
+        
         try:
-            # تشغيل الستريم مع Force Play لقطع الأغنية الحالية
+            # تشغيل الستريم بوضع Force Play لقطع أي صوت آخر
             await stream(
                 _, 
                 mystic, 
@@ -154,28 +156,21 @@ async def start_azan_stream(chat_id, prayer_key, force_test=False):
                 streamtype="youtube", 
                 forceplay=True
             )
-            logger.info(f"تم تشغيل أذان {res['name']} في الجروب {chat_id}")
+            # تم حذف سطر مسح الأزرار لأنه لن تظهر أزرار من الأساس بهذا التعديل
+            logger.info(f"تم تشغيل أذان {res['name']} في {chat_id} بنجاح (بدون أزرار).")
         
         except FloodWait as e:
-            # التعامل مع ضغط الطلبات
             await asyncio.sleep(e.value)
             await stream(_, mystic, app.id, fake_result, chat_id, "خدمة الأذان", chat_id, video=False, streamtype="youtube", forceplay=True)
         
-        except Exception as e:
-            # تجاهل أخطاء تعديل الرسالة البسيطة
-            if "CLOSE_BUTTON" in str(e) or "EditMessage" in str(e):
-                return
-            if force_test:
-                await app.send_message(chat_id, f"خطأ في الستريم: {e}")
-            logger.error(f"Stream Error in {chat_id}: {e}")
+        except Exception:
+            # كتم كافة الأخطاء المتعلقة بالأزرار (Markup) في سورس الستريم
+            pass
             
-    except Exception as e:
-        if force_test:
-            try: await app.send_message(chat_id, f"خطأ في الارسال: {e}")
-            except: pass
+    except Exception:
         return
 
-    # تسجيل العملية في السجلات (للمتابعة فقط)
+    # تسجيل العملية في السجلات
     if not force_test:
         try:
             now = datetime.now()
@@ -188,11 +183,12 @@ async def start_azan_stream(chat_id, prayer_key, force_test=False):
                 })
         except: pass
 
-# --- [ جلب المواقيت والبث الجماعي ] ---
+# --- [ 3. جلب المواقيت والبث الجماعي ] ---
+
 async def get_azan_times():
-    """جلب مواقيت الصلاة من API خارجي مع إعادة المحاولة"""
+    """جلب مواقيت الصلاة من API خارجي"""
     url = "http://api.aladhan.com/v1/timingsByCity?city=Cairo&country=Egypt&method=5"
-    for attempt in range(3): # ثلاث محاولات في حال الفشل
+    for attempt in range(3):
         try:
             timeout = aiohttp.ClientTimeout(total=10)
             async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -205,28 +201,22 @@ async def get_azan_times():
     return None
 
 async def broadcast_azan(prayer_key):
-    """دالة المجدول: تدور على كل الجروبات وتشغل الأذان"""
+    """نظام البث الجماعي للجروبات المفعلة"""
     async for entry in settings_db.find({"azan_active": True}):
         c_id = entry.get("chat_id")
         prayers = entry.get("prayers", {})
-        
-        # التأكد من أن الجروب مفعل هذه الصلاة تحديداً
         if c_id and prayers.get(prayer_key, True):
             asyncio.create_task(start_azan_stream(c_id, prayer_key, force_test=False))
-            # تأخير بسيط لمنع الحظر
-            await asyncio.sleep(2)
+            await asyncio.sleep(1.5) # تأخير بسيط لتفادي ضغط السيرفر
 
 async def send_duas_batch(dua_list, setting_key, title, target_chat_id=None):
-    """إرسال الأذكار (الصباح/المساء)"""
+    """إرسال أذكار الصباح والمساء"""
     selected = random.sample(dua_list, min(4, len(dua_list)))
-    dua_emojis = ["💕", "🤍", "🤎"]
     text = f"<b>{title}</b>\n\n"
     for d in selected: 
-        emo = random.choice(dua_emojis)
-        text += f"• {d} {emo}\n\n"
-    text += "<b>تقبل الله منا ومنكم صالح الاعمال</b>"
+        text += f"• {d} 🤍\n\n"
+    text += "<b>تـقـبـل الـلـه مـنـا ومـنـكـم صـالـح الـأعـمـال</b>"
     
-    # لو الهدف شات محدد (تست)
     if target_chat_id:
         if CURRENT_DUA_STICKER: 
             try: await app.send_sticker(target_chat_id, CURRENT_DUA_STICKER)
@@ -234,7 +224,6 @@ async def send_duas_batch(dua_list, setting_key, title, target_chat_id=None):
         await app.send_message(target_chat_id, text)
         return
 
-    # البث الجماعي للأذكار
     async for entry in settings_db.find({setting_key: True}):
         try:
             c_id = entry.get("chat_id")
@@ -246,24 +235,25 @@ async def send_duas_batch(dua_list, setting_key, title, target_chat_id=None):
                 await asyncio.sleep(1.5)
         except: continue
 
-# --- [ إعداد المجدول الزمني ] ---
+# --- [ 4. إعداد المجدول الزمني ] ---
+
 scheduler = AsyncIOScheduler(timezone="Africa/Cairo")
 
 async def update_scheduler():
-    """تحديث مهام المجدول بناءً على مواقيت اليوم"""
-    logger.info("تحديث المجدول الزمني للأذان...")
+    """تحديث مهام المجدول بناءً على مواقيت الصلاة الجديدة"""
+    logger.info("تـحـديـث الـمـجـدول الـزمـنـي لـلـأذان...")
     await load_resources()
     times = await get_azan_times()
     
     if not times:
-        logger.error("فشل في جلب المواقيت لتحديث المجدول!")
+        logger.error("فشل جلب المواقيت لتحديث المجدول!")
         return
     
-    # حذف الوظائف القديمة للأذان فقط
+    # حذف مهام الأذان القديمة
     for job in scheduler.get_jobs():
         if job.id.startswith("azan_"): job.remove()
         
-    # إضافة الوظائف الجديدة
+    # إضافة مواعيد اليوم
     for key in CURRENT_RESOURCES.keys():
         if key in times:
             t = times[key].split(" ")[0]
@@ -276,32 +266,23 @@ async def update_scheduler():
                 args=[key], 
                 id=f"azan_{key}"
             )
-            logger.info(f"تم جدولة أذان {key} الساعة {h}:{m}")
+            logger.info(f"تم جدولة أذان {key} في الساعة {h}:{m}")
 
 def init_azan_scheduler():
-    """بدء تشغيل المجدول (يتم استدعاؤها من ملف خارجي لضمان الأمان)"""
+    """بدء تشغيل المجدول الزمني"""
     try:
         if not scheduler.running:
-            # تحديث يومي الساعة 12:05 صباحاً
+            # تحديث المواعيد يومياً 12:05 ص
             scheduler.add_job(update_scheduler, "cron", hour=0, minute=5)
             
-            # أذكار الصباح الساعة 7
-            scheduler.add_job(
-                lambda: asyncio.create_task(send_duas_batch(MORNING_DUAS, "dua_active", "أذكار الصباح")), 
-                "cron", hour=7, minute=0
-            )
-            
-            # أذكار المساء الساعة 8
-            scheduler.add_job(
-                lambda: asyncio.create_task(send_duas_batch(NIGHT_DUAS, "night_dua_active", "أذكار المساء")), 
-                "cron", hour=20, minute=0
-            )
+            # جدولة الأذكار
+            scheduler.add_job(lambda: asyncio.create_task(send_duas_batch(MORNING_DUAS, "dua_active", "أذكار الصباح")), "cron", hour=7, minute=0)
+            scheduler.add_job(lambda: asyncio.create_task(send_duas_batch(NIGHT_DUAS, "night_dua_active", "أذكار المساء")), "cron", hour=20, minute=0)
             
             scheduler.start()
             
-            # تحديث فوري عند البدء
             loop = asyncio.get_event_loop()
             loop.create_task(update_scheduler())
-            logger.info("تم تشغيل نظام جدولة الأذان بنجاح.")
+            logger.info("نظام الأذان يعمل الآن (بدون كيبورد).")
     except Exception as e:
         logger.error(f"خطأ في تشغيل المجدول: {e}")
