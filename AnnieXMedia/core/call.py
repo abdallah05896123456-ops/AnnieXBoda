@@ -217,19 +217,16 @@ class Call:
         else:
             raise AssistantErr("Stream mismatch during speedup.")
 
-    # --- [ 🔥 تصحيح دالة Logger Stream لمنع الكراش ] ---
     @capture_internal_err
     async def stream_call(self, link: str) -> None:
         assistant = await group_assistant(self, config.LOGGER_ID)
-        # نستخدم الدالة المساعدة لضمان وجود VideoQuality
         stream = dynamic_media_stream(link)
         try:
             await assistant.play(config.LOGGER_ID, stream)
             await asyncio.sleep(8)
         except (NoActiveGroupCall, ConnectionNotFound):
             LOGGER(__name__).warning("⚠️ لم يتمكن البوت من الانضمام لمجموعة السجل (تأكد أن المكالمة مفتوحة).")
-        except Exception as e:
-            # تجاهل أي أخطاء أخرى في اللوجر لمنع توقف البوت
+        except Exception:
             pass
         finally:
             try:
@@ -260,6 +257,16 @@ class Call:
             raise AssistantErr(_["call_11"])
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
+        # 🔥 إضافة معالجة لخطأ AttributeError (NoneType)
+        except AttributeError:
+             try:
+                 # محاولة الخروج ثم الدخول كحل أخير
+                 await assistant.leave_call(chat_id)
+                 await asyncio.sleep(1)
+                 await assistant.play(chat_id, stream, config=ksk)
+             except:
+                 LOGGER(__name__).error(f"💣 [JOIN ERROR - RETRY FAILED] Chat: {chat_id}")
+                 raise AssistantErr("حدث خطأ في الاتصال، يرجى إعادة المحاولة.")
         except Exception as e:
             LOGGER(__name__).error(f"💣 [JOIN ERROR] Chat: {chat_id}\n{traceback.format_exc()}")
             try:
