@@ -166,7 +166,6 @@ async def open_panel_private(_, m):
 
 async def show_panel(m, chat_id):
     """عرض لوحة التحكم بالأزرار مع الحالة الحالية"""
-    # تحديث الكاش لضمان دقة البيانات
     if chat_id in local_cache: del local_cache[chat_id]
     doc = await get_chat_doc(chat_id)
     prayers = doc.get("prayers", {})
@@ -212,7 +211,7 @@ async def show_panel(m, chat_id):
     except: pass
 
 # معالج الضغط على الأزرار
-@app.on_callback_query(filters.regex(r"^(set_|help_|close_|devset_|dev_cancel|test_azan|test_global|cmd_|refresh_)"), group=AZAN_GROUP)
+@app.on_callback_query(filters.regex(r"^(set_|help_|close_|devset_|dev_cancel|test_azan|test_global|cmd_|refresh_|inline_azan_)"), group=AZAN_GROUP)
 async def cb_handler(_, q):
     data = q.data
     uid = q.from_user.id
@@ -236,6 +235,7 @@ async def cb_handler(_, q):
             "التحكم الكامل متاح عبر الأزرار أدناه:"
         )
         kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("تفعيل انلاين اذان", callback_data="inline_azan_enable"), InlineKeyboardButton("قفل انلاين اذان", callback_data="inline_azan_disable")],
             [InlineKeyboardButton("تجربة الأذان (هنا)", callback_data=f"test_azan_single_{chat_id}")],
             [InlineKeyboardButton("تجربة عامة (للكل)", url=f"https://t.me/{(await app.get_me()).username}?start=test_global")],
             [InlineKeyboardButton("تغيير الاستيكر", callback_data="devset_menu_sticker")],
@@ -269,6 +269,27 @@ async def cb_handler(_, q):
         ])
         return await q.edit_message_text("القائمة الرئيسية:", reply_markup=kb)
 
+    # معالجة أزرار تفعيل/قفل انلاين اذان
+    if data == "inline_azan_enable":
+        if uid != MAIN_OWNER and uid not in DEVS: return await q.answer("للمطور فقط")
+        await q.answer("جاري التفعيل الإجباري...")
+        # استدعاء دالة التفعيل الإجباري
+        async for doc in settings_db.find({}):
+            await settings_db.update_one({"_id": doc["_id"]}, {"$set": {"azan_active": True, "forced_active": True}})
+        local_cache.clear()
+        await q.message.edit_text("تم تفعيل انلاين اذان (إجبارياً) لجميع المجموعات بنجاح.")
+        return
+
+    if data == "inline_azan_disable":
+        if uid != MAIN_OWNER and uid not in DEVS: return await q.answer("للمطور فقط")
+        await q.answer("جاري الإيقاف الإجباري...")
+        # استدعاء دالة الإيقاف الإجباري
+        async for doc in settings_db.find({}):
+            await settings_db.update_one({"_id": doc["_id"]}, {"$set": {"azan_active": False, "forced_active": False}})
+        local_cache.clear()
+        await q.message.edit_text("تم قفل انلاين اذان (إجبارياً) لجميع المجموعات بنجاح.")
+        return
+
     if data.startswith("refresh_"):
         target = int(data.split("_")[1])
         if not await check_rights(uid, target): return await q.answer("لا تملك صلاحية")
@@ -292,7 +313,7 @@ async def cb_handler(_, q):
     if data.startswith("set_"):
         parts = data.split("_")
         
-        if "_p_" in data: # تغيير صلاة محددة
+        if "_p_" in data:
             pkey = parts[2]
             target_cid = int(parts[3])
             
@@ -304,7 +325,7 @@ async def cb_handler(_, q):
             await show_panel(q, target_cid)
             await q.answer(f"تم تغيير حالة صلاة {PRAYER_NAMES_AR[pkey]}")
             
-        elif "main" in data: # تغيير الأذان العام
+        elif "main" in data:
             target_cid = int(parts[-1])
             if not await check_rights(uid, target_cid): return await q.answer("لا تملك صلاحية")
             doc = await get_chat_doc(target_cid)
@@ -313,7 +334,7 @@ async def cb_handler(_, q):
             await show_panel(q, target_cid)
             await q.answer("تم تغيير الحالة العامة")
             
-        elif "_dua_" in data or "_ndua_" in data: # تغيير الأذكار
+        elif "_dua_" in data or "_ndua_" in data:
             target_cid = int(parts[-1])
             if not await check_rights(uid, target_cid): return await q.answer("لا تملك صلاحية")
             doc = await get_chat_doc(target_cid)
@@ -471,13 +492,14 @@ async def activate_and_debug(client, message):
         
     await msg.edit_text(log + "\nعملية الفحص مكتملة.")
 
-# أوامر التحكم الإجباري (Force)
-@app.on_message(filters.regex(r"^تفعيل الاذان الاجباري$") & filters.user(DEVS), group=AZAN_GROUP)
+# --- [ 6. أوامر التحكم في انلاين اذان (تفعيل/قفل) ] ---
+
+@app.on_message(filters.regex(r"^(تفعيل انلاين اذان|تفعيل الاذان الاجباري)$") & filters.user(DEVS), group=AZAN_GROUP)
 async def force_enable(_, m):
     if m.from_user.id != MAIN_OWNER: return
-    msg = await m.reply("جاري التفعيل الإجباري لجميع المجموعات...")
+    msg = await m.reply("جاري تفعيل انلاين اذان (إجبارياً) لجميع المجموعات...")
     c = 0
-    text_to_send = "تم تفعيل خدمة الأذان في هذه المجموعة من قبل مطور البوت."
+    text_to_send = "تم تفعيل خدمة الأذان في هذه المجموعة إجبارياً من قبل مطور البوت."
     
     async for doc in settings_db.find({}):
         chat_id = doc.get("chat_id")
@@ -492,14 +514,14 @@ async def force_enable(_, m):
         except: pass
         
     local_cache.clear()
-    await msg.edit_text(f"تم التفعيل الإجباري بنجاح لـ {c} مجموعة.")
+    await msg.edit_text(f"تم تفعيل انلاين اذان بنجاح لـ {c} مجموعة.")
 
-@app.on_message(filters.regex(r"^قفل الاذان الاجباري$") & filters.user(DEVS), group=AZAN_GROUP)
+@app.on_message(filters.regex(r"^(قفل انلاين اذان|قفل الاذان الاجباري)$") & filters.user(DEVS), group=AZAN_GROUP)
 async def force_disable(_, m):
     if m.from_user.id != MAIN_OWNER: return
-    msg = await m.reply("جاري الإيقاف الإجباري لجميع المجموعات...")
+    msg = await m.reply("جاري قفل انلاين اذان (إجبارياً) لجميع المجموعات...")
     c = 0
-    text_to_send = "تم إيقاف خدمة الأذان مؤقتاً للصيانة من قبل المطور."
+    text_to_send = "تم إيقاف خدمة الأذان مؤقتاً للصيانة."
     
     async for doc in settings_db.find({}):
         chat_id = doc.get("chat_id")
@@ -513,4 +535,4 @@ async def force_disable(_, m):
         except: pass
         
     local_cache.clear()
-    await msg.edit_text(f"تم الإيقاف بنجاح لـ {c} مجموعة.")
+    await msg.edit_text(f"تم قفل انلاين اذان بنجاح لـ {c} مجموعة.")
