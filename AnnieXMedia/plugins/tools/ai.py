@@ -1,407 +1,273 @@
-# تم التطوير بواسطة الزملاء المبرمجين 2026
-# محرك الذكاء الاصطناعي الفائق - Gemini (google-genai async)
-# النظام: رد وتعديل فوري | لغة عربية فصحى | حفظ حالة دائم (Persistence)
-# يحافظ على نفس أوامر الملف الأصلي ونصوص الردود بالعربية
+# Authored By Certified Coders © 2026
+# System: Local AI (Ollama) | Full Control Panel | No Emoji
+# الـمـحـرك: Ollama (Mistral) مـحـلـيـاً عـلـى الـسـيـرفـر
+# الـمـيـزات: لـوحـة تـحـكـم كـامـلـة لـلـمـالـك (كـيـب الـذكـاء) + ذاكـرة قـويـة
 
 import asyncio
-import os
-import re
+import aiohttp
 import json
 import time
+import re
+import os
 import logging
-from datetime import datetime
-from collections import deque, defaultdict
-from typing import Optional
-
 from pyrogram import filters, enums
-from pyrogram.types import Message
-
+from pyrogram.types import (
+    Message, 
+    InlineKeyboardMarkup, 
+    InlineKeyboardButton, 
+    CallbackQuery
+)
 from AnnieXMedia import app
-import config
-from config import OWNER_ID, AI_HANDLER_GROUP
-
-# official new SDK (async)
-from google.genai import Client, types
+from config import OWNER_ID, BANNED_USERS
 
 # -------------------------
+# إعـدادات الـنـظـام
+# -------------------------
+OLLAMA_API_URL = "http://localhost:11434/api/generate"
+DEFAULT_MODEL = "mistral"  # تأكد أن الموديل محمل
+
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("AnnieX_AI_Core")
+logger = logging.getLogger("AnnieX_Ollama_AI")
 
-# -------------------------
-# Read API key (ENV preferred, fallback to config)
-GEMINI_KEY = os.getenv("GEMINI_API_KEY") or getattr(config, "GEMINI_API_KEY", None)
-if not GEMINI_KEY:
-    logger.error("GEMINI_API_KEY غير موجود — سيتم تعطيل AI حتى توفر المفتاح.")
-    aio_client = None
-else:
-    try:
-        aio_client = Client(api_key=GEMINI_KEY).aio
-    except Exception as e:
-        aio_client = None
-        logger.exception("فشل إنشاء عميل google-genai الآسنك: %s", e)
-
-# Default model (kept name as requested; you can change via config)
-MODEL_ID = getattr(config, "GEMINI_MODEL_ID", "gemini-2.0-flash")
-
-# -------------------------
-# Runtime settings & persistence
 SUDO_USERS = OWNER_ID if isinstance(OWNER_ID, list) else [OWNER_ID]
+
+# مـتـغـيـرات الـحـالـة
 AI_STATUS = True
-LIMIT_STATUS = True
-DAILY_LIMIT = getattr(config, "AI_DAILY_LIMIT", 150)
-AI_MODE = "عام"
+AI_MODE = "عـام"  # عـام / تـقـنـي
+MAX_HISTORY = 10  # عـدد الـرسـائـل الـتـي يـتـذكـرهـا الـبـوت
 
-user_contexts = {}        # uid -> deque([('user', text), ('assistant', text), ...], maxlen=50)
-user_usage = {}           # uid -> {"count": int, "date": "YYYY-MM-DD"}
+# الـذاكـرة (RAM)
+user_history = {}     # تـخـزيـن سـيـاق الـحـديـث
 PERMANENT_USERS = set()
-STATE_FILE = "ai_data/ai_master_state.json"
-
-# in-memory lightweight rate-limits and cooldowns
-_user_min_interval = defaultdict(float)   # uid -> last request timestamp
-_global_last_call = 0.0
-_global_cooldown = 1.0    # seconds, adaptive (increased on RESOURCE_EXHAUSTED)
-MIN_USER_INTERVAL = 0.5   # seconds between user's consecutive AI calls to avoid abuse
-DEFAULT_COOLDOWN_ON_QUOTA = 30  # if we detect quota, start with this
+STATE_FILE = "ai_data/ollama_settings.json"
 
 # -------------------------
-def load_system_state():
-    global PERMANENT_USERS, DAILY_LIMIT, AI_STATUS, LIMIT_STATUS, AI_MODE
+# دوال الـحـفـظ والـاسـتـعـادة
+# -------------------------
+def load_state():
+    global PERMANENT_USERS, AI_STATUS, AI_MODE
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, "r", encoding="utf-8") as f:
-                s = json.load(f)
-            PERMANENT_USERS = set(s.get("PERMANENT_USERS", []))
-            DAILY_LIMIT = s.get("DAILY_LIMIT", DAILY_LIMIT)
-            AI_STATUS = s.get("AI_STATUS", AI_STATUS)
-            LIMIT_STATUS = s.get("LIMIT_STATUS", LIMIT_STATUS)
-            AI_MODE = s.get("AI_MODE", AI_MODE)
-            logger.info("تمت استعادة حالة النظام من الملف.")
-        except Exception as e:
-            logger.exception("فشل استعادة الحالة: %s", e)
+                data = json.load(f)
+            PERMANENT_USERS = set(data.get("PERMANENT_USERS", []))
+            AI_STATUS = data.get("AI_STATUS", True)
+            AI_MODE = data.get("AI_MODE", "عـام")
+        except: pass
 
-def save_system_state():
+def save_state():
     try:
-        os.makedirs(os.path.dirname(STATE_FILE) or ".", exist_ok=True)
+        os.makedirs("ai_data", exist_ok=True)
         with open(STATE_FILE, "w", encoding="utf-8") as f:
             json.dump({
                 "PERMANENT_USERS": list(PERMANENT_USERS),
-                "DAILY_LIMIT": DAILY_LIMIT,
                 "AI_STATUS": AI_STATUS,
-                "LIMIT_STATUS": LIMIT_STATUS,
                 "AI_MODE": AI_MODE
             }, f, ensure_ascii=False, indent=2)
-    except Exception:
-        logger.exception("فشل حفظ حالة النظام")
+    except: pass
 
-load_system_state()
-
-# -------------------------
-SYSTEM_GENERAL = (
-    "أنت مساعد ذكي متمكن جداً، تتحدث اللغة العربية الفصحى بأسلوب مباشر وراقٍ. "
-    "قدم إجابات مطولة، شاملة، ومنظمة جيداً. تجنب الاختصار المخل. "
-    "لا تستخدم الرموز التعبيرية (Emojis) بتاتاً."
-)
-SYSTEM_TECH = "أنت كبير مهندسي برمجيات، اشرح الحلول التقنية بدقة هندسية عالية وبالفصحى."
+load_state()
 
 # -------------------------
-def _parse_retry_seconds_from_exc(exc_str: str) -> Optional[int]:
-    """
-    محاولة استخراج قيمة retryDelay مثل '42s' من النص.
-    """
-    try:
-        m = re.search(r"retryDelay(?:'|\":\\s*)'?(?P<t>\\d+)(?:s)?", exc_str, re.IGNORECASE)
-        if m:
-            return int(m.group("t"))
-    except Exception:
-        pass
-    # fall back: search any '(\d+)s' pattern near 'retry'
-    try:
-        m2 = re.search(r"retryDelay.*?(\\d+)s", exc_str, re.IGNORECASE)
-        if m2:
-            return int(m2.group(1))
-    except Exception:
-        pass
-    # last resort: find first number followed by 's'
-    m3 = re.search(r"(\\d+)s", exc_str)
-    if m3:
-        try:
-            return int(m3.group(1))
-        except Exception:
-            return None
-    return None
-
+# مـحـرك الـذكـاء (Ollama)
 # -------------------------
-async def generate_ai_response(u_id: int, prompt: str, img_path: Optional[str] = None) -> Optional[str]:
-    """
-    إرسال الطلب لمولد Gemini عبر google-genai async client.
-    يتضمن:
-    - حماية ضد السبام (global + per-user interval)
-    - تعامل ذكي مع RESOURCE_EXHAUSTED (429) واستخراج retryDelay
-    - حفظ السياق (deque بحد 50)
-    - إرجاع نص الرد أو None
-    """
-    global _global_last_call, _global_cooldown
+async def ask_ollama(user_id, prompt):
+    """إرسـال الـطـلـب إلـى الـسـيـرفـر الـمـحـلـي"""
+    
+    # تـحـديـد الـشـخـصـيـة
+    system_msg = "You are a helpful AI assistant speaking Arabic. Be concise."
+    if AI_MODE == "تـقـنـي":
+        system_msg = "You are an expert programmer. Explain code and logic in Arabic."
 
-    if aio_client is None:
-        logger.error("عميل GenAI غير مهيأ (GEMINI_API_KEY مفقود أو خطأ في الإنشاء).")
-        return None
+    # بـنـاء الـسـيـاق مـن الـذاكـرة
+    context_list = user_history.get(user_id, [])
+    full_prompt = f"{system_msg}\n"
+    for item in context_list:
+        full_prompt += f"User: {item['u']}\nAI: {item['a']}\n"
+    full_prompt += f"User: {prompt}\nAI:"
 
-    now = time.time()
-
-    # per-user micro-rate-limit to avoid accidental spam
-    last_user = _user_min_interval.get(u_id, 0.0)
-    if now - last_user < MIN_USER_INTERVAL:
-        # quick polite message so user doesn't wait forever
-        return "⏳ رجاءً انتظر لحظة ثم حاول مرة أخرى."
-
-    _user_min_interval[u_id] = now
-
-    # global cooldown (adaptive)
-    if now - _global_last_call < _global_cooldown:
-        wait_time = int(_global_cooldown - (now - _global_last_call))
-        return f"⏳ تم الوصول لمعدل الاستعلامات. الرجاء الانتظار {wait_time} ثانية وإعادة المحاولة."
-
-    # prepare conversation context
-    if u_id not in user_contexts:
-        user_contexts[u_id] = deque(maxlen=50)
-    history = user_contexts[u_id]
-
-    # add user message to history
-    history.append(('user', prompt))
-
-    # build conversation text to send (simple deterministic formatting)
-    convo_parts = []
-    for role, text in history:
-        label = "المستخدم" if role == 'user' else "المساعد"
-        convo_parts.append(f"{label}: {text}")
-    convo_text = "\n\n".join(convo_parts)
-
-    system_instruction = SYSTEM_TECH if AI_MODE == "تقني" else SYSTEM_GENERAL
-    full_query = f"{system_instruction}\n\n{convo_text}\n\nالمطلوب: "
-    if img_path:
-        full_query += "\n(ملاحظة: تم إرفاق صورة مع الطلب — فسّرها أو دوّن ملاحظات عنها إذا لزم.)"
-
-    # mark the last call time immediately to avoid races
-    _global_last_call = now
+    payload = {
+        "model": DEFAULT_MODEL,
+        "prompt": full_prompt,
+        "stream": False,
+        "options": {"temperature": 0.7, "num_ctx": 2048}
+    }
 
     try:
-        response = await aio_client.models.generate_content(
-            model=MODEL_ID,
-            contents=full_query,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                temperature=0.3,
-                max_output_tokens=1024,
-            ),
-        )
-        text = getattr(response, "text", None)
-        if not text:
-            parts = getattr(response, "parts", None) or []
-            collected = []
-            for p in parts:
-                t = getattr(p, "text", None)
-                if t:
-                    collected.append(t)
-            text = "\n".join(collected).strip() if collected else None
-
-        if not text:
-            logger.error("لم يصل نص من مولد Gemini (رد فارغ).")
-            return None
-
-        # append assistant reply to history
-        history.append(('assistant', text))
-
-        return text.strip()
-
-    except Exception as exc:
-        exc_str = str(exc)
-        logger.error("خطأ في استجابة Gemini: %s", exc_str)
-
-        # detect quota / 429 / RESOURCE_EXHAUSTED
-        if "RESOURCE_EXHAUSTED" in exc_str or "429" in exc_str or "quota" in exc_str.lower():
-            retry_sec = _parse_retry_seconds_from_exc(exc_str) or DEFAULT_COOLDOWN_ON_QUOTA
-            # set adaptive global cooldown so next calls wait
-            _global_cooldown = max(_global_cooldown, retry_sec, DEFAULT_COOLDOWN_ON_QUOTA)
-            logger.warning("Detected quota exhaustion. Setting global cooldown to %s seconds.", _global_cooldown)
-            return f"🚫 تم تجاوز حصة الاستخدام لمولد الذكاء الاصطناعي. الرجاء المحاولة بعد {retry_sec} ثانية."
-        # other errors -> return None so handler shows generic error message
-        return None
+        async with aiohttp.ClientSession() as session:
+            async with session.post(OLLAMA_API_URL, json=payload, timeout=40) as resp:
+                if resp.status == 200:
+                    res = await resp.json()
+                    reply = res.get("response", "").strip()
+                    
+                    # تـحـديـث الـذاكـرة
+                    context_list.append({"u": prompt, "a": reply})
+                    if len(context_list) > MAX_HISTORY:
+                        context_list.pop(0)
+                    user_history[user_id] = context_list
+                    
+                    return reply
+                else:
+                    return "عـذراً، هـنـاك خـطـأ فـي مـعـالـجـة الـطـلـب."
+    except:
+        return "عـذراً، الـخـادم الـمـحـلـي لـلـذكـاء غـيـر مـتـصـل."
 
 # -------------------------
-# Admin commands (same triggers and texts as original)
-@app.on_message(filters.regex(r"^(قفل الذكاء|فتح الذكاء)$") & filters.user(SUDO_USERS))
-async def admin_toggle_ai(_, m: Message):
-    global AI_STATUS
-    AI_STATUS = "فتح" in m.text
-    save_system_state()
-    await m.reply_text(f"تم تنفيذ أمر المطور: {'تشغيل' if AI_STATUS else 'إيقاف'} الذكاء الاصطناعي.")
+# لـوحـة الـتـحـكـم (كـيـب الـذكـاء)
+# -------------------------
 
-@app.on_message(filters.regex(r"^(فتح الليمت|قفل الليمت)$") & filters.user(SUDO_USERS))
-async def admin_toggle_limit(_, m: Message):
-    global LIMIT_STATUS
-    LIMIT_STATUS = "فتح" in m.text
-    save_system_state()
-    await m.reply_text(f"تم {'تفعيل' if LIMIT_STATUS else 'تعطيل'} نظام الحد اليومي للرسائل.")
+@app.on_message(filters.regex(r"^(كيب الذكاء|كيب ذكاء|اوامر الذكاء)$") & filters.user(SUDO_USERS))
+async def ai_control_panel(_, m):
+    """عـرض لـوحـة الـتـحـكـم الـشـامـلـة لـلـمـالـك"""
+    
+    st_txt = "مـفـعـل" if AI_STATUS else "مـعـطـل"
+    mode_txt = AI_MODE
+    
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(f"الـحـالـة: {st_txt}", callback_data="toggle_ai_status"),
+            InlineKeyboardButton(f"الـنـمـط: {mode_txt}", callback_data="toggle_ai_mode")
+        ],
+        [
+            InlineKeyboardButton("تـنـظـيـف الـذاكـرة الـعـامـة", callback_data="clean_ai_ram"),
+            InlineKeyboardButton("عـدد الـمـسـتـخـدمـيـن", callback_data="ai_users_count")
+        ],
+        [
+            InlineKeyboardButton("إغـلاق الـلـوحـة", callback_data="close_ai_panel")
+        ]
+    ])
+    
+    text = (
+        "**لـوحـة تـحـكـم نـظـام الـذكـاء الـاصـطـنـاعـي:**\n\n"
+        "مـن هـنـا يـمـكـنـك الـتـحـكـم فـي كـافـة إعـدادات الـمـحـرك الـمـحـلـي.\n"
+        "اخـتـر الـإجـراء الـمـطـلـوب:"
+    )
+    await m.reply_text(text, reply_markup=keyboard)
 
-@app.on_message(filters.regex(r"^وضع ليميت (\d+)$") & filters.user(SUDO_USERS))
-async def admin_set_limit(_, m: Message):
-    global DAILY_LIMIT
-    try:
-        DAILY_LIMIT = int(re.search(r"(\d+)", m.text).group(1))
-        save_system_state()
-        await m.reply_text(f"تم تحديث سقف الاستخدام اليومي ليصبح {DAILY_LIMIT} رسالة.")
-    except Exception:
-        await m.reply_text("خطأ في قراءة القيمة. استخدم: وضع ليميت 150")
+# --- مـعـالـجـة أزرار الـكـيـب ---
+@app.on_callback_query(filters.regex(r"^(toggle_ai_|clean_ai_|ai_users_|close_ai_)"))
+async def ai_panel_callback(_, q: CallbackQuery):
+    global AI_STATUS, AI_MODE
+    data = q.data
+    user_id = q.from_user.id
+    
+    if user_id not in SUDO_USERS:
+        return await q.answer("هـذا الـأمـر لـلـمـالـك فـقـط.", show_alert=True)
 
-@app.on_message(filters.regex(r"^(فتح|قفل) الذكاء الدائم$") & filters.user(SUDO_USERS))
-async def admin_permanent_user(_, m: Message):
-    if not m.reply_to_message:
-        return await m.reply_text("عليك الرد على رسالة الشخص المستهدف لتفعيل الذكاء الدائم له.")
-    uid = m.reply_to_message.from_user.id
-    if "فتح" in m.text:
-        PERMANENT_USERS.add(uid)
-    else:
-        PERMANENT_USERS.discard(uid)
-    save_system_state()
-    await m.reply_text(f"تم تحديث صلاحيات المستخدم {uid}. الحالة الدائمة: {'مفعلة' if uid in PERMANENT_USERS else 'معطلة'}.")
+    if data == "close_ai_panel":
+        return await q.message.delete()
 
-@app.on_message(filters.regex(r"^تغيير المود (تقني|عام)$") & filters.user(SUDO_USERS))
-async def admin_switch_mode(_, m: Message):
-    global AI_MODE
-    g = re.search(r"(تقني|عام)", m.text)
-    if g:
-        AI_MODE = g.group(1)
-        save_system_state()
-        await m.reply_text(f"تم ضبط نبرة ردود المحرك على النمط الـ{AI_MODE}.")
+    if data == "toggle_ai_status":
+        AI_STATUS = not AI_STATUS
+        save_state()
+        new_st = "مـفـعـل" if AI_STATUS else "مـعـطـل"
+        await q.answer(f"تـم تـغـيـيـر الـحـالـة إلـى: {new_st}")
+        
+    elif data == "toggle_ai_mode":
+        AI_MODE = "تـقـنـي" if AI_MODE == "عـام" else "عـام"
+        save_state()
+        await q.answer(f"تـم تـغـيـيـر نـمـط الـرد إلـى: {AI_MODE}")
 
-@app.on_message(filters.regex(r"^(تنظيف الذاكرة|حالة الذكاء)$") & filters.user(SUDO_USERS))
-async def admin_diagnostic(_, m: Message):
-    if "تنظيف" in m.text:
-        user_contexts.clear()
-        user_usage.clear()
-        await m.reply_text("تم تصفير سجلات الحوار وتفريغ ذاكرة الوصول العشوائي.")
-    else:
-        await m.reply_text(
-            f"📊 تقرير النظام الحالي:\n"
-            f"- الحالة العامة: {'نشط' if AI_STATUS else 'متوقف'}\n"
-            f"- نمط الرد: {AI_MODE}\n"
-            f"- الحد اليومي: {DAILY_LIMIT}\n"
-            f"- المستخدمين الدائمين: {len(PERMANENT_USERS)}"
-        )
+    elif data == "clean_ai_ram":
+        user_history.clear()
+        await q.answer("تـم تـنـظـيـف ذاكـرة الـمـحـادثـات لـلـجـمـيـع.", show_alert=True)
+
+    elif data == "ai_users_count":
+        count = len(PERMANENT_USERS)
+        await q.answer(f"عـدد الـمـسـتـخـدمـيـن فـي الـوضـع الـدائـم: {count}", show_alert=True)
+        return # لا داعي لتحديث اللوحة
+
+    # تـحـديـث شـكـل الـلـوحـة بـعـد الـتـغـيـيـر
+    st_txt = "مـفـعـل" if AI_STATUS else "مـعـطـل"
+    mode_txt = AI_MODE
+    new_kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(f"الـحـالـة: {st_txt}", callback_data="toggle_ai_status"),
+            InlineKeyboardButton(f"الـنـمـط: {mode_txt}", callback_data="toggle_ai_mode")
+        ],
+        [
+            InlineKeyboardButton("تـنـظـيـف الـذاكـرة الـعـامـة", callback_data="clean_ai_ram"),
+            InlineKeyboardButton("عـدد الـمـسـتـخـدمـيـن", callback_data="ai_users_count")
+        ],
+        [
+            InlineKeyboardButton("إغـلاق الـلـوحـة", callback_data="close_ai_panel")
+        ]
+    ])
+    await q.message.edit_reply_markup(reply_markup=new_kb)
 
 # -------------------------
-@app.on_message(filters.regex(r"^مسح محادثتي$") & ~filters.bot)
-async def user_clear_context(_, m: Message):
+# أوامـر الـمـسـتـخـدمـيـن (الـخـروج والـمـسـح)
+# -------------------------
+
+@app.on_message(filters.regex(r"^(ذكاء كفاية|خروج من الذكاء|انهاء|كفاية)$") & ~filters.bot)
+async def user_exit_ai(_, m):
+    """الـخـروج مـن وضـع الـشـات الـدائـم"""
     uid = m.from_user.id
-    if uid in user_contexts:
-        del user_contexts[uid]
-        await m.reply_text("تم مسح سجل محادثتك معي بنجاح، يمكنك بدء حوار جديد الآن.")
+    if uid in PERMANENT_USERS:
+        PERMANENT_USERS.discard(uid)
+        save_state()
+        await m.reply_text("تـم الـخـروج مـن وضـع الـذكـاء الـدائـم بـنـجـاح.")
     else:
-        await m.reply_text("لا يوجد سجل محادثات نشط خاص بك حالياً.")
+        await m.reply_text("أنـت لـسـت فـي وضـع الـمـحـادثـة الـدائـمـة بـالـفـعـل.")
+
+@app.on_message(filters.regex(r"^(مسح ذاكرتي|نسيان|تصفير)$") & ~filters.bot)
+async def user_clear_history(_, m):
+    """مـسـح سـجـل الـمـحـادثـة الـخـاص بـالـعـضـو"""
+    uid = m.from_user.id
+    if uid in user_history:
+        del user_history[uid]
+        await m.reply_text("تـم مـسـح سـجـل مـحـادثـتـك مـعـي، يـمـكـنـك الـبـدء مـن جـديـد.")
+    else:
+        await m.reply_text("لـا يـوجـد لـك سـجـل مـحـادثـات نـشـط حـالـيـاً.")
 
 # -------------------------
-@app.on_message((filters.text | filters.photo) & ~filters.bot, group=AI_HANDLER_GROUP)
-async def central_ai_handler(bot, m: Message):
+# الـمـعـالـج الـرئـيـسـي (الـمـخ)
+# -------------------------
+
+@app.on_message((filters.text) & ~filters.bot, group=60)
+async def main_ai_handler(client, m: Message):
+    # 1. الـتـحـقـق مـن حـالـة الـنـظـام
     if not AI_STATUS and m.from_user.id not in SUDO_USERS:
         return
 
     uid = m.from_user.id
-    raw_text = (m.text or m.caption or "").strip()
-
+    text = m.text.strip()
+    
+    # 2. هـل الـمـسـتـخـدم يـتـحـدث مـع الـبـوت؟
     is_perm = uid in PERMANENT_USERS
-    match = re.match(r"^(ذكاء|بقولك)(\s|$)", raw_text, re.IGNORECASE)
+    is_reply = m.reply_to_message and m.reply_to_message.from_user.id == client.me.id
+    match_trigger = re.match(r"^(ذكاء|بقولك|يا بوت|بوت)(\s|$)", text, re.IGNORECASE)
 
-    if not is_perm and not match:
+    # شـرط الـد خـول: وضـع دائـم OR رد عـلـى الـبـوت OR كـلـمـة مـفـتـاحـيـة
+    if not (is_perm or is_reply or match_trigger):
         return
 
-    # extract prompt
-    prompt = raw_text[match.end():].strip() if (match and not is_perm) else raw_text
-    if not prompt and not m.photo:
-        prompt = "أهلاً بك، أنا استمع إليك."
+    # 3. تـجـهـيـز الـسـؤال
+    if match_trigger and not is_perm:
+        prompt = text[match_trigger.end():].strip()
+    else:
+        prompt = text
 
-    # daily usage reset bookkeeping
-    today = datetime.now().strftime("%Y-%m-%d")
-    if uid not in user_usage or user_usage[uid].get("date") != today:
-        user_usage[uid] = {"count": 0, "date": today}
-
-    if LIMIT_STATUS and user_usage[uid]["count"] >= DAILY_LIMIT and uid not in SUDO_USERS:
-        return await m.reply_text(f"نعتذر، لقد استنفدت حصتك اليومية المحددة بـ {DAILY_LIMIT} رسالة.")
-
-    # download image if any (temporary)
-    img_path = None
-    if m.photo:
-        try:
-            img_path = await m.download()
-        except Exception:
-            img_path = None
-
-    # immediate waiting message
-    try:
-        status_msg = await m.reply_text("جـاري الـتـفكير ....", quote=True)
-    except Exception:
-        status_msg = await m.reply_text("جـاري الـتـفكير ....")
-
-    await bot.send_chat_action(m.chat.id, enums.ChatAction.TYPING)
-
-    # call generator
-    answer = await generate_ai_response(uid, prompt, img_path)
-
-    # cleanup image
-    if img_path:
-        try:
-            os.remove(img_path)
-        except Exception:
-            pass
-
-    if answer is None:
-        # generic error (no specific message)
-        try:
-            await status_msg.edit("نعتذر، واجه محرك الذكاء صعوبة في الاستجابة حالياً، يرجى المحاولة لاحقاً.")
-        except Exception:
-            await m.reply_text("نعتذر، واجه محرك الذكاء صعوبة في الاستجابة حالياً، يرجى المحاولة لاحقاً.")
+    if not prompt:
+        await m.reply_text("نـعـم يـا صـديـقـي، أنـا أسـتـمـع إلـيـك.. تـفـضـل؟")
         return
 
-    # if answer contains immediate cooldown message string we return it directly
+    # 4. تـفـعـيـل الـوضـع الـدائـم لـلـمـالـك (اخـتـيـاري)
+    if match_trigger and uid in SUDO_USERS and "افتح دائم" in prompt:
+        PERMANENT_USERS.add(uid)
+        save_state()
+        await m.reply_text("تـم تـفـعـيـل الـوضـع الـدائـم لـك يـا مـطـور.")
+        return
+
+    # 5. إرسـال مـؤشـر الـكـتـابـة
+    await client.send_chat_action(m.chat.id, enums.ChatAction.TYPING)
+    
+    # 6. الـحـصـول عـلـى الـرد
     try:
-        # increment usage only for real generated answers (not cooldown strings)
-        if not answer.startswith("⏳") and not answer.startswith("🚫"):
-            user_usage[uid]["count"] += 1
-            await status_msg.edit(answer)
-        else:
-            # return the message as-is (cooldown / quota info)
-            await status_msg.edit(answer)
-    except Exception:
-        try:
-            await m.reply_text(answer)
-        except Exception:
-            pass
-
-# -------------------------
-# autosave persistence loop
-async def _autosave_loop():
-    while True:
-        try:
-            save_system_state()
-        except Exception:
-            logger.exception("Autosave failed")
-        await asyncio.sleep(600)
-
-# schedule autosave safely
-try:
-    asyncio.get_event_loop().create_task(_autosave_loop())
-except RuntimeError:
-    # if no running loop at import time, schedule to start later
-    def _schedule_autosave_later():
-        try:
-            loop = asyncio.get_event_loop()
-            loop.create_task(_autosave_loop())
-        except Exception:
-            pass
-    try:
-        asyncio.get_event_loop_policy().get_event_loop().call_soon_threadsafe(_schedule_autosave_later)
-    except Exception:
-        # fallback: ignore, it will start when app loop is active
-        pass
-
-# -------------------------
-# End of ai.py
+        wait_msg = await m.reply_text("جـارٍ الـتـحـلـيـل والـرد...", quote=True)
+        response = await ask_ollama(uid, prompt)
+        await wait_msg.edit(response)
+    except Exception as e:
+        logger.error(f"AI Error: {e}")
+        try: await wait_msg.edit("عـذراً، حـدث خـطـأ أثـنـاء الـمـعـالـجـة.")
+        except: pass
