@@ -60,3 +60,4 @@ google-generativeai
 pillow>=12.0.0
 apscheduler
 mutagen
+google-genai
