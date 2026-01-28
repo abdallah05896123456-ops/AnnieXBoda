@@ -1,68 +1,63 @@
 # -----------------------------------------------------
-# المرحلة الأولى: جلب Ollama من المصدر الرسمي (مضمون 100%)
+# المرحلة 1: المصدر الرسمي (Ollama)
 # -----------------------------------------------------
 FROM ollama/ollama:latest AS ollama_source
 
 # -----------------------------------------------------
-# المرحلة الثانية: بناء صورة البوت
+# المرحلة 2: صورة البوت (The Beast - 40GB Version)
 # -----------------------------------------------------
 FROM python:3.12-slim
 
-# إعدادات البيئة وتحسين الأداء
+# إعدادات البيئة
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PIP_NO_CACHE_DIR=1
-ENV DENO_INSTALL="/root/.deno"
-ENV PATH="${DENO_INSTALL}/bin:${PATH}"
-# ضبط توقيت السيرفر على القاهرة (عشان الأذان يظبط)
 ENV TZ=Africa/Cairo
 
 WORKDIR /app
 
-# 1. نسخ ملف Ollama الأصلي من المرحلة الأولى (بدل التحميل والمشاكل)
+# 1. نسخ Ollama
 COPY --from=ollama_source /usr/bin/ollama /usr/bin/ollama
 
-# 2. تحديث النظام وتثبيت الأدوات
+# 2. تحديث النظام والأدوات
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         git ffmpeg curl unzip build-essential python3-dev \
         libffi-dev libxml2-dev libxslt-dev zlib1g-dev gcc \
         aria2 procps ca-certificates tzdata && \
-    # ضبط المنطقة الزمنية
     ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && \
     echo $TZ > /etc/timezone && \
-    # تثبيت Node.js
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs && \
-    # تثبيت Deno
     curl -fsSL https://deno.land/install.sh | sh && \
-    # تنظيف لتقليل الحجم
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 3. تحديث أدوات بايثون
+# 3. بايثون
 RUN pip install --upgrade pip setuptools wheel
 
-# 4. نسخ مجلد pytgcalls
+# 4. نسخ pytgcalls
 COPY pytgcalls /app/pytgcalls
 
-# 5. تثبيت المكتبات
+# 5. المكتبات + (إصلاح pytz)
 COPY requirements.txt .
 RUN grep -v -i '^py-tgcalls\|pytgcalls' requirements.txt > filtered.txt && \
-    pip install --no-cache-dir -r filtered.txt
+    pip install --no-cache-dir -r filtered.txt && \
+    pip install pytz
 
-# 6. سحب الموديل (Mistral) وتجهيزه داخل الصورة
-# (بما أن Ollama منسوخ من المصدر الرسمي، سيعمل فوراً)
+# 6. 🔥 تحميل الوحش (Llama 3 70B - حجم 40 جيجا) 🔥
+# انتبه: هذه الخطوة ستستغرق وقتاً طويلاً في التحميل
 RUN (ollama serve > /dev/null 2>&1 &) && \
     sleep 10 && \
-    ollama pull mistral && \
+    ollama pull llama3:70b && \
     pkill ollama
 
-# 7. إعدادات yt-dlp الإجبارية
+# 7. إعدادات يوتيوب
 RUN mkdir -p /etc/yt-dlp && \
     echo "--remote-components ejs:github" > /etc/yt-dlp.conf
 
-# 8. نسخ باقي ملفات البوت
+# 8. نسخ الملفات
 COPY . .
 
-# 9. انطلاق الصاروخ 🚀 (تشغيل Ollama في الخلفية والبوت في الواجهة)
-CMD bash -c "ollama serve > /dev/null 2>&1 & sleep 5 && python3 run.py"
+# 9. التشغيل عبر start.sh (ضروري جداً لهذه النسخة الثقيلة)
+RUN chmod +x start.sh
+CMD ["./start.sh"]
