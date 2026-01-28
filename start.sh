@@ -1,18 +1,15 @@
 #!/bin/bash
-
-# 1. تشغيل "مخ" الذكاء (Ollama) في الخلفية داخل السيرفر
-# (ده داخلي فقط ومش محتاج بورتات خارجية)
-echo "🧠 Starting AI Engine..."
+echo "🧠 Starting AI Engine (40GB Mode)..."
 ollama serve &
 
-# 2. أمر الانتظار: بنقول للبوت "نام شوية لحد ما المخ يصحى"
-# بيفضل يجرب يتصل داخلياً كل ثانية لحد ما ينجح
-echo "⏳ Waiting for AI to wake up..."
-while ! curl -s http://localhost:11434 > /dev/null; do
-    sleep 1
-done
+echo "⏳ Waiting for AI..."
+while ! curl -s http://localhost:11434 > /dev/null; do sleep 1; done
 
-echo "✅ AI is Ready! Starting the Bot..."
+# التأكد من تحميل النسخة الـ 70b
+if ! ollama list | grep -q "70b"; then
+    echo "⚠️ Model not found, pulling llama3:70b..."
+    ollama pull llama3:70b
+fi
 
-# 3. دلوقتي بس نشغل البوت بأمان
+echo "✅ AI Ready! Launching Bot..."
 python3 run.py
