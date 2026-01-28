@@ -59,4 +59,3 @@ python-Levenshtein
 pillow>=12.0.0
 apscheduler
 mutagen
-google-genai
