@@ -1,4 +1,4 @@
-Authored By Certified Coders © 2026
+Authored By Certified Coders (c) 2026
 
 System: Song Plugin | Playlist Support | MongoDB Fixed | Pyromod
 
