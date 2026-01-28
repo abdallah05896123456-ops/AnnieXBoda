@@ -1,6 +1,6 @@
 # Authored By Certified Coders © 2026
-# System: AnnieX Azan Core (Enterprise Edition)
-# Architecture: AsyncIO + Semaphore Concurrency Control + Smart Scheduling
+# System: AnnieX Azan Core (Enterprise Edition V7)
+# Architecture: AsyncIO + Semaphore + Security Patch (check_rights added)
 
 import asyncio
 import aiohttp
@@ -76,8 +76,22 @@ def run_async_task(async_func, *args, **kwargs):
         logger.error(f"❌ Safety Bridge Error: {e}")
 
 # ==================================================================
-# 💾 [2] Data Management Layer (طبقة إدارة البيانات)
+# 🔐 [2] Permission & Data Management (تم إضافة check_rights)
 # ==================================================================
+
+async def check_rights(user_id: int, chat_id: int) -> bool:
+    """
+    التحقق من صلاحيات المستخدم (مشرف أو مطور).
+    """
+    if user_id in DEVS:
+        return True
+    try:
+        member = await app.get_chat_member(chat_id, user_id)
+        if member.status in [enums.ChatMemberStatus.OWNER, enums.ChatMemberStatus.ADMINISTRATOR]:
+            return True
+    except Exception:
+        pass
+    return False
 
 @retry_operation(max_retries=3, delay=1)
 async def load_resources():
@@ -148,13 +162,12 @@ async def update_doc(chat_id: int, key: str, value: Any, sub_key: str = None):
 async def start_azan_stream(chat_id: int, prayer_key: str, force_test: bool = False):
     """
     تشغيل الأذان باستخدام Semaphore للتحكم في الحمل الزائد.
-    يستخدم النصوص القديمة والإيموجي القديم بدقة.
     """
     # استخدام Semaphore لمنع الـ Flood عند تشغيل 500 مجموعة معاً
     async with stream_semaphore:
         res = CURRENT_RESOURCES[prayer_key]
         
-        # 1. إعداد الـ Packet الوهمي (Payload)
+        # 1. إعداد الـ Packet الوهمي
         # ⚠️ no_buttons: True -> يمنع ملف stream.py من طلب الأزرار وبالتالي يمنع الانهيار
         fake_result = {
             "link": res["link"], 
@@ -269,7 +282,6 @@ async def broadcast_azan_logic(prayer_key: str):
         
         if c_id and prayers.get(prayer_key, True):
             # نستخدم run_async_task هنا لضمان التنفيذ
-            # الـ Semaphore داخل الدالة سيتكفل بتنظيم الطابور
             tasks.append(start_azan_stream(c_id, prayer_key))
             count += 1
             
@@ -388,7 +400,7 @@ def init_azan_scheduler():
             # Trigger immediate update safely
             app.loop.create_task(update_scheduler_jobs())
             
-            logger.info("🚀 AnnieX Azan System V6 [Enterprise] Started.")
+            logger.info("🚀 AnnieX Azan System V7 [Enterprise] Started.")
             
     except Exception as e:
         logger.critical(f"❌ Scheduler Initialization Failed: {e}")
