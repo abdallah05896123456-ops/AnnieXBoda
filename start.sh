@@ -3,20 +3,23 @@
 # 1. إنشاء المجلد
 mkdir -p /root/.ollama
 
-# 2. 🔥 تحديد 45 جيجا رام ديسك (كما طلبت) 🔥
-# التحميل هيبقى طيارة لأنه بيكتب في الرامات
+# 2. إجبار السيرفر يشتغل على العنوان الرقمي ويفضل صاحي 24 ساعة
+export OLLAMA_HOST=127.0.0.1:11434
+export OLLAMA_KEEP_ALIVE=-1
+
+# 3. الرام ديسك (45 جيجا)
 echo "🚀 Creating 45GB RAM Disk..."
 mount -t tmpfs -o size=45g tmpfs /root/.ollama
 
-# 3. تشغيل الذكاء في الخلفية
+# 4. تشغيل الذكاء
 echo "🧠 Starting AI Engine..."
 ollama serve &
 
-# 4. انتظار الخدمة
+# 5. انتظار الخدمة
 echo "⏳ Waiting for AI..."
-while ! curl -s http://localhost:11434 > /dev/null; do sleep 1; done
+while ! curl -s http://127.0.0.1:11434 > /dev/null; do sleep 1; done
 
-# 5. تحميل الموديل (بيعتمد على سرعة نت السيرفر مش جهازك)
+# 6. تحميل الموديل (لو مش موجود)
 if ! ollama list | grep -q "qwen2.5:32b"; then
     echo "⬇️ Downloading Qwen 2.5 (32B) directly into RAM..."
     ollama pull qwen2.5:32b
