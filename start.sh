@@ -1,15 +1,16 @@
 #!/bin/bash
 
-echo "🧠 Starting AI Engine (Standard 4GB Mode)..."
+echo "🧠 Starting AI Engine (Qwen 2.5 32B - The Coding Monster)..."
+# تشغيل المحرك
 ollama serve &
 
 echo "⏳ Waiting for AI..."
 while ! curl -s http://localhost:11434 > /dev/null; do sleep 1; done
 
-# التأكد من تحميل llama3
-if ! ollama list | grep -q "llama3:latest"; then
-    echo "⚠️ Model not found, pulling llama3..."
-    ollama pull llama3
+# التأكد من وجود الموديل
+if ! ollama list | grep -q "qwen2.5:32b"; then
+    echo "⚠️ Model not found, pulling qwen2.5:32b..."
+    ollama pull qwen2.5:32b
 fi
 
 echo "✅ AI Ready! Launching Bot..."
