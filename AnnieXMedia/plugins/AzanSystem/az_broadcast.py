@@ -1,14 +1,21 @@
+# Authored By Certified Coders © 2026
+# System: AnnieX Advanced Broadcaster (Visuals Updated)
+# Architecture: Async Batch Processing + Smart Formatting
+
 import asyncio
 import random
-from datetime import datetime
+import logging
+import time
+from typing import Tuple
+
 from pyrogram import filters
 from pyrogram.types import Message
-from pyrogram.errors import FloodWait, InputUserDeactivated, UserIsBlocked, PeerIdInvalid
+from pyrogram.errors import FloodWait, InputUserDeactivated, UserIsBlocked, PeerIdInvalid, ChannelInvalid
 
-# استدعاء مكتبات السورس
+# --- [ Imports from Source ] ---
 from AnnieXMedia import app
 
-# استدعاء المتغيرات من ملف الإعدادات
+# --- [ Configuration & Database ] ---
 from .az_conf import (
     AZAN_GROUP, 
     settings_db, 
@@ -16,7 +23,13 @@ from .az_conf import (
     CURRENT_DUA_STICKER
 )
 
-# --- [ 1. قوائم الرسائل (الصلاة على النبي & الأذكار) ] ---
+# --- [ Advanced Logging ] ---
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("Azan_Broadcaster")
+
+# ==========================================================
+# 📜 [1] القوائم (تم إعادة الإيموجي للأذكار فقط)
+# ==========================================================
 
 SALAWAT_LIST = [
     "إِنَّ اللَّهَ وَمَلَائِكَتَهُ يُصَلُّونَ عَلَى النَّبِيِّ ۚ يَا أَيُّهَا الَّذِينَ آمَنُوا صَلُّوا عَلَيْهِ وَسَلِّمُوا تَسْلِيمًا 💙",
@@ -37,7 +50,9 @@ BROADCAST_ATHKAR = [
     "اللَّهُمَّ أَنْتَ رَبِّي لا إِلَهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ 💙",
     "الْحَمْدُ لِلَّهِ حَمْدًا كَثِيرًا طَيِّبًا مُبَارَكًا فِيهِ 🤍",
     "اللَّهُمَّ إِنِّي أَسْأَلُكَ الْعَفْوَ وَالْعَافِيَةَ فِي الدُّنْيَا وَالآخِرَةِ 💙",
-    "رَبَّنَا آتِنَا فِي الدُّنْيَا حَسَنَةً وَفِي الآخِرَةِ حَسَنَةً وَقِنَا عَذَابَ النَّارِ 🤍"
+    "رَبَّنَا آتِنَا فِي الدُّنْيَا حَسَنَةً وَفِي الآخِرَةِ حَسَنَةً وَقِنَا عَذَابَ النَّارِ 🤍",
+    "اللهم مصرف القلوب صرف قلوبنا على طاعتك 🤲",
+    "سبحان الله والحمد لله ولا إله إلا الله والله أكبر 🍃"
 ]
 
 JUMMAH_MESSAGES = [
@@ -47,137 +62,186 @@ JUMMAH_MESSAGES = [
     "نور الله قلبكم بذكره ورزقكم حبه وأعانكم على طاعته.. جمعة طيبة 🤍"
 ]
 
-# --- [ 2. دالة النشر الأساسية (Core Function) ] ---
+# ==========================================================
+# ⚙️ [2] محرك البث الذكي (Batch Processing Engine)
+# ==========================================================
 
-async def broadcast_message(text_message):
-    """إرسال رسالة لجميع الجروبات المفعلة"""
+async def send_safe_message(chat_id: int, text: str, is_pin: bool) -> bool:
+    """
+    إرسال رسالة آمنة (محمية من الحظر والتكرار).
+    """
+    try:
+        # إرسال الاستيكر أولاً
+        if CURRENT_DUA_STICKER:
+            try: await app.send_sticker(chat_id, CURRENT_DUA_STICKER)
+            except: pass
+        
+        # إرسال النص
+        msg = await app.send_message(
+            chat_id, 
+            f"<b>{text}</b>\n\n<b>➻ المصدر : بـوت الأذان الـذكـي</b>"
+        )
+        
+        # التثبيت
+        if is_pin:
+            try: await msg.pin(disable_notification=True)
+            except: pass
+            
+        return True
+
+    except FloodWait as e:
+        logger.warning(f"FloodWait detected: {e.value}s")
+        await asyncio.sleep(e.value + 1)
+        try:
+            await app.send_message(chat_id, text)
+            return True
+        except: return False
+
+    except (InputUserDeactivated, UserIsBlocked, PeerIdInvalid, ChannelInvalid):
+        # حذف الجروب الميت فوراً
+        await settings_db.delete_one({"chat_id": chat_id})
+        return False
+
+    except Exception:
+        return False
+
+async def broadcast_core_engine(text_message: str, is_pin: bool = False) -> Tuple[int, int, float]:
+    """
+    المحرك الرئيسي: يعالج الرسائل في دفعات (20 رسالة في المرة).
+    """
+    start_time = time.time()
     sent = 0
     failed = 0
+    tasks = []
     
-    # جلب كل الجروبات المفعل فيها الأذان من الداتابيز
-    async for doc in settings_db.find({"azan_active": True}):
+    cursor = settings_db.find({"azan_active": True})
+    
+    async for doc in cursor:
         chat_id = doc.get("chat_id")
         if not chat_id: continue
         
-        try:
-            # إرسال الاستيكر إذا وجد
-            if CURRENT_DUA_STICKER:
-                try: await app.send_sticker(chat_id, CURRENT_DUA_STICKER)
-                except: pass
+        tasks.append(send_safe_message(chat_id, text_message, is_pin))
+        
+        # تنفيذ كل 20 رسالة معاً
+        if len(tasks) >= 20:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for res in results:
+                if res is True: sent += 1
+                else: failed += 1
             
-            # إرسال النص
-            await app.send_message(chat_id, f"<b>{text_message}</b>\n\n➻ sᴏᴜʀᴄᴇ : بُودَا | ʙᴏᴅَا")
-            sent += 1
-            await asyncio.sleep(0.8) # تأخير لتجنب الحظر
+            tasks = []
+            await asyncio.sleep(1.0) # راحة قصيرة
             
-        except FloodWait as e:
-            await asyncio.sleep(e.value)
-            try: await app.send_message(chat_id, text_message)
-            except: failed += 1
-        except (InputUserDeactivated, UserIsBlocked, PeerIdInvalid):
-            # تنظيف الداتابيز من الجروبات المحذوفة
-            await settings_db.delete_one({"chat_id": chat_id})
-            failed += 1
-        except Exception:
-            failed += 1
-            
-    return sent, failed
+    # المتبقي
+    if tasks:
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for res in results:
+            if res is True: sent += 1
+            else: failed += 1
 
-# --- [ 3. دوال الجدولة التلقائية ] ---
+    duration = time.time() - start_time
+    logger.info(f"Broadcast Finished. Sent: {sent}, Failed: {failed}")
+    return sent, failed, duration
 
-async def auto_send_random():
-    """اختيار رسالة عشوائية (ذكر أو صلاة على النبي) وإرسالها"""
-    # اختيار عشوائي: 50% أذكار - 50% صلاة على النبي
+# ==========================================================
+# ⏰ [3] التشغيل التلقائي
+# ==========================================================
+
+async def execute_auto_random():
+    """اختيار عشوائي"""
     if random.choice([True, False]):
         msg = random.choice(SALAWAT_LIST)
     else:
         msg = random.choice(BROADCAST_ATHKAR)
-    
-    await broadcast_message(msg)
+    await broadcast_core_engine(msg, is_pin=False)
 
-async def auto_send_jummah():
-    """إرسال رسائل خاصة بيوم الجمعة"""
+async def execute_auto_jummah():
+    """رسائل الجمعة"""
     msg = random.choice(JUMMAH_MESSAGES)
-    await broadcast_message(msg)
+    await broadcast_core_engine(msg, is_pin=True)
 
-# يتم استدعاء هذه الدالة من ملف __init__ أو az_utils
 def init_broadcast_schedule(scheduler):
-    """ضبط مواعيد النشر التلقائي"""
+    """تهيئة الجدول مع جسر الأمان"""
     
-    # 1. النشر في الأيام العادية (السبت إلى الخميس) - كل 9 ساعات
-    # نختار ساعات محددة لضمان الانتظام: 9 صباحاً، 6 مساءً، 3 فجراً
+    def safe_runner(coro):
+        try: app.loop.create_task(coro())
+        except: pass
+
+    # جدول الأيام العادية
     scheduler.add_job(
-        lambda: asyncio.create_task(auto_send_random()),
-        "cron",
-        day_of_week='sat,sun,mon,tue,wed,thu',
-        hour='3,9,18',
-        minute=0
+        safe_runner, "cron", 
+        day_of_week='sat,sun,mon,tue,wed,thu', 
+        hour='3,9,18', minute=0, 
+        args=[execute_auto_random], id="brd_normal"
     )
 
-    # 2. النشر يوم الجمعة - كل 3 ساعات (تكثيف)
-    # الساعات: 0, 3, 6, 9, 15, 18, 21 (استثنينا 12 عشان صلاة الجمعة ليها رسالة خاصة)
+    # جدول الجمعة
     scheduler.add_job(
-        lambda: asyncio.create_task(auto_send_random()),
-        "cron",
-        day_of_week='fri',
-        hour='0,3,6,9,15,18,21',
-        minute=0
+        safe_runner, "cron", 
+        day_of_week='fri', 
+        hour='0,3,6,9,15,18,21', minute=0, 
+        args=[execute_auto_random], id="brd_friday"
     )
 
-    # 3. تذكير صلاة الجمعة وسورة الكهف (الساعة 11:30 صباحاً بتوقيت القاهرة)
+    # الكهف
     scheduler.add_job(
-        lambda: asyncio.create_task(auto_send_jummah()),
-        "cron",
-        day_of_week='fri',
-        hour=11,
-        minute=30
+        safe_runner, "cron", 
+        day_of_week='fri', 
+        hour=11, minute=30, 
+        args=[execute_auto_jummah], id="brd_kahf"
     )
 
-# --- [ 4. أوامر النشر اليدوية للمطورين ] ---
+# ==========================================================
+# 👮 [4] التحكم اليدوي (بدون إيموجي في الإحصائيات)
+# ==========================================================
 
 @app.on_message(filters.regex(r"^(نشر الصلاة علي النبي|نشر الصلاه علي النبي)$") & filters.user(DEVS), group=AZAN_GROUP + 6)
-async def broadcast_salawat(client, message: Message):
-    """نشر صيغة صلاة على النبي عشوائية لكل الجروبات يدوياً"""
-    status = await message.reply_text("جاري نشر الصلاة على النبي في جميع المجموعات...")
+async def manual_salawat(client, message: Message):
+    status = await message.reply_text("جاري نشر الصلاة على النبي...")
+    msg = random.choice(SALAWAT_LIST)
     
-    selected_salawat = random.choice(SALAWAT_LIST)
-    sent, failed = await broadcast_message(selected_salawat)
+    sent, failed, time_taken = await broadcast_core_engine(msg)
     
+    # تم إزالة الإيموجي من هنا حسب طلبك
     await status.edit_text(
-        f"✅ <b>تم النشر بنجاح!</b>\n\n"
-        f"• تم الإرسال إلى: {sent} مجموعة\n"
-        f"• فشل الإرسال إلى: {failed} مجموعة"
+        f"**تم النشر بنجاح**\n\n"
+        f"**المرسل:** {sent}\n"
+        f"**الفشل:** {failed}\n"
+        f"**الوقت:** {time_taken:.2f} ثانية"
     )
 
 @app.on_message(filters.regex(r"^(نشر ذكر|نشر اذكار|نشر أذكار)$") & filters.user(DEVS), group=AZAN_GROUP + 7)
-async def broadcast_athkar(client, message: Message):
-    """نشر ذكر عشوائي لكل الجروبات يدوياً"""
-    status = await message.reply_text("جاري نشر تذكير بالأذكار في جميع المجموعات...")
+async def manual_athkar(client, message: Message):
+    status = await message.reply_text("جاري نشر الأذكار...")
+    msg = random.choice(BROADCAST_ATHKAR)
     
-    selected_thikr = random.choice(BROADCAST_ATHKAR)
-    sent, failed = await broadcast_message(selected_thikr)
+    sent, failed, time_taken = await broadcast_core_engine(msg)
     
     await status.edit_text(
-        f"✅ <b>تم نشر الأذكار بنجاح!</b>\n\n"
-        f"• تم الإرسال إلى: {sent} مجموعة\n"
-        f"• فشل الإرسال إلى: {failed} مجموعة"
+        f"**تم نشر الأذكار بنجاح**\n\n"
+        f"**المرسل:** {sent}\n"
+        f"**الفشل:** {failed}\n"
+        f"**الوقت:** {time_taken:.2f} ثانية"
     )
 
 @app.on_message(filters.regex(r"^نشر عام ([\s\S]+)$") & filters.user(DEVS), group=AZAN_GROUP + 8)
-async def broadcast_custom(client, message: Message):
-    """نشر رسالة مخصصة يكتبها المطور"""
-    text = message.matches[0].group(1) # استخراج النص بعد كلمة "نشر عام"
-    
+async def manual_custom(client, message: Message):
+    text = message.matches[0].group(1)
     if not text:
-        return await message.reply("اكتب الرسالة التي تريد نشرها بعد الأمر.")
+        return await message.reply("**اكتب الرسالة بعد الأمر مباشرة**")
         
-    status = await message.reply_text("جاري نشر رسالتك المخصصة...")
+    status = await message.reply_text("جاري النشر العام...")
     
-    sent, failed = await broadcast_message(text)
+    do_pin = "-pin" in text
+    clean_text = text.replace("-pin", "").strip()
+    
+    sent, failed, time_taken = await broadcast_core_engine(clean_text, is_pin=do_pin)
     
     await status.edit_text(
-        f"✅ <b>تم النشر العام بنجاح!</b>\n\n"
-        f"• النص: {text[:50]}...\n"
-        f"• تم الإرسال إلى: {sent} مجموعة\n"
-        f"• فشل الإرسال إلى: {failed} مجموعة"
+        f"**تم النشر العام بنجاح**\n\n"
+        f"**النص:** {clean_text[:50]}...\n"
+        f"**تثبيت:** {'نعم' if do_pin else 'لا'}\n"
+        f"**المرسل:** {sent}\n"
+        f"**الفشل:** {failed}\n"
+        f"**الوقت:** {time_taken:.2f} ثانية"
     )
