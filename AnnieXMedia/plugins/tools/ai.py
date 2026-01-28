@@ -1,6 +1,6 @@
 # Authored By Certified Coders © 2026
-# System: Local AI (Ollama Llama3 Edition) | Clean Interface
-# الـمـحـرك: Ollama (Llama 3) - واجـهـة كـلاسـيـكـيـة بـدون إيـمـوجـي
+# System: Local AI (Ollama Qwen 2.5 Edition) | Clean Interface
+# الـمـحـرك: Ollama (Qwen 2.5 32B) - أذكى موديل 20 جيجا للكود
 
 import asyncio
 import aiohttp
@@ -23,17 +23,17 @@ from config import OWNER_ID
 # إعـدادات الـنـظـام
 # -------------------------
 OLLAMA_API_URL = "http://localhost:11434/api/chat"
-DEFAULT_MODEL = "llama3"  # الـنـسـخـة الـخـفـيـفـة
+DEFAULT_MODEL = "qwen2.5:32b"  # 🔥 تـم الـتـحـديـث لـمـوديل الـكـود الـعـبـقـري
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("AnnieX_Llama_AI")
+logger = logging.getLogger("AnnieX_Qwen_AI")
 
 SUDO_USERS = OWNER_ID if isinstance(OWNER_ID, list) else [OWNER_ID]
 
 # مـتـغـيـرات الـحـالـة
 AI_STATUS = True
 AI_MODE = "عـام"
-MAX_HISTORY = 12
+MAX_HISTORY = 8  # تقليل الذاكرة قليلاً لتوفير الرام للموديل الكبير
 
 # الـذاكـرة (RAM)
 user_history = {}     
@@ -71,20 +71,20 @@ load_state()
 # مـحـرك الـذكـاء (Ollama Smart Chat)
 # -------------------------
 async def ask_ollama(user_id, prompt):
-    # 1. تـجـهـيـز الـشـخـصـيـة
+    # 1. تـجـهـيـز الـشـخـصـيـة (Qwen 2.5 Prompt)
     if AI_MODE == "تـقـنـي":
         sys_content = (
-            "You are an elite Senior Programmer assistant. "
+            "You are a Genius Senior Developer and a Hacker from 2026. "
+            "You write complex, flawless, production-ready code. "
             "You speak Egyptian Arabic comfortably. "
-            "Your code is flawless, bug-free, and production-ready. "
-            "Explain logic briefly and clearly."
+            "You are confident, slightly arrogant but helpful."
         )
     else:
         sys_content = (
-            "You are a smart, witty companion from Egypt. "
-            "You speak Egyptian Arabic (Masri) naturally using slang. "
-            "You understand vibes, sarcasm, and humor. "
-            "Never apologize like a robot. Be helpful but have a personality."
+            "You are a smart, witty Egyptian companion. "
+            "You speak pure Egyptian slang (Masri). "
+            "You understand deep sarcasm and street vibes. "
+            "You are not a robot; you have a strong personality."
         )
 
     # 2. بـنـاء مـصـفـوفـة الـرسـائـل
@@ -105,13 +105,15 @@ async def ask_ollama(user_id, prompt):
         "stream": False,
         "options": {
             "temperature": 0.7, 
-            "num_ctx": 4096
+            "num_ctx": 2048,  # حجم الذاكرة المناسب لـ 20 جيجا على CPU
+            "num_thread": 4   # تحديد الأنوية لمنع التهنيج
         }
     }
 
     try:
+        # زيادة وقت الانتظار لأن الموديل الـ 20 جيجا بياخد وقت أطول في التفكير
         async with aiohttp.ClientSession() as session:
-            async with session.post(OLLAMA_API_URL, json=payload, timeout=60) as resp:
+            async with session.post(OLLAMA_API_URL, json=payload, timeout=180) as resp:
                 if resp.status == 200:
                     res = await resp.json()
                     reply = res.get("message", {}).get("content", "").strip()
@@ -158,7 +160,7 @@ async def ai_control_panel(_, m):
     ])
     
     await m.reply_text(
-        f"**لـوحـة تـحـكـم Llama 3 AI**\n\n"
+        f"**لـوحـة تـحـكـم Qwen 2.5 AI**\n\n"
         f"• **الـمـوديـل:** `{DEFAULT_MODEL}`\n"
         f"• **الـذاكـرة:** {len(user_history)} مـحـادثـة نـشـطـة\n",
         reply_markup=keyboard
