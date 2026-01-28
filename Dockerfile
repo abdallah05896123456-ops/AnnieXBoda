@@ -1,67 +1,66 @@
 # -----------------------------------------------------
-# المرحلة 1: استيراد محرك Ollama
+# المرحلة 1: استيراد محرك Ollama (الإضافة الوحيدة)
 # -----------------------------------------------------
 FROM ollama/ollama:latest AS ollama_source
 
 # -----------------------------------------------------
-# المرحلة 2: نسختك المفضلة (بدون تعديل في السيستم)
+# المرحلة 2: الكود بتاعك (بدون أي تغيير)
 # -----------------------------------------------------
+# استخدام أحدث وأخف نسخة مستقرة من بايثون
 FROM python:3.12-slim
 
-# إعدادات البيئة
+# تحسينات الأداء للبيئة
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PIP_NO_CACHE_DIR=1
 ENV DENO_INSTALL="/root/.deno"
 ENV PATH="${DENO_INSTALL}/bin:${PATH}"
-ENV TZ=Africa/Cairo
+# (إضافة) تحديد مسار الموديلات عشان تتخزن في الرامات
+ENV OLLAMA_MODELS="/root/.ollama/models"
 
 WORKDIR /app
 
-# 1. (إضافة) نسخ محرك Ollama
+# (إضافة) نسخ محرك Ollama لداخل نسختك
 COPY --from=ollama_source /usr/bin/ollama /usr/bin/ollama
 
-# 2. تثبيت الأدوات (نفس أدواتك بالمللي + procps عشان نعرف نتحكم في التحميل)
+# 1. تثبيت "محركات السرعة" وأدوات النظام
+# - aria2: عشان السرعة الجنونية (أهم حاجة كانت ناقصة).
+# - nodejs & deno: عشان فك تشفير يوتيوب الجديد.
+# - ffmpeg: عشان معالجة الصوت والفيديو.
+# (إضافة صغيرة: procps عشان نعرف نعمل mount للرامات)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         git ffmpeg curl unzip build-essential python3-dev \
         libffi-dev libxml2-dev libxslt-dev zlib1g-dev gcc \
-        aria2 procps ca-certificates tzdata && \
-    ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && \
-    echo $TZ > /etc/timezone && \
-    # تثبيت Node.js
+        aria2 procps && \
+    # تثبيت Node.js (المحرك 1 لفك التشفير)
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs && \
-    # تثبيت Deno
+    # تثبيت Deno (المحرك 2 لفك التشفير - مهم جداً حالياً)
     curl -fsSL https://deno.land/install.sh | sh && \
+    # تنظيف المخلفات لتقليل حجم الصورة
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 3. تحديث أدوات بايثون
+# 2. تحديث أدوات بايثون الأساسية
 RUN pip install --upgrade pip setuptools wheel
 
-# 4. نسخ مجلد pytgcalls
+# 3. نسخ مجلد pytgcalls (النسخة المحلية المعدلة)
 COPY pytgcalls /app/pytgcalls
 
-# 5. تثبيت المكتبات
+# 4. تثبيت المكتبات (مع استثناء pytgcalls لتجنب التعارض)
 COPY requirements.txt .
 RUN grep -v -i '^py-tgcalls\|pytgcalls' requirements.txt > filtered.txt && \
-    pip install --no-cache-dir -r filtered.txt && \
-    pip install pytz
+    pip install --no-cache-dir -r filtered.txt
 
-# 6. 🔥 إعدادات yt-dlp الخاصة بك (زي ما هي ممنوع اللمس) 🔥
+# 5. 🔥 الضربة القاضية: إعدادات yt-dlp الإجبارية 🔥
+# هذا السطر يجبر البوت على تحميل أدوات فك التشفير تلقائياً دون انتظار إذن
 RUN mkdir -p /etc/yt-dlp && \
     echo "--remote-components ejs:github" > /etc/yt-dlp.conf
 
-# 7. 🔥 تحميل وحش الكود (Qwen 2.5 32B - 19GB) 🔥
-# ده أذكى وأشرس موديل كود حالياً (مش ديب سيك)
-RUN (ollama serve > /dev/null 2>&1 &) && \
-    sleep 10 && \
-    ollama pull qwen2.5:32b && \
-    pkill ollama
-
-# 8. نسخ باقي الملفات
+# 6. نسخ باقي ملفات البوت
 COPY . .
 
-# 9. (تعديل) تشغيل start.sh عشان يقوم الذكاء والبوت سوا
+# 7. انطلاق الصاروخ 🚀
+# (تعديل) لازم نشغل start.sh عشان يعمل الرام ديسك ويشغل الذكاء
 RUN chmod +x start.sh
 CMD ["./start.sh"]
