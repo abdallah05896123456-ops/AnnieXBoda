@@ -4,7 +4,7 @@
 FROM ollama/ollama:latest AS ollama_source
 
 # -----------------------------------------------------
-# المرحلة 2: صورة البوت (The Beast - 40GB Version)
+# المرحلة 2: صورة البوت (Llama 3 Standard - 4.7GB)
 # -----------------------------------------------------
 FROM python:3.12-slim
 
@@ -44,11 +44,11 @@ RUN grep -v -i '^py-tgcalls\|pytgcalls' requirements.txt > filtered.txt && \
     pip install --no-cache-dir -r filtered.txt && \
     pip install pytz
 
-# 6. 🔥 تحميل الوحش (Llama 3 70B - حجم 40 جيجا) 🔥
-# انتبه: هذه الخطوة ستستغرق وقتاً طويلاً في التحميل
+# 6. 🔥 تحميل الموديل الخفيف (Llama 3 8B) 🔥
+# الحجم: 4.7 جيجا فقط (سريع جداً في التحميل والتشغيل)
 RUN (ollama serve > /dev/null 2>&1 &) && \
     sleep 10 && \
-    ollama pull llama3:70b && \
+    ollama pull llama3 && \
     pkill ollama
 
 # 7. إعدادات يوتيوب
@@ -58,6 +58,6 @@ RUN mkdir -p /etc/yt-dlp && \
 # 8. نسخ الملفات
 COPY . .
 
-# 9. التشغيل عبر start.sh (ضروري جداً لهذه النسخة الثقيلة)
+# 9. التشغيل عبر start.sh
 RUN chmod +x start.sh
 CMD ["./start.sh"]
