@@ -1,6 +1,7 @@
 # Authored By Certified Coders © 2026
-# System: AnnieX Azan Core (Enterprise Edition V8 - Full Stable)
-# Contains: All Fixes + Original Texts + Admin Utilities + Async Safety
+# System: Azan Utilities (Silent Stream Edition)
+# Location: AnnieXMedia/plugins/AzanSystem/az_utils.py
+# Mod: Removed 'stream' function calls to eliminate buttons. Uses Direct Play.
 
 import asyncio
 import aiohttp
@@ -19,9 +20,11 @@ from pyrogram.errors import FloodWait, PeerIdInvalid, ChannelInvalid
 
 # --- [ Imports from Source ] ---
 from AnnieXMedia import app
-from AnnieXMedia.utils.stream.stream import stream
+# استبدال stream بـ Annie للتشغيل المباشر الصامت
+from AnnieXMedia.core.call import Annie 
 
 # --- [ Configuration & Database ] ---
+# تأكد إن ملف az_conf.py موجود جنبه في نفس الفولدر
 from .az_conf import (
     settings_db, resources_db, azan_logs_db, local_cache, 
     CURRENT_RESOURCES, CURRENT_DUA_STICKER, DEVS, 
@@ -30,23 +33,22 @@ from .az_conf import (
 
 # --- [ Advanced Logging Setup ] ---
 logging.basicConfig(
-    format='%(asctime)s - [AzanCore] - %(levelname)s - %(message)s',
+    format='%(asctime)s - [AzanUtils] - %(levelname)s - %(message)s',
     level=logging.INFO
 )
-logger = logging.getLogger("Azan_Maestro")
+logger = logging.getLogger("Azan_Maestro_Silent")
 
 # --- [ Constants & Concurrency Control ] ---
 CAIRO_TZ = pytz.timezone('Africa/Cairo')
-MAX_CONCURRENT_STREAMS = 10  # أقصى عدد للبث المتزامن
+MAX_CONCURRENT_STREAMS = 10
 stream_semaphore = asyncio.Semaphore(MAX_CONCURRENT_STREAMS)
 scheduler = AsyncIOScheduler(timezone=CAIRO_TZ)
 
 # ==================================================================
-# 🧠 [1] Decorators & Helpers (أدوات المساعدة)
+# 🧠 [1] Decorators & Helpers
 # ==================================================================
 
 def retry_operation(max_retries=3, delay=2):
-    """مُزخرف (Decorator) لإعادة محاولة الدوال"""
     def decorator(func):
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
@@ -62,7 +64,6 @@ def retry_operation(max_retries=3, delay=2):
     return decorator
 
 def run_async_task(async_func, *args, **kwargs):
-    """جسر الأمان لتنفيذ المهام"""
     try:
         loop = app.loop
         if loop.is_running():
@@ -73,10 +74,6 @@ def run_async_task(async_func, *args, **kwargs):
         logger.error(f"❌ Safety Bridge Error: {e}")
 
 def extract_vidid(url: str) -> Optional[str]:
-    """
-    استخراج معرف الفيديو من رابط يوتيوب.
-    (ضروري لعمل ملف الأدمن)
-    """
     match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", url)
     return match.group(1) if match else None
 
@@ -85,20 +82,16 @@ def extract_vidid(url: str) -> Optional[str]:
 # ==================================================================
 
 async def check_rights(user_id: int, chat_id: int) -> bool:
-    """التحقق من صلاحيات المستخدم (مشرف أو مطور)"""
-    if user_id in DEVS:
-        return True
+    if user_id in DEVS: return True
     try:
         member = await app.get_chat_member(chat_id, user_id)
         if member.status in [enums.ChatMemberStatus.OWNER, enums.ChatMemberStatus.ADMINISTRATOR]:
             return True
-    except Exception:
-        pass
+    except Exception: pass
     return False
 
 @retry_operation(max_retries=3, delay=1)
 async def load_resources():
-    """تحميل الموارد"""
     stored_res = await resources_db.find_one({"type": "azan_data"})
     if stored_res:
         saved_data = stored_res.get("data", {})
@@ -108,17 +101,18 @@ async def load_resources():
     
     dua_res = await resources_db.find_one({"type": "dua_sticker"})
     if dua_res:
-        import AnnieXMedia.plugins.AzanSystem.az_conf as conf_module
-        conf_module.CURRENT_DUA_STICKER = dua_res.get("sticker_id")
-        global CURRENT_DUA_STICKER
-        CURRENT_DUA_STICKER = dua_res.get("sticker_id")
+        try:
+            # محاولة استيراد ديناميكي لتجنب Circular Import
+            from AnnieXMedia.plugins.AzanSystem import az_conf
+            az_conf.CURRENT_DUA_STICKER = dua_res.get("sticker_id")
+            global CURRENT_DUA_STICKER
+            CURRENT_DUA_STICKER = dua_res.get("sticker_id")
+        except: pass
     
     logger.info("✅ Resources synchronized.")
 
 async def get_chat_doc(chat_id: int) -> Dict[str, Any]:
-    """جلب إعدادات المجموعة"""
-    if chat_id in local_cache: 
-        return local_cache[chat_id]
+    if chat_id in local_cache: return local_cache[chat_id]
     
     doc = await settings_db.find_one({"chat_id": chat_id})
     if not doc:
@@ -137,88 +131,58 @@ async def get_chat_doc(chat_id: int) -> Dict[str, Any]:
     return doc
 
 async def update_doc(chat_id: int, key: str, value: Any, sub_key: str = None):
-    """تحديث قاعدة البيانات"""
     try:
         if sub_key:
-            await settings_db.update_one(
-                {"chat_id": chat_id}, 
-                {"$set": {f"prayers.{sub_key}": value}}, 
-                upsert=True
-            )
-            if chat_id in local_cache:
-                local_cache[chat_id].setdefault("prayers", {})[sub_key] = value
+            await settings_db.update_one({"chat_id": chat_id}, {"$set": {f"prayers.{sub_key}": value}}, upsert=True)
+            if chat_id in local_cache: local_cache[chat_id].setdefault("prayers", {})[sub_key] = value
         else:
-            await settings_db.update_one(
-                {"chat_id": chat_id}, 
-                {"$set": {key: value}}, 
-                upsert=True
-            )
-            if chat_id in local_cache:
-                local_cache[chat_id][key] = value
+            await settings_db.update_one({"chat_id": chat_id}, {"$set": {key: value}}, upsert=True)
+            if chat_id in local_cache: local_cache[chat_id][key] = value
     except Exception as e:
         logger.error(f"DB Error {chat_id}: {e}")
 
 # ==================================================================
-# 🕌 [3] Streaming Logic (البث - بنفس النصوص القديمة)
+# 🕌 [3] Streaming Logic (التعديل الجذري هنا: إزالة الأزرار)
 # ==================================================================
 
 async def start_azan_stream(chat_id: int, prayer_key: str, force_test: bool = False):
     async with stream_semaphore:
         res = CURRENT_RESOURCES[prayer_key]
         
-        # no_buttons: True -> يمنع الكراش في stream.py
-        fake_result = {
-            "link": res["link"], 
-            "vidid": res["vidid"], 
-            "title": f"أذان {res['name']}", 
-            "duration_min": "05:00", 
-            "thumb": f"https://img.youtube.com/vi/{res['vidid']}/hqdefault.jpg",
-            "no_buttons": True,
-            "description": "Azan Broadcast"
-        }
-        
-        _ = {
-            "queue_4": "<b>🔢 الترتيب: #{}</b>", 
-            "stream_1": "<b>🔘 جاري التشغيل...</b>", 
-            "play_3": "<b>❌ فشل.</b>",
-            "CLOSE_BUTTON": "إغلاق"
-        }
-
         try:
+            # 1. إرسال الاستيكر (بدون أزرار)
             if res.get("sticker"):
                 try: await app.send_sticker(chat_id, res["sticker"])
                 except: pass
 
-            # --- [ النص القديم ] ---
-            caption = f"<b>حان الآن موعد اذان {res['name']}</b>\n<b>بالتوقيت المحلي لمدينة القاهره 🕌</b>"
+            # 2. إرسال الرسالة النصية (نص فقط - Plain Text)
+            caption = (
+                f"<b>حان الآن موعد اذان {res['name']}</b>\n"
+                f"<b>بالتوقيت المحلي لمدينة القاهره 🕌</b>"
+            )
+            # تم حذف المتغير mystic اللي كان بيستخدم في stream
+            await app.send_message(chat_id, caption)
             
-            mystic = await app.send_message(chat_id, caption)
-            
+            # 3. التشغيل المباشر الصامت (Annie.play)
+            # ده بيتخطى دالة stream() تماماً وبالتالي مفيش أزرار هتظهر
             try:
-                await stream(
-                    _, 
-                    mystic, 
-                    app.id, 
-                    fake_result, 
+                await Annie.play(
                     chat_id, 
-                    "خدمة الأذان", 
-                    chat_id, 
-                    video=False, 
-                    streamtype="youtube", 
-                    forceplay=True
+                    res["link"], 
+                    # مش محتاجين باقي الباراميترز لأننا مش بنعرض واجهة
                 )
-                if force_test: logger.info(f"Test OK: {chat_id}")
+                
+                if force_test: logger.info(f"Test OK (Silent): {chat_id}")
                 
             except FloodWait as e:
                 await asyncio.sleep(e.value)
-                await stream(_, mystic, app.id, fake_result, chat_id, "خدمة الأذان", chat_id, video=False, streamtype="youtube", forceplay=True)
+                await Annie.play(chat_id, res["link"])
                 
             except (PeerIdInvalid, ChannelInvalid):
                 await settings_db.delete_one({"chat_id": chat_id})
                 
             except Exception as e:
-                if "CLOSE_BUTTON" in str(e) or "EditMessage" in str(e): return
-                logger.error(f"Stream Error {chat_id}: {e}")
+                logger.error(f"Silent Stream Error {chat_id}: {e}")
 
         except Exception as e:
             logger.error(f"Access Error {chat_id}: {e}")
@@ -254,6 +218,7 @@ async def broadcast_azan_logic(prayer_key: str):
         
         if c_id and prayers.get(prayer_key, True):
             tasks.append(start_azan_stream(c_id, prayer_key))
+            # تقليل الحمل: 15 عملية متزامنة
             if len(tasks) >= 15:
                 await asyncio.gather(*tasks, return_exceptions=True)
                 tasks = []
@@ -265,7 +230,6 @@ async def send_duas_batch(dua_list, setting_key, title):
     logger.info(f"📿 Sending: {title}")
     selected = random.sample(dua_list, min(4, len(dua_list)))
     
-    # --- [ الإيموجي القديم ] ---
     dua_emojis = ["💕", "🤍", "🤎"]
     
     text = f"<b>{title}</b>\n\n"
@@ -281,6 +245,7 @@ async def send_duas_batch(dua_list, setting_key, title):
                 if CURRENT_DUA_STICKER: 
                     try: await app.send_sticker(c_id, CURRENT_DUA_STICKER)
                     except: pass
+                # رسالة نصية فقط
                 await app.send_message(c_id, text)
                 await asyncio.sleep(0.8)
         except: continue
@@ -329,7 +294,7 @@ def init_azan_scheduler():
             
             scheduler.start()
             app.loop.create_task(update_scheduler_jobs())
-            logger.info("🚀 Azan System V8 (All Fixes) Started.")
+            logger.info("🚀 Azan System V8 (Silent Fix) Started.")
             
     except Exception as e:
         logger.error(f"❌ Scheduler Init Failed: {e}")
