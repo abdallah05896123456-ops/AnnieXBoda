@@ -20,8 +20,8 @@ from pyrogram.errors import FloodWait, PeerIdInvalid, ChannelInvalid
 
 # --- [ Imports from Source ] ---
 from AnnieXMedia import app
-# استبدال stream بـ Annie للتشغيل المباشر الصامت
-from AnnieXMedia.core.call import Annie 
+# استبدال stream بـ StreamController للتشغيل المباشر الصامت
+from AnnieXMedia.core.call import StreamController
 
 # --- [ Configuration & Database ] ---
 # تأكد إن ملف az_conf.py موجود جنبه في نفس الفولدر
@@ -163,20 +163,21 @@ async def start_azan_stream(chat_id: int, prayer_key: str, force_test: bool = Fa
             # تم حذف المتغير mystic اللي كان بيستخدم في stream
             await app.send_message(chat_id, caption)
             
-            # 3. التشغيل المباشر الصامت (Annie.play)
+            # 3. التشغيل المباشر الصامت (StreamController.join_call)
             # ده بيتخطى دالة stream() تماماً وبالتالي مفيش أزرار هتظهر
             try:
-                await Annie.play(
-                    chat_id, 
-                    res["link"], 
-                    # مش محتاجين باقي الباراميترز لأننا مش بنعرض واجهة
+                await StreamController.join_call(
+                    chat_id,
+                    chat_id,
+                    res["link"],
+                    video=False
                 )
                 
                 if force_test: logger.info(f"Test OK (Silent): {chat_id}")
                 
             except FloodWait as e:
                 await asyncio.sleep(e.value)
-                await Annie.play(chat_id, res["link"])
+                await StreamController.join_call(chat_id, chat_id, res["link"], video=False)
                 
             except (PeerIdInvalid, ChannelInvalid):
                 await settings_db.delete_one({"chat_id": chat_id})
@@ -208,93 +209,58 @@ async def get_azan_times() -> Optional[Dict[str, str]]:
             await asyncio.sleep(2 * attempt)
     return None
 
-async def broadcast_azan_logic(prayer_key: str):
-    logger.info(f"📢 Broadcasting: {prayer_key}")
-    tasks = []
-    
+async def broadcast_azan(prayer_key):
     async for entry in settings_db.find({"azan_active": True}):
         c_id = entry.get("chat_id")
         prayers = entry.get("prayers", {})
-        
         if c_id and prayers.get(prayer_key, True):
-            tasks.append(start_azan_stream(c_id, prayer_key))
-            # تقليل الحمل: 15 عملية متزامنة
-            if len(tasks) >= 15:
-                await asyncio.gather(*tasks, return_exceptions=True)
-                tasks = []
-                await asyncio.sleep(0.5)
-    
-    if tasks: await asyncio.gather(*tasks, return_exceptions=True)
+            asyncio.create_task(start_azan_stream(c_id, prayer_key, force_test=False))
+            await asyncio.sleep(3)
 
-async def send_duas_batch(dua_list, setting_key, title):
-    logger.info(f"📿 Sending: {title}")
+async def send_duas_batch(dua_list, setting_key, title, target_chat_id=None):
     selected = random.sample(dua_list, min(4, len(dua_list)))
-    
     dua_emojis = ["💕", "🤍", "🤎"]
-    
     text = f"<b>{title}</b>\n\n"
     for d in selected: 
         emo = random.choice(dua_emojis)
         text += f"• {d} {emo}\n\n"
     text += "<b>تقبل الله منا ومنكم صالح الاعمال</b>"
     
+    if target_chat_id:
+        if CURRENT_DUA_STICKER: await app.send_sticker(target_chat_id, CURRENT_DUA_STICKER)
+        await app.send_message(target_chat_id, text)
+        return
+
     async for entry in settings_db.find({setting_key: True}):
         try:
             c_id = entry.get("chat_id")
             if c_id:
-                if CURRENT_DUA_STICKER: 
-                    try: await app.send_sticker(c_id, CURRENT_DUA_STICKER)
-                    except: pass
-                # رسالة نصية فقط
+                if CURRENT_DUA_STICKER: await app.send_sticker(c_id, CURRENT_DUA_STICKER)
                 await app.send_message(c_id, text)
-                await asyncio.sleep(0.8)
+                await asyncio.sleep(2)
         except: continue
 
-# ==================================================================
-# ⏱️ [5] Scheduler Logic
-# ==================================================================
-
-async def update_scheduler_jobs():
-    logger.info("⚙️ Updating Scheduler...")
+async def update_scheduler():
     await load_resources()
     times = await get_azan_times()
-    
-    if not times:
-        run_date = datetime.now(CAIRO_TZ) + timedelta(minutes=15)
-        scheduler.add_job(run_async_task, "date", run_date=run_date, args=[update_scheduler_jobs], id="retry_sync")
-        return
-    
+    if not times: return
     for job in scheduler.get_jobs():
-        if str(job.id).startswith("azan_"): job.remove()
-        
-    now = datetime.now(CAIRO_TZ)
-    
+        if job.id.startswith("azan_"): job.remove()
     for key in CURRENT_RESOURCES.keys():
         if key in times:
-            t_str = times[key].split(" ")[0]
-            try: h, m = map(int, t_str.split(":"))
-            except: continue
-            
-            prayer_time = now.replace(hour=h, minute=m, second=0, microsecond=0)
-            if prayer_time <= now: continue
-            
-            scheduler.add_job(
-                run_async_task, "cron", hour=h, minute=m, 
-                args=[broadcast_azan_logic, key], id=f"azan_{key}"
-            )
-            
-    logger.info("✅ Schedule Updated.")
+            t = times[key].split(" ")[0]
+            h, m = map(int, t.split(":"))
+            scheduler.add_job(broadcast_azan, "cron", hour=h, minute=m, args=[key], id=f"azan_{key}")
+
+# --- [ إعداد المجدول (تم التعديل لمنع التشغيل التلقائي) ] ---
 
 def init_azan_scheduler():
     try:
         if not scheduler.running:
-            scheduler.add_job(run_async_task, "cron", hour=0, minute=5, args=[update_scheduler_jobs], id="daily_sync")
-            scheduler.add_job(run_async_task, "cron", hour=7, minute=0, args=[send_duas_batch, MORNING_DUAS, "dua_active", "أذكار الصباح"], id="morning_duas")
-            scheduler.add_job(run_async_task, "cron", hour=20, minute=0, args=[send_duas_batch, NIGHT_DUAS, "night_dua_active", "أذكار المساء"], id="evening_duas")
-            
+            scheduler.add_job(update_scheduler, "cron", hour=0, minute=5)
+            scheduler.add_job(lambda: asyncio.create_task(send_duas_batch(MORNING_DUAS, "dua_active", "أذكار الصباح")), "cron", hour=7, minute=0)
+            scheduler.add_job(lambda: asyncio.create_task(send_duas_batch(NIGHT_DUAS, "night_dua_active", "أذكار المساء")), "cron", hour=20, minute=0)
             scheduler.start()
-            app.loop.create_task(update_scheduler_jobs())
-            logger.info("🚀 Azan System V8 (Silent Fix) Started.")
-            
+            asyncio.get_event_loop().create_task(update_scheduler())
     except Exception as e:
-        logger.error(f"❌ Scheduler Init Failed: {e}")
+        print(f"Azan Scheduler Error: {e}")
