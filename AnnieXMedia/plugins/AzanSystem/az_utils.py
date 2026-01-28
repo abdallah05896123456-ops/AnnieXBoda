@@ -1,6 +1,6 @@
 # Authored By Certified Coders © 2026
-# System: AnnieX Azan Core (Enterprise Edition V7)
-# Architecture: AsyncIO + Semaphore + Security Patch (check_rights added)
+# System: AnnieX Azan Core (Enterprise Edition V8 - Full Stable)
+# Contains: All Fixes + Original Texts + Admin Utilities + Async Safety
 
 import asyncio
 import aiohttp
@@ -37,18 +37,16 @@ logger = logging.getLogger("Azan_Maestro")
 
 # --- [ Constants & Concurrency Control ] ---
 CAIRO_TZ = pytz.timezone('Africa/Cairo')
-MAX_CONCURRENT_STREAMS = 10  # أقصى عدد للبث المتزامن لمنع اختناق السيرفر
+MAX_CONCURRENT_STREAMS = 10  # أقصى عدد للبث المتزامن
 stream_semaphore = asyncio.Semaphore(MAX_CONCURRENT_STREAMS)
 scheduler = AsyncIOScheduler(timezone=CAIRO_TZ)
 
 # ==================================================================
-# 🧠 [1] Decorators & Helpers (أدوات المطورين المحترفين)
+# 🧠 [1] Decorators & Helpers (أدوات المساعدة)
 # ==================================================================
 
 def retry_operation(max_retries=3, delay=2):
-    """
-    مُزخرف (Decorator) احترافي لإعادة محاولة أي دالة تفشل تلقائياً.
-    """
+    """مُزخرف (Decorator) لإعادة محاولة الدوال"""
     def decorator(func):
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
@@ -57,32 +55,37 @@ def retry_operation(max_retries=3, delay=2):
                     return await func(*args, **kwargs)
                 except Exception as e:
                     if attempt == max_retries:
-                        logger.error(f"❌ Function {func.__name__} failed after {max_retries} attempts: {e}")
+                        logger.error(f"❌ Function {func.__name__} failed: {e}")
                         raise e
-                    logger.warning(f"⚠️ Retry {attempt}/{max_retries} for {func.__name__}: {e}")
                     await asyncio.sleep(delay)
         return wrapper
     return decorator
 
 def run_async_task(async_func, *args, **kwargs):
-    """جسر الأمان لتنفيذ المهام داخل الـ Main Event Loop"""
+    """جسر الأمان لتنفيذ المهام"""
     try:
         loop = app.loop
         if loop.is_running():
             loop.create_task(async_func(*args, **kwargs))
         else:
-            logger.critical("🚨 Critical: Main Event Loop is NOT running!")
+            logger.critical("🚨 Main Event Loop is NOT running!")
     except Exception as e:
         logger.error(f"❌ Safety Bridge Error: {e}")
 
+def extract_vidid(url: str) -> Optional[str]:
+    """
+    استخراج معرف الفيديو من رابط يوتيوب.
+    (ضروري لعمل ملف الأدمن)
+    """
+    match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", url)
+    return match.group(1) if match else None
+
 # ==================================================================
-# 🔐 [2] Permission & Data Management (تم إضافة check_rights)
+# 🔐 [2] Permission & Data Management
 # ==================================================================
 
 async def check_rights(user_id: int, chat_id: int) -> bool:
-    """
-    التحقق من صلاحيات المستخدم (مشرف أو مطور).
-    """
+    """التحقق من صلاحيات المستخدم (مشرف أو مطور)"""
     if user_id in DEVS:
         return True
     try:
@@ -95,7 +98,7 @@ async def check_rights(user_id: int, chat_id: int) -> bool:
 
 @retry_operation(max_retries=3, delay=1)
 async def load_resources():
-    """تحميل الموارد مع نظام إعادة المحاولة الذكي"""
+    """تحميل الموارد"""
     stored_res = await resources_db.find_one({"type": "azan_data"})
     if stored_res:
         saved_data = stored_res.get("data", {})
@@ -110,10 +113,10 @@ async def load_resources():
         global CURRENT_DUA_STICKER
         CURRENT_DUA_STICKER = dua_res.get("sticker_id")
     
-    logger.info("✅ Resources synchronized successfully.")
+    logger.info("✅ Resources synchronized.")
 
 async def get_chat_doc(chat_id: int) -> Dict[str, Any]:
-    """جلب إعدادات المجموعة (RAM Cache First)"""
+    """جلب إعدادات المجموعة"""
     if chat_id in local_cache: 
         return local_cache[chat_id]
     
@@ -134,7 +137,7 @@ async def get_chat_doc(chat_id: int) -> Dict[str, Any]:
     return doc
 
 async def update_doc(chat_id: int, key: str, value: Any, sub_key: str = None):
-    """تحديث قاعدة البيانات والكاش المتزامن"""
+    """تحديث قاعدة البيانات"""
     try:
         if sub_key:
             await settings_db.update_one(
@@ -153,22 +156,17 @@ async def update_doc(chat_id: int, key: str, value: Any, sub_key: str = None):
             if chat_id in local_cache:
                 local_cache[chat_id][key] = value
     except Exception as e:
-        logger.error(f"Database Write Error for {chat_id}: {e}")
+        logger.error(f"DB Error {chat_id}: {e}")
 
 # ==================================================================
-# 🕌 [3] Streaming Logic (نظام البث الذكي والمحمي)
+# 🕌 [3] Streaming Logic (البث - بنفس النصوص القديمة)
 # ==================================================================
 
 async def start_azan_stream(chat_id: int, prayer_key: str, force_test: bool = False):
-    """
-    تشغيل الأذان باستخدام Semaphore للتحكم في الحمل الزائد.
-    """
-    # استخدام Semaphore لمنع الـ Flood عند تشغيل 500 مجموعة معاً
     async with stream_semaphore:
         res = CURRENT_RESOURCES[prayer_key]
         
-        # 1. إعداد الـ Packet الوهمي
-        # ⚠️ no_buttons: True -> يمنع ملف stream.py من طلب الأزرار وبالتالي يمنع الانهيار
+        # no_buttons: True -> يمنع الكراش في stream.py
         fake_result = {
             "link": res["link"], 
             "vidid": res["vidid"], 
@@ -176,10 +174,9 @@ async def start_azan_stream(chat_id: int, prayer_key: str, force_test: bool = Fa
             "duration_min": "05:00", 
             "thumb": f"https://img.youtube.com/vi/{res['vidid']}/hqdefault.jpg",
             "no_buttons": True,
-            "description": "Azan Broadcast System"
+            "description": "Azan Broadcast"
         }
         
-        # قواميس النصوص (للتوافق مع الـ Core)
         _ = {
             "queue_4": "<b>🔢 الترتيب: #{}</b>", 
             "stream_1": "<b>🔘 جاري التشغيل...</b>", 
@@ -188,17 +185,15 @@ async def start_azan_stream(chat_id: int, prayer_key: str, force_test: bool = Fa
         }
 
         try:
-            # 2. إرسال الاستيكر
             if res.get("sticker"):
                 try: await app.send_sticker(chat_id, res["sticker"])
                 except: pass
 
-            # 3. النص القديم (بالمللي)
+            # --- [ النص القديم ] ---
             caption = f"<b>حان الآن موعد اذان {res['name']}</b>\n<b>بالتوقيت المحلي لمدينة القاهره 🕌</b>"
             
             mystic = await app.send_message(chat_id, caption)
             
-            # 4. تشغيل البث (Force Play)
             try:
                 await stream(
                     _, 
@@ -212,43 +207,30 @@ async def start_azan_stream(chat_id: int, prayer_key: str, force_test: bool = Fa
                     streamtype="youtube", 
                     forceplay=True
                 )
-                if force_test: logger.info(f"Test Success: {chat_id}")
+                if force_test: logger.info(f"Test OK: {chat_id}")
                 
             except FloodWait as e:
-                logger.warning(f"⏳ FloodWait in {chat_id}: sleeping {e.value}s")
                 await asyncio.sleep(e.value)
                 await stream(_, mystic, app.id, fake_result, chat_id, "خدمة الأذان", chat_id, video=False, streamtype="youtube", forceplay=True)
                 
             except (PeerIdInvalid, ChannelInvalid):
-                # تنظيف تلقائي للمجموعات المحذوفة
                 await settings_db.delete_one({"chat_id": chat_id})
                 
             except Exception as e:
-                err_str = str(e)
-                if "CLOSE_BUTTON" in err_str or "EditMessage" in err_str:
-                    return # تجاهل الأخطاء غير المؤثرة
+                if "CLOSE_BUTTON" in str(e) or "EditMessage" in str(e): return
                 logger.error(f"Stream Error {chat_id}: {e}")
-                if force_test: await app.send_message(chat_id, f"Error: {e}")
 
         except Exception as e:
             logger.error(f"Access Error {chat_id}: {e}")
 
 # ==================================================================
-# 🌐 [4] API Manager (Aladhan API with High Resilience)
+# 🌐 [4] API Manager
 # ==================================================================
 
 async def get_azan_times() -> Optional[Dict[str, str]]:
-    """جلب المواقيت ببروتوكول HTTP قوي"""
     url = "http://api.aladhan.com/v1/timingsByCity"
-    params = {
-        "city": "Cairo",
-        "country": "Egypt",
-        "method": "5"
-    }
-    headers = {
-        "User-Agent": "Mozilla/5.0 (AnnieX-Bot/3.0)"
-    }
-    
+    params = {"city": "Cairo", "country": "Egypt", "method": "5"}
+    headers = {"User-Agent": "Mozilla/5.0 (AnnieX)"}
     timeout = aiohttp.ClientTimeout(total=15)
     
     for attempt in range(1, 4):
@@ -257,23 +239,13 @@ async def get_azan_times() -> Optional[Dict[str, str]]:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        timings = data["data"]["timings"]
-                        logger.info(f"✅ API Fetch Success (Attempt {attempt})")
-                        return timings
-                    else:
-                        logger.warning(f"⚠️ API Status {response.status} (Attempt {attempt})")
-        except Exception as e:
-            logger.warning(f"⚠️ API Exception: {e} (Attempt {attempt})")
+                        return data["data"]["timings"]
+        except Exception:
             await asyncio.sleep(2 * attempt)
-            
     return None
 
 async def broadcast_azan_logic(prayer_key: str):
-    """منطق البث الموزع (Distributed Broadcast)"""
-    start_time = time.time()
-    logger.info(f"📢 Starting Broadcast Cycle for: {prayer_key}")
-    
-    count = 0
+    logger.info(f"📢 Broadcasting: {prayer_key}")
     tasks = []
     
     async for entry in settings_db.find({"azan_active": True}):
@@ -281,29 +253,20 @@ async def broadcast_azan_logic(prayer_key: str):
         prayers = entry.get("prayers", {})
         
         if c_id and prayers.get(prayer_key, True):
-            # نستخدم run_async_task هنا لضمان التنفيذ
             tasks.append(start_azan_stream(c_id, prayer_key))
-            count += 1
-            
-            # تنفيذ على دفعات (Batches) لمنع استهلاك الرام
-            if len(tasks) >= 20:
+            if len(tasks) >= 15:
                 await asyncio.gather(*tasks, return_exceptions=True)
                 tasks = []
                 await asyncio.sleep(0.5)
     
-    # تنفيذ المتبقي
-    if tasks:
-        await asyncio.gather(*tasks, return_exceptions=True)
-        
-    duration = time.time() - start_time
-    logger.info(f"🏁 Broadcast {prayer_key} Completed. Targets: {count}, Duration: {duration:.2f}s")
+    if tasks: await asyncio.gather(*tasks, return_exceptions=True)
 
 async def send_duas_batch(dua_list, setting_key, title):
-    """نشر الأذكار (بالصيغة القديمة والإيموجي المحدد)"""
-    logger.info(f"📿 Broadcasting {title}...")
-    
+    logger.info(f"📿 Sending: {title}")
     selected = random.sample(dua_list, min(4, len(dua_list)))
-    dua_emojis = ["💕", "🤍", "🤎"] # الإيموجي الأصلي
+    
+    # --- [ الإيموجي القديم ] ---
+    dua_emojis = ["💕", "🤍", "🤎"]
     
     text = f"<b>{title}</b>\n\n"
     for d in selected: 
@@ -323,84 +286,50 @@ async def send_duas_batch(dua_list, setting_key, title):
         except: continue
 
 # ==================================================================
-# ⏱️ [5] Scheduler Logic (The Brain)
+# ⏱️ [5] Scheduler Logic
 # ==================================================================
 
 async def update_scheduler_jobs():
-    """تحديث مهام المجدول اليومية"""
-    logger.info("⚙️ Optimizing Daily Schedule...")
-    
+    logger.info("⚙️ Updating Scheduler...")
     await load_resources()
     times = await get_azan_times()
     
     if not times:
-        logger.error("❌ Critical: Failed to fetch prayer times. Retrying in 15m.")
         run_date = datetime.now(CAIRO_TZ) + timedelta(minutes=15)
         scheduler.add_job(run_async_task, "date", run_date=run_date, args=[update_scheduler_jobs], id="retry_sync")
         return
     
-    # تنظيف المهام القديمة
     for job in scheduler.get_jobs():
         if str(job.id).startswith("azan_"): job.remove()
         
     now = datetime.now(CAIRO_TZ)
-    scheduled_count = 0
     
     for key in CURRENT_RESOURCES.keys():
         if key in times:
             t_str = times[key].split(" ")[0]
-            try:
-                h, m = map(int, t_str.split(":"))
-            except ValueError:
-                continue
+            try: h, m = map(int, t_str.split(":"))
+            except: continue
             
             prayer_time = now.replace(hour=h, minute=m, second=0, microsecond=0)
-            
             if prayer_time <= now: continue
             
-            # 🔥 الجدولة الآمنة
             scheduler.add_job(
-                run_async_task, 
-                "cron", 
-                hour=h, 
-                minute=m, 
-                args=[broadcast_azan_logic, key], 
-                id=f"azan_{key}"
+                run_async_task, "cron", hour=h, minute=m, 
+                args=[broadcast_azan_logic, key], id=f"azan_{key}"
             )
-            scheduled_count += 1
             
-    logger.info(f"✅ Successfully scheduled {scheduled_count} prayers for today.")
+    logger.info("✅ Schedule Updated.")
 
 def init_azan_scheduler():
-    """تهيئة النظام (Entry Point)"""
     try:
         if not scheduler.running:
-            # 1. المزامنة اليومية (12:05 AM)
-            scheduler.add_job(
-                run_async_task, "cron", hour=0, minute=5,
-                args=[update_scheduler_jobs], id="daily_sync"
-            )
-            
-            # 2. أذكار الصباح (07:00 AM)
-            scheduler.add_job(
-                run_async_task, "cron", hour=7, minute=0,
-                args=[send_duas_batch, MORNING_DUAS, "dua_active", "أذكار الصباح"],
-                id="morning_duas"
-            )
-            
-            # 3. أذكار المساء (08:00 PM)
-            scheduler.add_job(
-                run_async_task, "cron", hour=20, minute=0,
-                args=[send_duas_batch, NIGHT_DUAS, "night_dua_active", "أذكار المساء"],
-                id="evening_duas"
-            )
+            scheduler.add_job(run_async_task, "cron", hour=0, minute=5, args=[update_scheduler_jobs], id="daily_sync")
+            scheduler.add_job(run_async_task, "cron", hour=7, minute=0, args=[send_duas_batch, MORNING_DUAS, "dua_active", "أذكار الصباح"], id="morning_duas")
+            scheduler.add_job(run_async_task, "cron", hour=20, minute=0, args=[send_duas_batch, NIGHT_DUAS, "night_dua_active", "أذكار المساء"], id="evening_duas")
             
             scheduler.start()
-            
-            # Trigger immediate update safely
             app.loop.create_task(update_scheduler_jobs())
-            
-            logger.info("🚀 AnnieX Azan System V7 [Enterprise] Started.")
+            logger.info("🚀 Azan System V8 (All Fixes) Started.")
             
     except Exception as e:
-        logger.critical(f"❌ Scheduler Initialization Failed: {e}")
+        logger.error(f"❌ Scheduler Init Failed: {e}")
