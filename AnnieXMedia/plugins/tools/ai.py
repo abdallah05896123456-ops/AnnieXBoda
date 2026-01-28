@@ -1,7 +1,6 @@
-# Authored By Certified Coders © 2026 (patched)
-# System: Local AI (Debug Mode) | Full Error Tracing
-# الـمـحـرك: Ollama (Qwen 2.5 32B) - نـظـام كـشـف الـأخـطـاء الـدقـيـق
-# ملاحظة: ملف مستقل تماماً — لا علاقة له بالأذان أو دخول المساعد.
+# Authored By Certified Coders © 2026 (streaming + performance)
+# System: Local AI (Debug Mode) | Streaming + Low-latency improvements
+# المحرك: Ollama (Qwen 2.5 32B)
 
 import asyncio
 import aiohttp
@@ -10,7 +9,8 @@ import os
 import logging
 import traceback
 import re
-from typing import Any, Dict, List, Optional
+import time
+from typing import Any, Dict, List, Optional, Callable
 
 from pyrogram import filters, enums
 from pyrogram.types import (
@@ -24,23 +24,32 @@ from AnnieXMedia import app
 from config import OWNER_ID
 
 # -------------------------
-# إعدادات النظام (قابلة للتعديل عبر متغيرات البيئة)
+# إعدادات النظام (قابلة للتعديل عبر المتغيرات البيئية)
 # -------------------------
 OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://127.0.0.1:11434/api/chat")
 DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:32b")
+# timeout شامل (ثواني) للاتصال النهائي
+DEFAULT_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "30"))
+# المهلة لانتظار الشظية الأولى (ثواني) — لتقليل "الغياب"
+FIRST_CHUNK_TIMEOUT = float(os.getenv("OLLAMA_FIRST_CHUNK_TIMEOUT", "2.5"))
+# حجم buffer للقراءة
+CHUNK_SIZE = int(os.getenv("OLLAMA_CHUNK_SIZE", "2048"))
+# حد التاريخ في الذاكرة
+MAX_HISTORY = int(os.getenv("AI_MAX_HISTORY", "8"))
+# كاش قصيرة (ثواني)
+CACHE_TTL = int(os.getenv("AI_CACHE_TTL", "8"))
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("AnnieX_AI")
+logger = logging.getLogger("AnnieX_AI_Stream")
 
-# SUDO_USERS يجب أن يكون قائمة قابلة للتمرير إلى filters.user
+# إعداد SUDO_USERS
 if isinstance(OWNER_ID, (list, tuple, set)):
     SUDO_USERS = list(OWNER_ID)
 else:
     SUDO_USERS = [OWNER_ID]
 
 AI_STATUS: bool = True
-AI_MODE: str = "عـام"  # "تـقـنـي" أو "عـام"
-MAX_HISTORY: int = 8
+AI_MODE: str = "عـام"
 user_history: Dict[int, List[Dict[str, str]]] = {}
 PERMANENT_USERS: set = set()
 
@@ -48,8 +57,11 @@ STATE_DIR = "ai_data"
 STATE_FILE = os.path.join(STATE_DIR, "ollama_settings.json")
 os.makedirs(STATE_DIR, exist_ok=True)
 
+# بسيط ليميت للتزامن (لتفادي طلبات متفجرة للموديل)
+REQUEST_SEMAPHORE = asyncio.Semaphore(int(os.getenv("AI_CONCURRENCY", "6")))
+
 # -------------------------
-# دوال الحفظ والاستعادة
+# حفظ واسترجاع حالة
 # -------------------------
 def load_state() -> None:
     global PERMANENT_USERS, AI_STATUS, AI_MODE
@@ -80,15 +92,11 @@ def save_state() -> None:
 load_state()
 
 # -------------------------
-# دوال مساعدة لاستخراج نص من استجابة Ollama
+# استخراج نص من JSON (متعدد الأشكال)
 # -------------------------
 def extract_text_from_ollama_json(data: Any) -> str:
-    """
-    يحاول استخراج نص من صيغ JSON مختلفة قد تُعيدها خدمة Ollama.
-    """
     try:
         if isinstance(data, dict):
-            # شكل شائع: {"message": {"content": "..."}}
             if "message" in data and isinstance(data["message"], dict):
                 cont = data["message"].get("content")
                 if isinstance(cont, str) and cont.strip():
@@ -97,24 +105,18 @@ def extract_text_from_ollama_json(data: Any) -> str:
                     parts = []
                     for p in cont:
                         if isinstance(p, dict):
-                            # some formats may use {"text": "..."}
                             txt = p.get("text") or p.get("content")
                             if isinstance(txt, str):
                                 parts.append(txt)
                         elif isinstance(p, str):
                             parts.append(p)
                     return " ".join(parts).strip()
-
-            # أحوال بديلة
             for key in ("response", "output", "text"):
                 if key in data and isinstance(data[key], str) and data[key].strip():
                     return data[key].strip()
-
-            # choices -> [{ "message": {"content": ...} }]
             if "choices" in data and isinstance(data["choices"], list) and data["choices"]:
                 first = data["choices"][0]
                 if isinstance(first, dict):
-                    # try nested message.content
                     msg = first.get("message") or first.get("delta") or first.get("output")
                     if isinstance(msg, dict):
                         cont = msg.get("content") or msg.get("text")
@@ -123,8 +125,6 @@ def extract_text_from_ollama_json(data: Any) -> str:
                     txt = first.get("text")
                     if isinstance(txt, str) and txt.strip():
                         return txt.strip()
-
-            # محاولة العثور على أول سترينغ في البنية كـ fallback
             def find_str(obj):
                 if isinstance(obj, str) and obj.strip():
                     return obj.strip()
@@ -139,7 +139,6 @@ def extract_text_from_ollama_json(data: Any) -> str:
                         if s:
                             return s
                 return None
-
             found = find_str(data)
             return found or ""
         if isinstance(data, str):
@@ -149,103 +148,235 @@ def extract_text_from_ollama_json(data: Any) -> str:
     return ""
 
 # -------------------------
-# استدعاء محرك Ollama (شبكي) مع تحمّل أخطاء قوي
+# فحص العربية
 # -------------------------
-async def ask_ollama(user_id: int, prompt: str) -> str:
+ARABIC_RE = re.compile(r'[\u0600-\u06FF]')
+def looks_arabic_enough(text: str, min_chars: int = 2) -> bool:
+    if not text:
+        return False
+    return len(ARABIC_RE.findall(text)) >= min_chars
+
+# -------------------------
+# كاش قصيرة للردود الشائعة
+# -------------------------
+class SimpleCache:
+    def __init__(self):
+        self._data = {}  # key -> (expiry_ts, value)
+    def get(self, key):
+        item = self._data.get(key)
+        if not item: return None
+        expiry, val = item
+        if time.time() > expiry:
+            del self._data[key]
+            return None
+        return val
+    def set(self, key, val, ttl=CACHE_TTL):
+        self._data[key] = (time.time() + ttl, val)
+
+CACHE = SimpleCache()
+
+# -------------------------
+# دالة streaming إلى Ollama
+# on_update: coroutine that receives partial text updates (string)
+# returns final text (string)
+# -------------------------
+async def ask_ollama_stream(
+    user_id: int,
+    prompt: str,
+    on_update: Optional[Callable[[str], Any]] = None
+) -> str:
     """
-    يرسل الطلب إلى Ollama ويحاول استخراج الرد مع معالجة الأخطاء.
+    يرسل الطلب إلى Ollama مع تهيئة للـ stream. يدعم:
+    - ردود جزئية فورية (on_update callback)
+    - إعادة محاولة صارمة لو الرد الأول غير عربي
+    - كاش قصير للطلبات المتكررة
     """
-    # system message حسب الوضع
+    cache_key = f"{user_id}:{prompt}"
+    cached = CACHE.get(cache_key)
+    if cached:
+        return cached
+
+    # system message
     if AI_MODE == "تـقـنـي":
         sys_content = (
             "You are a Genius Senior Developer and a Hacker. "
             "You write complex, flawless, production-ready code. "
-            "You speak Egyptian Arabic comfortably."
+            "You speak Egyptian Arabic comfortably. "
+            "Answer in Arabic (Egyptian dialect OK) unless user asks otherwise."
         )
     else:
         sys_content = (
             "You are a smart, witty Egyptian companion. "
-            "You speak pure Egyptian slang (Masri). "
-            "You understand deep sarcasm and street vibes."
+            "You speak pure Egyptian slang (Masri) when appropriate. "
+            "You must answer in Arabic only unless the user explicitly requests another language."
         )
 
     messages = [{"role": "system", "content": sys_content}]
-    history = user_history.get(user_id, [])
+    history = user_history.get(user_id, [])[-MAX_HISTORY:]
     for item in history:
-        try:
-            u = item.get("u", "")
-            a = item.get("a", "")
-            if u:
-                messages.append({"role": "user", "content": u})
-            if a:
-                messages.append({"role": "assistant", "content": a})
-        except:
-            continue
+        u = item.get("u", "")
+        a = item.get("a", "")
+        if u: messages.append({"role": "user", "content": u})
+        if a: messages.append({"role": "assistant", "content": a})
     messages.append({"role": "user", "content": prompt})
 
     payload = {
         "model": DEFAULT_MODEL,
         "messages": messages,
-        "stream": False,
+        "stream": True,
         "options": {
-            "temperature": 0.7,
-            "num_ctx": 2048
+            "temperature": float(os.getenv("OLLAMA_TEMP", "0.15")),
+            "top_p": 0.9,
+            "max_tokens": int(os.getenv("OLLAMA_MAX_TOKENS", "1024"))
         }
     }
 
-    timeout = aiohttp.ClientTimeout(total=300)  # 5 دقائق
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(OLLAMA_API_URL, json=payload) as resp:
-                data = None
-                text_body = None
-                try:
-                    data = await resp.json(content_type=None)
-                except Exception:
-                    try:
-                        text_body = await resp.text()
-                    except Exception:
-                        text_body = ""
+    headers = {"Content-Type": "application/json"}
+    configured_timeout = int(os.getenv("OLLAMA_TIMEOUT", str(DEFAULT_TIMEOUT)))
 
-                if resp.status == 200:
-                    # نبدأ بمحاولة استخراج نص من الـ JSON
-                    if data is not None:
-                        extracted = extract_text_from_ollama_json(data)
-                        if extracted:
-                            # تحديث الذاكرة
-                            hist = user_history.get(user_id, [])
-                            hist.append({"u": prompt, "a": extracted})
-                            if len(hist) > MAX_HISTORY:
-                                hist = hist[-MAX_HISTORY:]
-                            user_history[user_id] = hist
-                            return extracted
-                    # fallback لنص خام إن وجد
-                    if text_body:
-                        reply = text_body.strip()
-                        if reply:
-                            hist = user_history.get(user_id, [])
-                            hist.append({"u": prompt, "a": reply})
-                            if len(hist) > MAX_HISTORY:
-                                hist = hist[-MAX_HISTORY:]
-                            user_history[user_id] = hist
-                            return reply
-                    return "⚠️ الموديل رد ولكن لم يتم استخراج رد صالح."
-                else:
-                    body_snippet = (text_body or json.dumps(data or {}, ensure_ascii=False))[:800]
-                    return f"❌ HTTP {resp.status} من خدمة الذكاء.\n{body_snippet}"
-    except aiohttp.ClientConnectorError as e:
-        logger.debug(f"Ollama connection error: {e}")
-        return "🔌 خطأ اتصال: لا يمكن الوصول إلى خدمة Ollama (127.0.0.1:11434). تأكد من تشغيل الخدمة."
-    except asyncio.TimeoutError:
-        return "⏰ مهلة الاتصال انتهت (300s). الخدمة بطيئة أو غير متاحة."
-    except Exception as e:
-        tb = traceback.format_exc()
-        logger.error(f"ask_ollama unexpected: {e}\n{tb}")
-        truncated = tb[:500].replace("\n", " ")
-        return f"💀 خطأ داخلي في الذكاء:\n`{str(e)}`\n{truncated}"
+    # concurrency limiter
+    async with REQUEST_SEMAPHORE:
+        try:
+            timeout = aiohttp.ClientTimeout(total=configured_timeout)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                # POST with streaming
+                async with session.post(OLLAMA_API_URL, json=payload, headers=headers) as resp:
+                    if resp.status != 200:
+                        # try to get text body
+                        try:
+                            tb = await resp.text()
+                        except:
+                            tb = ""
+                        return f"❌ HTTP {resp.status} من خدمة الذكاء.\n{tb[:800]}"
+
+                    # stream reading
+                    buf = ""
+                    final_text = ""
+                    first_chunk_received = False
+                    start_time = time.time()
+                    # create task to read chunks
+                    async for chunk in resp.content.iter_chunked(CHUNK_SIZE):
+                        if not chunk:
+                            continue
+                        try:
+                            decoded = chunk.decode(errors="ignore")
+                        except:
+                            decoded = str(chunk)
+                        buf += decoded
+
+                        # try split by newline — common streaming format: json per line
+                        lines = buf.splitlines()
+                        # keep last partial in buf
+                        if not buf.endswith("\n"):
+                            buf = lines.pop()  # last part
+                        else:
+                            buf = ""
+
+                        updated = False
+                        for line in lines:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            # many streaming APIs send plain text or JSON chunks
+                            # try JSON
+                            parsed = None
+                            if (line.startswith("{") and line.endswith("}")) or (line.startswith("[") and line.endswith("]")):
+                                try:
+                                    parsed = json.loads(line)
+                                except:
+                                    parsed = None
+                            # fallback: sometimes plain text comes
+                            candidate = ""
+                            if parsed is not None:
+                                candidate = extract_text_from_ollama_json(parsed) or ""
+                            else:
+                                candidate = line
+
+                            if not candidate:
+                                continue
+
+                            # append to final_text
+                            # avoid duplicate appends: append only new suffix
+                            if not final_text or not candidate.endswith(final_text):
+                                # Simple append heuristic:
+                                if final_text and candidate.startswith(final_text):
+                                    new_part = candidate[len(final_text):]
+                                else:
+                                    new_part = candidate
+                                final_text += new_part
+                                updated = True
+
+                        # call on_update when we have something new (first chunk or subsequent)
+                        if updated:
+                            first_chunk_received = True
+                            if on_update:
+                                try:
+                                    await on_update(final_text)
+                                except Exception:
+                                    # don't fail on callback error
+                                    logger.debug("on_update callback error", exc_info=True)
+
+                        # quick-break: if we've been streaming for long, continue reading; loop will finish when connection closes
+                    # end stream loop
+
+                    # if nothing from stream (some servers don't stream), try fallback to full json body
+                    if not final_text:
+                        try:
+                            data = await resp.json(content_type=None)
+                            final_text = extract_text_from_ollama_json(data) or ""
+                        except Exception:
+                            try:
+                                final_text = (await resp.text() or "").strip()
+                            except:
+                                final_text = ""
+
+                    final_text = final_text.strip() or "⚠️ الموديل رد ولكن لم يتم استخراج رد صالح."
+                    # Arabic check and one strict retry if needed
+                    if not looks_arabic_enough(final_text, min_chars=2):
+                        # strict retry (non-stream) with explicit Arabic system
+                        strict_sys = sys_content + " ملاحظة: أجب الآن **بالعربية فقط**، بدون أي كلمات بلغات أخرى."
+                        s_payload = {
+                            "model": DEFAULT_MODEL,
+                            "messages": [{"role": "system", "content": strict_sys}, {"role": "user", "content": prompt}],
+                            "stream": False,
+                            "options": {"temperature": 0.1, "max_tokens": payload["options"]["max_tokens"]}
+                        }
+                        try:
+                            async with session.post(OLLAMA_API_URL, json=s_payload, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as r2:
+                                if r2.status == 200:
+                                    try:
+                                        d2 = await r2.json(content_type=None)
+                                        final2 = extract_text_from_ollama_json(d2) or ""
+                                    except:
+                                        final2 = (await r2.text()) or ""
+                                    final2 = final2.strip()
+                                    if final2 and looks_arabic_enough(final2, min_chars=2):
+                                        final_text = final2
+                        except Exception as e:
+                            logger.debug(f"Strict retry failed: {e}")
+
+                    # store in cache and history
+                    CACHE.set(cache_key, final_text)
+                    hist = user_history.get(user_id, [])
+                    hist.append({"u": prompt, "a": final_text})
+                    if len(hist) > MAX_HISTORY:
+                        hist = hist[-MAX_HISTORY:]
+                    user_history[user_id] = hist
+                    return final_text
+
+        except aiohttp.ClientConnectorError as e:
+            logger.debug(f"Ollama connection error: {e}")
+            return "🔌 خطأ اتصال: لا يمكن الوصول إلى خدمة Ollama (127.0.0.1:11434). تأكد من تشغيل الخدمة."
+        except asyncio.TimeoutError:
+            return f"⏰ مهلة الاتصال انتهت ({configured_timeout}s). الخدمة بطيئة أو غير متاحة."
+        except Exception as e:
+            tb = traceback.format_exc()
+            logger.error(f"ask_ollama_stream unexpected: {e}\n{tb}")
+            truncated = tb[:500].replace("\n", " ")
+            return f"💀 خطأ داخلي في الذكاء:\n`{str(e)}`\n{truncated}"
 
 # -------------------------
-# لوحة تحكم المطور (Debug Panel)
+# لوحة تحكم المطور (نفس نصوصك)
 # -------------------------
 @app.on_message(filters.regex(r"^(كيب الذكاء|كيب ذكاء|اوامر الذكاء)$") & filters.user(SUDO_USERS))
 async def ai_control_panel(_, m: Message):
@@ -299,7 +430,6 @@ async def ai_panel_callback(_, q: CallbackQuery):
             user_history.clear()
             await q.answer("تم تنظيف الذاكرة.", show_alert=True)
 
-        # تحديث الأزرار
         st_txt = "مـفـعـل" if AI_STATUS else "مـعـطـل"
         mode_txt = "تـقـنـي" if AI_MODE == "تـقـنـي" else "عـام"
         new_kb = InlineKeyboardMarkup([
@@ -320,7 +450,7 @@ async def ai_panel_callback(_, q: CallbackQuery):
         logger.error(f"ai_panel_callback error: {e}")
 
 # -------------------------
-# أوامر المستخدمين لإدارة الحالة
+# أوامر المستخدمين لإدارة الحالة (نفس نصوصك)
 # -------------------------
 @app.on_message(filters.regex(r"^(ذكاء كفاية|خروج من الذكاء|انهاء|كفاية)$") & ~filters.bot)
 async def user_exit_ai(_, m: Message):
@@ -348,7 +478,7 @@ async def user_clear_history(_, m: Message):
         logger.error(f"user_clear_history error: {e}")
 
 # -------------------------
-# المعالج الرئيسي للذكاء
+# المعالج الرئيسي — يستخدم streaming callback لتحسين سرعة الإحساس
 # -------------------------
 @app.on_message((filters.text) & ~filters.bot, group=60)
 async def main_ai_handler(client, m: Message):
@@ -362,7 +492,6 @@ async def main_ai_handler(client, m: Message):
         if not text:
             return
 
-        # الحصول على id البوت بطريقة آمنة
         try:
             bot_me = client.me or await client.get_me()
             bot_id = getattr(bot_me, "id", None)
@@ -385,13 +514,14 @@ async def main_ai_handler(client, m: Message):
             await m.reply_text("نعم؟")
             return
 
-        # أمر سري للمطور لتفعيل الوضع الدائم
+        # تفعيل الوضع الدائم للمطور (سري)
         if match_trigger and uid in SUDO_USERS and "افتح دائم" in prompt:
             PERMANENT_USERS.add(uid)
             save_state()
             await m.reply_text("✅ تم تفعيل الوضع الدائم لك.")
             return
 
+        # إرسال حالة "يكتب" للمستخدم
         try:
             await client.send_chat_action(m.chat.id, enums.ChatAction.TYPING)
         except:
@@ -403,8 +533,26 @@ async def main_ai_handler(client, m: Message):
         except:
             wait_msg = None
 
-        reply = await ask_ollama(uid, prompt)
+        # on_update callback يُرسل أجزاء الرد إلى wait_msg (إن وُجد)
+        async def on_update_partial(partial_text: str):
+            nonlocal wait_msg
+            # نرسل فقط لو في تغيير حقيقي أو طول كافي
+            if not wait_msg:
+                return
+            try:
+                # محدودية الطول: نرسل أول 1024 حرف لتفادي مشكلات تحرير طويلة جداً
+                preview = partial_text.strip()
+                if len(preview) > 1500:
+                    preview = preview[:1500] + "..."
+                await wait_msg.edit(preview)
+            except Exception:
+                # لا نرمي الخطأ لو التحرير فشل
+                pass
 
+        # استدعاء المحرك مع الاستريم
+        reply = await ask_ollama_stream(uid, prompt, on_update=on_update_partial)
+
+        # أخيراً: تعديل/ارسال الرسالة بالرد النهائي
         try:
             if wait_msg:
                 await wait_msg.edit(reply)
