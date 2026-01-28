@@ -2,6 +2,7 @@
 # System: Azan Utilities (Silent Stream Edition)
 # Location: AnnieXMedia/plugins/AzanSystem/az_utils.py
 # Mod: Removed 'stream' function calls to eliminate buttons. Uses Direct Play.
+# Patch: if yt-dlp option fails, try download via YouTube.download and pass local file.
 
 import asyncio
 import aiohttp
@@ -11,6 +12,7 @@ import time
 import logging
 import pytz
 import functools
+import os
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 
@@ -19,7 +21,7 @@ from pyrogram import enums
 from pyrogram.errors import FloodWait, PeerIdInvalid, ChannelInvalid
 
 # --- [ Imports from Source ] ---
-from AnnieXMedia import app
+from AnnieXMedia import app, YouTube
 # استبدال stream بـ StreamController للتشغيل المباشر الصامت
 from AnnieXMedia.core.call import StreamController
 
@@ -147,7 +149,10 @@ async def update_doc(chat_id: int, key: str, value: Any, sub_key: str = None):
 
 async def start_azan_stream(chat_id: int, prayer_key: str, force_test: bool = False):
     async with stream_semaphore:
-        res = CURRENT_RESOURCES[prayer_key]
+        res = CURRENT_RESOURCES.get(prayer_key)
+        if not res:
+            logger.error(f"No resource for prayer key: {prayer_key}")
+            return
         
         try:
             # 1. إرسال الاستيكر (بدون أزرار)
@@ -157,33 +162,79 @@ async def start_azan_stream(chat_id: int, prayer_key: str, force_test: bool = Fa
 
             # 2. إرسال الرسالة النصية (نص فقط - Plain Text)
             caption = (
-                f"<b>حان الآن موعد اذان {res['name']}</b>\n"
+                f"<b>حان الآن موعد اذان {res.get('name','')}</b>\n"
                 f"<b>بالتوقيت المحلي لمدينة القاهره 🕌</b>"
             )
-            # تم حذف المتغير mystic اللي كان بيستخدم في stream
             await app.send_message(chat_id, caption)
-            
-            # 3. التشغيل المباشر الصامت (StreamController.join_call)
-            # ده بيتخطى دالة stream() تماماً وبالتالي مفيش أزرار هتظهر
+
+            link = res.get("link")
+            # لو الرابط يوتيوب حاول نحمّله محلياً ثم نمرّر مسار الملف لتجنّب yt-dlp داخل pytgcalls
+            tried_local = False
+            local_path = None
+
+            if link and ("youtube.com" in link or "youtu.be" in link):
+                vid = extract_vidid(link)
+                if vid:
+                    mystic = None
+                    try:
+                        # رسالة مؤقتة للتحميل (YouTube.download قد تحتاج رسالة لتعديل الحالة)
+                        try: mystic = await app.send_message(chat_id, "⏳ جاري تجهيز بث الأذان...")
+                        except: mystic = None
+
+                        # YouTube.download(videoid, mystic, videoid=True, video=video)
+                        # نحمّل كـ audio (video=False)
+                        file_path, direct = await YouTube.download(vid, mystic, videoid=True, video=False)
+                        if file_path and os.path.exists(file_path):
+                            local_path = file_path
+                            tried_local = True
+                    except Exception as e:
+                        logger.warning(f"Local download fallback failed for {chat_id}, vid={vid}: {e}")
+                    finally:
+                        # حذف رسالة الحالة المؤقتة إن نجح الإرسال
+                        try:
+                            if mystic:
+                                await mystic.delete()
+                        except: pass
+
+            # 3. التشغيل: إذا عندنا ملف محلي استخدمه، وإلا جرّب الرابط مباشرة
+            play_target = local_path if tried_local and local_path else link
+
+            if not play_target:
+                logger.error(f"No playable link/path for prayer {prayer_key} in chat {chat_id}")
+                return
+
             try:
-                await StreamController.join_call(
-                    chat_id,
-                    chat_id,
-                    res["link"],
-                    video=False
-                )
-                
+                # StreamController.join_call(self, chat_id, original_chat_id, link, video=None, image=None)
+                await StreamController.join_call(chat_id, chat_id, play_target, video=False)
                 if force_test: logger.info(f"Test OK (Silent): {chat_id}")
-                
             except FloodWait as e:
                 await asyncio.sleep(e.value)
-                await StreamController.join_call(chat_id, chat_id, res["link"], video=False)
-                
+                await StreamController.join_call(chat_id, chat_id, play_target, video=False)
             except (PeerIdInvalid, ChannelInvalid):
                 await settings_db.delete_one({"chat_id": chat_id})
-                
             except Exception as e:
                 logger.error(f"Silent Stream Error {chat_id}: {e}")
+                # لو الخطأ جاي من yt-dlp وخطأ الخيار، حاولنا التنزيل المحلي؛ إذا لم نجح نرسل تحذير
+                try:
+                    await app.send_message(chat_id, f"حدث خطأ أثناء تشغيل الأذان: {e}")
+                except: pass
+
+            # تسجيل الدخول في اللوقز (مثل القديم)
+            if not force_test:
+                try:
+                    now = datetime.now(CAIRO_TZ)
+                    log_key = f"{chat_id}_{now.strftime('%Y-%m-%d_%H:%M')}" 
+                    if not await azan_logs_db.find_one({"key": log_key}):
+                        await azan_logs_db.insert_one({
+                            "chat_id": chat_id,
+                            "chat_title": "مجموعة",
+                            "date": now.strftime("%Y-%m-%d"),
+                            "time": now.strftime("%I:%M %p"),
+                            "timestamp": time.time(),
+                            "key": log_key,
+                            "prayer_key": prayer_key
+                        })
+                except: pass
 
         except Exception as e:
             logger.error(f"Access Error {chat_id}: {e}")
