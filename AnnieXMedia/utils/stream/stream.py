@@ -1,6 +1,11 @@
+# Authored By Certified Coders © 2026
+# System: Stream Controller (Smart Azan Patch Edition)
+# الوظيفة: تشغيل الوسائط مع دعم خاص لوضع "عدم الإزعاج" للأذان
+
 import asyncio
 import os
 from typing import Union
+from random import randint
 
 from pyrogram.types import InlineKeyboardMarkup
 from pyrogram.errors import FloodWait
@@ -21,6 +26,7 @@ from AnnieXMedia.utils.thumbnails import get_thumb
 from AnnieXMedia.utils.errors import capture_internal_err
 
 async def safe_delete(message):
+    """حذف الرسائل بأمان دون إيقاف الكود"""
     try:
         await message.delete()
     except:
@@ -46,16 +52,23 @@ async def stream(
     forceplay = bool(forceplay)
     is_video = True if video else False
 
-    # --- [ تعديل نظام الأذان الذكي ] ---
-    # التحقق مما إذا كان الأذان يطلب إخفاء الأزرار (يأتي من az_utils.py)
-    should_hide_buttons = result.get("no_buttons") is True if isinstance(result, dict) else False
+    # --- [ 🚨 المنطقة الذكية: كشف وضع الأذان ] ---
+    # نتحقق هل النتيجة تحتوي على أمر بإخفاء الأزرار؟
+    # هذا يأتي من ملف az_utils.py عند تشغيل الأذان
+    should_hide_buttons = False
+    if isinstance(result, dict) and result.get("no_buttons"):
+        should_hide_buttons = True
 
-    # دالة مساعدة لاختيار وضع الأزرار بناءً على الإعدادات
-    def get_smart_markup(buttons_list):
+    # دالة ذكية لتوليد الكيبورد (أو إلغائه)
+    def resolve_markup(markup_func, *args):
         if should_hide_buttons:
-            return None # لا ترسل أي كيبورد
-        return InlineKeyboardMarkup(buttons_list) # الوضع الطبيعي
+            return None  # 🟢 للأذان: لا ترسل أزرار (يمنع KeyError ويمنع العبث)
+        try:
+            return InlineKeyboardMarkup(markup_func(*args)) # 🟡 للأغاني: أرسل الأزرار عادي
+        except Exception:
+            return None # 🔴 لو حصل خطأ في الترجمة، اكمل بدون أزرار
 
+    # إذا كان تشغيل إجباري (مثل الأذان)، نوقف أي شيء شغال حالياً
     if forceplay:
         await StreamController.force_stop_stream(chat_id)
 
@@ -128,8 +141,6 @@ async def stream(
                 )
                 
                 img = await get_thumb(vidid)
-                button = stream_markup(_, chat_id)
-                
                 await safe_delete(mystic)
                 
                 caption_text = "🧚 " + _["stream_1"].format(
@@ -139,12 +150,11 @@ async def stream(
                     user_name,
                 )
                 try:
-                    # تطبيق الفلتر الذكي
                     run = await app.send_photo(
                         original_chat_id,
                         photo=img,
                         caption=caption_text,
-                        reply_markup=get_smart_markup(button),
+                        reply_markup=resolve_markup(stream_markup, _, chat_id),
                     )
                     db[chat_id][0]["mystic"] = run
                     db[chat_id][0]["markup"] = "stream"
@@ -161,7 +171,7 @@ async def stream(
         except:
             playlist_photo = config.PLAYLIST_IMG_URL
             
-        upl = close_markup(_)
+        upl = resolve_markup(close_markup, _)
         final_position = len(db.get(chat_id) or []) - 1
         return await app.send_photo(
             original_chat_id,
@@ -171,7 +181,7 @@ async def stream(
         )
 
     # ==========================
-    # 2. YOUTUBE MODE (DIRECT STREAM + HYBRID)
+    # 2. YOUTUBE MODE (AZAN USES THIS)
     # ==========================
     elif streamtype == "youtube":
         link = result.get("link")
@@ -203,17 +213,19 @@ async def stream(
                 "video" if is_video else "audio",
             )
             position = len(db.get(chat_id)) - 1
-            button = aq_markup(_, chat_id)
             await safe_delete(mystic)
+            
+            # في الانتظار أيضاً نخفي الأزرار لو أذان (رغم أنه forceplay ولن يدخل هنا)
             await app.send_message(
                 chat_id=original_chat_id,
                 text="🧚 " + _["queue_4"].format(position, title[:27], duration_min, user_name),
-                reply_markup=InlineKeyboardMarkup(button),
+                reply_markup=resolve_markup(aq_markup, _, chat_id),
             )
         else:
             if not forceplay:
                 db[chat_id] = []
             
+            # الانضمام للمكالمة
             await StreamController.join_call(
                 chat_id,
                 original_chat_id,
@@ -235,8 +247,6 @@ async def stream(
             )
             
             img = await get_thumb(vidid)
-            button = stream_markup(_, chat_id)
-            
             await safe_delete(mystic)
             
             caption_text = "🧚 " + _["stream_1"].format(
@@ -246,17 +256,26 @@ async def stream(
                 user_name,
             )
             try:
-                # تطبيق الفلتر الذكي
+                # 🔥 هنا السحر: resolve_markup سيقرر هل يضع أزرار أم لا
                 run = await app.send_photo(
                     original_chat_id,
                     photo=img,
                     caption=caption_text,
-                    reply_markup=get_smart_markup(button),
+                    reply_markup=resolve_markup(stream_markup, _, chat_id),
                 )
                 db[chat_id][0]["mystic"] = run
                 db[chat_id][0]["markup"] = "stream"
             except Exception:
-                pass
+                # Fallback: لو الصورة فشلت، ابعت نص
+                try:
+                    run = await app.send_message(
+                        original_chat_id,
+                        text=caption_text,
+                        reply_markup=resolve_markup(stream_markup, _, chat_id)
+                    )
+                    db[chat_id][0]["mystic"] = run
+                    db[chat_id][0]["markup"] = "stream"
+                except: pass
 
     # ==========================
     # 3. SOUNDCLOUD MODE
@@ -279,11 +298,10 @@ async def stream(
                 "audio",
             )
             position = len(db.get(chat_id)) - 1
-            button = aq_markup(_, chat_id)
             await app.send_message(
                 chat_id=original_chat_id,
                 text="🧚 " + _["queue_4"].format(position, title[:27], duration_min, user_name),
-                reply_markup=InlineKeyboardMarkup(button),
+                reply_markup=resolve_markup(aq_markup, _, chat_id),
             )
         else:
             if not forceplay:
@@ -301,17 +319,15 @@ async def stream(
                 "audio",
                 forceplay=forceplay,
             )
-            button = stream_markup(_, chat_id)
             await safe_delete(mystic)
             
-            # تطبيق الفلتر الذكي
             run = await app.send_photo(
                 original_chat_id,
                 photo=config.SOUNCLOUD_IMG_URL,
                 caption="🧚 " + _["stream_1"].format(
                     config.SUPPORT_CHAT, title[:23], duration_min, user_name
                 ),
-                reply_markup=get_smart_markup(button),
+                reply_markup=resolve_markup(stream_markup, _, chat_id),
             )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
@@ -338,11 +354,10 @@ async def stream(
                 "video" if is_video else "audio",
             )
             position = len(db.get(chat_id)) - 1
-            button = aq_markup(_, chat_id)
             await app.send_message(
                 chat_id=original_chat_id,
                 text="🧚 " + _["queue_4"].format(position, title[:27], duration_min, user_name),
-                reply_markup=InlineKeyboardMarkup(button),
+                reply_markup=resolve_markup(aq_markup, _, chat_id),
             )
         else:
             if not forceplay:
@@ -363,15 +378,13 @@ async def stream(
             if is_video:
                 await add_active_video_chat(chat_id)
             
-            button = stream_markup(_, chat_id)
             await safe_delete(mystic)
             
-            # تطبيق الفلتر الذكي
             run = await app.send_photo(
                 original_chat_id,
                 photo=config.TELEGRAM_VIDEO_URL if is_video else config.TELEGRAM_AUDIO_URL,
                 caption="🧚 " + _["stream_1"].format(link, title[:23], duration_min, user_name),
-                reply_markup=get_smart_markup(button),
+                reply_markup=resolve_markup(stream_markup, _, chat_id),
             )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
@@ -399,11 +412,10 @@ async def stream(
                 "video" if is_video else "audio",
             )
             position = len(db.get(chat_id)) - 1
-            button = aq_markup(_, chat_id)
             await app.send_message(
                 chat_id=original_chat_id,
                 text="🧚 " + _["queue_4"].format(position, title[:27], duration_min, user_name),
-                reply_markup=InlineKeyboardMarkup(button),
+                reply_markup=resolve_markup(aq_markup, _, chat_id),
             )
         else:
             if not forceplay:
@@ -433,10 +445,8 @@ async def stream(
                 forceplay=forceplay,
             )
             img = await get_thumb(vidid)
-            button = stream_markup(_, chat_id)
             await safe_delete(mystic)
             
-            # تطبيق الفلتر الذكي
             run = await app.send_photo(
                 original_chat_id,
                 photo=img,
@@ -446,7 +456,7 @@ async def stream(
                     duration_min,
                     user_name,
                 ),
-                reply_markup=get_smart_markup(button),
+                reply_markup=resolve_markup(stream_markup, _, chat_id),
             )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
@@ -468,10 +478,9 @@ async def stream(
                 "video" if is_video else "audio",
             )
             position = len(db.get(chat_id)) - 1
-            button = aq_markup(_, chat_id)
             await mystic.edit_text(
                 text="🧚 " + _["queue_4"].format(position, title[:27], duration_min, user_name),
-                reply_markup=InlineKeyboardMarkup(button),
+                reply_markup=resolve_markup(aq_markup, _, chat_id),
             )
         else:
             if not forceplay:
@@ -493,15 +502,13 @@ async def stream(
                 "video" if is_video else "audio",
                 forceplay=forceplay,
             )
-            button = stream_markup(_, chat_id)
             await safe_delete(mystic)
             
-            # تطبيق الفلتر الذكي
             run = await app.send_photo(
                 original_chat_id,
                 photo=config.STREAM_IMG_URL,
                 caption="🧚 " + _["stream_2"].format(user_name),
-                reply_markup=get_smart_markup(button),
+                reply_markup=resolve_markup(stream_markup, _, chat_id),
             )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
