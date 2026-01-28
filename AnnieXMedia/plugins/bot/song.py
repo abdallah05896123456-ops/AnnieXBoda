@@ -1,6 +1,10 @@
 # AnnieXMedia/plugins/bot/song.py
 # Authored By Certified Coders © 2026
-# Song plugin — ensured fast send as Telegram audio (AAC) with fallback to document
+# Song plugin — robust & fast upload: prefer send_audio(AAC/M4A), fallback to document.
+# - stream-copy when possible
+# - probe codec via ffprobe
+# - re-encode to AAC only when required
+# - thumbnail support, duration extraction, cleanup
 
 import os
 import re
@@ -20,7 +24,6 @@ log = logging.getLogger(__name__)
 # Load config / app
 # ---------------------------
 try:
-    # prefer package config if available
     from AnnieXMedia.config import (
         BANNED_USERS,
         SONG_DOWNLOAD_DURATION,
@@ -40,8 +43,7 @@ except Exception:
         )
         OWNER_ID = CFG_OWNER_ID
     except Exception:
-        # safe defaults
-        BANNED_USERS = filters.user([])
+        BANNED_USERS = filters.user([])  # default
         SONG_DOWNLOAD_DURATION = int(os.getenv("SONG_DOWNLOAD_DURATION") or 0)
         SONG_DOWNLOAD_DURATION_LIMIT = int(os.getenv("SONG_DOWNLOAD_DURATION_LIMIT") or 0)
         try:
@@ -58,7 +60,7 @@ except Exception:
     except Exception:
         raise RuntimeError("Cannot import 'app'. Ensure your bot exports 'app' (pyrogram Client).")
 
-# import platform helpers (may raise if not present; we handle later)
+# platform imports (may be missing in testing env)
 try:
     from AnnieXMedia.platforms.Youtube import YouTube
     from AnnieXMedia.platforms.YTProcessor import Processor
@@ -88,7 +90,7 @@ except Exception:
         return [[{"text":"تحميل", "callback_data": f"song_download audio|mid|{vidid}"}]]
 
 # ---------------------------
-# SUDO users
+# SUDO users (OWNER_ID might be list or int)
 # ---------------------------
 if isinstance(OWNER_ID, (list, tuple, set)):
     SUDO_USERS: List[int] = [int(x) for x in OWNER_ID]
@@ -113,8 +115,9 @@ _YT_DETAILS_CACHE = {}
 # ---------------------------
 async def get_config(key: str):
     try:
-        data = await songdb.find_one({"_id":"song_config"})
-        if not data: return False
+        data = await songdb.find_one({"_id": "song_config"})
+        if not data:
+            return False
         return data.get(key, False)
     except Exception:
         log.exception("get_config failed")
@@ -122,7 +125,7 @@ async def get_config(key: str):
 
 async def set_config(key: str, value):
     try:
-        await songdb.update_one({"_id":"song_config"}, {"$set": {key: value}}, upsert=True)
+        await songdb.update_one({"_id": "song_config"}, {"$set": {key: value}}, upsert=True)
     except Exception:
         log.exception("set_config failed")
 
@@ -130,17 +133,17 @@ async def set_config(key: str, value):
 # Utilities: thumb download
 # ---------------------------
 async def download_thumb(url: str) -> Optional[str]:
-    if not url: return None
+    if not url:
+        return None
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=20) as resp:
                 if resp.status != 200:
                     return None
                 tmpf = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-                data = await resp.read()
-                tmpf.write(data)
+                content = await resp.read()
+                tmpf.write(content)
                 tmpf.close()
-                # try to resize using ffmpeg for telegram thumb constraints
                 resized = tmpf.name + "_res.jpg"
                 try:
                     cmd = ["ffmpeg","-y","-i", tmpf.name, "-vf", "scale='min(320,iw)':'min(320,ih)'", "-frames:v","1", resized]
@@ -160,7 +163,6 @@ async def download_thumb(url: str) -> Optional[str]:
 # ffprobe helper (detect codec)
 # ---------------------------
 async def probe_audio_codec(path: str) -> Optional[str]:
-    """Return codec name of first audio stream (e.g., 'aac', 'mp3', 'opus'), or None."""
     try:
         cmd = ["ffprobe","-v","error","-select_streams","a:0","-show_entries","stream=codec_name","-of","default=noprint_wrappers=1:nokey=1", path]
         proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
@@ -177,64 +179,46 @@ async def probe_audio_codec(path: str) -> Optional[str]:
 # Remux / re-encode to m4a (AAC) — fast when possible
 # ---------------------------
 async def fast_remux_to_m4a(src_path: str) -> str:
-    """
-    Ensure returned file is .m4a with AAC audio.
-    Strategy:
-    1) If src is m4a, probe codec. If codec == aac -> return src (fast).
-    2) Otherwise, try stream copy to m4a (fast). Probe result; if codec != aac -> re-encode to AAC.
-    3) Re-encode uses ffmpeg -c:a aac -b:a 192k for compatibility.
-    Returns path to resulting m4a (may be a tempfile).
-    """
     if not src_path or not os.path.exists(src_path):
         raise FileNotFoundError("source file not found")
 
     src_ext = os.path.splitext(src_path)[1].lower()
-    # 1) if already .m4a and codec aac -> return
+    # if already .m4a and codec aac -> return
     if src_ext == ".m4a":
         codec = await probe_audio_codec(src_path)
         if codec and codec.lower() == "aac":
             return src_path
-        # else continue to produce compatible file
 
-    # create a temporary m4a path
+    # create temp m4a
     fd, tmp_m4a = tempfile.mkstemp(suffix=".m4a")
     os.close(fd)
 
-    # try fast stream copy first
+    # try fast stream copy
     try:
-        cmd = ["ffmpeg","-y","-i", src_path, "-vn", "-c","copy", tmp_m4a]
+        cmd = ["ffmpeg","-y","-i", src_path, "-vn", "-c", "copy", tmp_m4a]
         p = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
         await p.wait()
         if os.path.exists(tmp_m4a) and os.path.getsize(tmp_m4a) > 0:
             codec = await probe_audio_codec(tmp_m4a)
             if codec and codec.lower() == "aac":
                 return tmp_m4a
-            # otherwise, re-encode below
     except Exception:
         log.exception("fast stream-copy to m4a failed, will re-encode")
 
-    # re-encode to AAC (compatible, slower)
+    # re-encode to AAC
     try:
         fd2, tmp_m4a_re = tempfile.mkstemp(suffix=".m4a")
         os.close(fd2)
-        cmd2 = [
-            "ffmpeg","-y","-i", src_path,
-            "-vn",
-            "-c:a","aac",
-            "-b:a","192k",
-            tmp_m4a_re
-        ]
+        cmd2 = ["ffmpeg","-y","-i", src_path, "-vn", "-c:a","aac", "-b:a","192k", tmp_m4a_re]
         p2 = await asyncio.create_subprocess_exec(*cmd2, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
         await p2.wait()
         if os.path.exists(tmp_m4a_re) and os.path.getsize(tmp_m4a_re) > 0:
-            # cleanup tmp_m4a if exists
             try:
                 if os.path.exists(tmp_m4a):
                     os.unlink(tmp_m4a)
             except Exception:
                 pass
             return tmp_m4a_re
-        # as last resort, return whatever we made earlier
         if os.path.exists(tmp_m4a):
             return tmp_m4a
         raise RuntimeError("Failed to produce m4a file")
@@ -244,6 +228,9 @@ async def fast_remux_to_m4a(src_path: str) -> str:
             return tmp_m4a
         raise
 
+# ---------------------------
+# Duration extractor
+# ---------------------------
 def get_duration(path: str) -> int:
     try:
         audio = MP4(path)
@@ -258,10 +245,6 @@ def get_duration(path: str) -> int:
 async def fast_send_m4a(client, mystic_msg, chat_id: int, src_file: str, title: str,
                         duration_sec: int, user_name: str,
                         thumbnail_url: Optional[str] = None, filename: Optional[str] = None):
-    """
-    Ensures the file is m4a (AAC) then attempts send_audio. If send_audio fails,
-    falls back to send_document.
-    """
     try:
         await mystic_msg.edit_text("**جـارٍ تـحضـير الـمـلـف (m4a) ...**")
     except Exception:
@@ -281,12 +264,12 @@ async def fast_send_m4a(client, mystic_msg, chat_id: int, src_file: str, title: 
 
         safe_name = (filename or f"{title}.m4a").replace("\n"," ").strip()
 
-        # try send_audio (shows player)
         try:
             await mystic_msg.edit_text("**جـارٍ الـرفـع (Audio) ...**")
         except Exception:
             pass
 
+        # send_audio: shows player in Telegram
         try:
             await client.send_audio(
                 chat_id=chat_id,
@@ -333,7 +316,6 @@ async def fast_send_m4a(client, mystic_msg, chat_id: int, src_file: str, title: 
             pass
         raise
     finally:
-        # cleanup
         try:
             if thumb_path and os.path.exists(thumb_path):
                 os.unlink(thumb_path)
@@ -346,7 +328,7 @@ async def fast_send_m4a(client, mystic_msg, chat_id: int, src_file: str, title: 
             pass
 
 # ---------------------------
-# (rest of plugin handlers — optimized and same as your structure)
+# Handlers (use your original logic; included examples)
 # ---------------------------
 
 @app.on_message(filters.command(["قفل البحث","تعطيل البحث"], prefixes=["","/"]) & filters.user(SUDO_USERS))
@@ -369,13 +351,12 @@ async def unlock_inline_search(client, message):
     await set_config("inline_locked", False)
     await message.reply_text("**تـم فـتـح بـحـث الانـلايـن.**")
 
-# Unified regex handler (kept concise — integrate your full logic here)
+# unified processor (copy your full existing logic here; example placeholder)
 @app.on_message(filters.text & filters.regex(r"^/?(اغنية|اغنيه|هات|هاتلي|ابعتلي|song|video|تحميل|play)(?:\s+(فيد|فيديو|video))?(?:\s+(.+))?$") & ~BANNED_USERS, group=5)
 async def unified_song_processor(client, message: Message):
-    # simplified integration — keep your original content here (calls to Processor, YouTube etc.)
-    # This file focuses on robust upload pipeline; reuse your existing handler body
+    # paste your full existing unified handler logic (search, playlist detection, Processor.download_file)
     try:
-        # copy your existing logic (search, playlist detection, calling Processor.download_file, etc.)
+        # YOUR ORIGINAL HANDLER LOGIC HERE
         pass
     except Exception:
         log.exception("unified processor failed")
@@ -384,10 +365,10 @@ async def unified_song_processor(client, message: Message):
         except Exception:
             pass
 
-# Callback handlers (keep same as your existing code)
+# callback handlers (use your existing logic but call fast_send_m4a for uploads)
 @app.on_callback_query(filters.regex(pattern=r"song_download") & ~BANNED_USERS)
 async def song_download_callback(client, CallbackQuery):
-    # keep existing logic — call Processor.download_file then fast_send_m4a(...)
+    # Example: parse payload and call Processor.download_file -> fast_send_m4a
     data = CallbackQuery.data or ""
     payload = ""
     parts = data.split(maxsplit=1)
@@ -410,7 +391,6 @@ async def song_download_callback(client, CallbackQuery):
         is_video = (stype == "video")
         yturl = f"https://www.youtube.com/watch?v={vidid}"
 
-        # get title/duration via details cache or YouTube.details
         if vidid in _YT_DETAILS_CACHE:
             title, _, duration_sec, thumbnail, _ = _YT_DETAILS_CACHE[vidid]
         else:
