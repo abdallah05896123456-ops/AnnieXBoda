@@ -34,8 +34,6 @@ DEFAULT_MODEL = LIGHT_MODEL
 # ------------------------------------------------------------------
 
 USER_HISTORY: Dict[int, list] = {}
-
-# CACHE مطلوب صراحة في handlers
 CACHE: Dict[str, str] = {}
 
 MAX_HISTORY = 40
@@ -50,6 +48,11 @@ class AIEngineState:
         self.model: str = DEFAULT_MODEL
         self.temperature: float = 0.7
 
+    # 👇 توافق مع handlers
+    @property
+    def status(self) -> bool:
+        return self.enabled
+
     def reset(self):
         self.enabled = True
         self.model = DEFAULT_MODEL
@@ -57,6 +60,9 @@ class AIEngineState:
 
 
 AI = AIEngineState()
+
+# 👇 REQUIRED BY handlers.py
+ENGINE = AI
 
 # ------------------------------------------------------------------
 # Internal Helpers
@@ -216,12 +222,18 @@ def get_model() -> str:
     return AI.model
 
 
+# 👇 Alias required by handlers
+def get_current_model() -> str:
+    return AI.model
+
+
 # ------------------------------------------------------------------
 # Exports
 # ------------------------------------------------------------------
 
 __all__ = [
     "AI",
+    "ENGINE",
     "ask_ollama_stream",
     "USER_HISTORY",
     "CACHE",
@@ -234,4 +246,5 @@ __all__ = [
     "set_light_model",
     "set_heavy_model",
     "get_model",
+    "get_current_model",
 ]
