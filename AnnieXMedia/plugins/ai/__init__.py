@@ -6,25 +6,37 @@
 AI Plugin Package
 -----------------
 This package contains:
-- prompts.py   : System & behavior prompts (personality / language / rules)
-- engine.py    : Ollama streaming + performance logic
-- handlers.py  : Pyrogram message handlers & callbacks
+- prompts.py   : System & behavior prompts
+- engine.py    : Ollama streaming engine
+- handlers.py  : Pyrogram handlers & callbacks
 
-Importing this package will automatically
-register all AI-related handlers.
+Importing this package automatically
+registers all AI handlers.
 """
 
-# تحميل البرومبتات (لازم قبل أي استخدام)
+# تحميل البرومبتات أولا
 from . import prompts  # noqa: F401
 
-# تحميل محرك الذكاء
-from .engine import ask_ollama_stream  # noqa: F401
+# تحميل محرك الذكاء (الـ API اللي باقي المشروع بيستخدمه)
+from .engine import (
+    AI,
+    ask_ollama_stream,
+    clear_all_memory,
+    clear_user_memory,
+    toggle_model,
+    get_model,
+)  # noqa: F401
 
-# تحميل الهاندلرز (ده اللي بيسجّل الأوامر فعلياً)
+# تحميل الهاندلرز (بيسجل الأوامر والكولباكس)
 from . import handlers  # noqa: F401
 
 __all__ = [
     "prompts",
+    "AI",
     "ask_ollama_stream",
+    "clear_all_memory",
+    "clear_user_memory",
+    "toggle_model",
+    "get_model",
     "handlers",
 ]
