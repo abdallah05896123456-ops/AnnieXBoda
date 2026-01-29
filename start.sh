@@ -1,80 +1,75 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Booting AnnieXMedia AI Environment (MAX PERFORMANCE)..."
-
-# ===============================
-# 0) Limits & Kernel Boost
-# ===============================
-ulimit -n 1048576 || true
-ulimit -u unlimited || true
-
-sysctl -w vm.swappiness=1 >/dev/null 2>&1 || true
-sysctl -w net.core.somaxconn=65535 >/dev/null 2>&1 || true
-sysctl -w net.ipv4.tcp_tw_reuse=1 >/dev/null 2>&1 || true
-sysctl -w net.ipv4.tcp_fin_timeout=15 >/dev/null 2>&1 || true
+echo "🚀 Booting AnnieXMedia AI Environment..."
 
 # ===============================
 # 1) Paths
 # ===============================
-mkdir -p /root/.ollama
+export OLLAMA_HOME="/root/.ollama"
+mkdir -p "$OLLAMA_HOME"
 
 # ===============================
-# 2) Ollama ENV (CRITICAL)
+# 2) Ollama Core Settings
 # ===============================
-export OLLAMA_HOST="http://127.0.0.1:11434"
+export OLLAMA_HOST="127.0.0.1:11434"
 
-# RAM & lifecycle
-export OLLAMA_KEEP_ALIVE="45m"
+# مايمسكش الرام للأبد
+export OLLAMA_KEEP_ALIVE="30m"
 
-# Concurrency control (تحت ضغط عالي)
-export OLLAMA_MAX_QUEUE=2
-export OLLAMA_NUM_THREADS=16
-export OLLAMA_MAX_LOADED_MODELS=1
-
-# ===============================
-# 3) RAM Disk (Ultra Fast)
-# ===============================
-echo "🧠 Mounting 48GB RAM Disk for Ollama..."
-if ! mountpoint -q /root/.ollama; then
-    mount -t tmpfs -o size=48g,nr_inodes=10k tmpfs /root/.ollama
-fi
+# تحكم في الضغط
+export OLLAMA_MAX_QUEUE=4
+export OLLAMA_NUM_THREADS=12
 
 # ===============================
-# 4) Start Ollama (Pinned to CPU)
+# 3) RAM Disk (آمن)
 # ===============================
-echo "🤖 Starting Ollama (isolated cores)..."
-
-# شغل Ollama على أنوية محددة (0-11)
-taskset -c 0-11 nice -n 10 ollama serve \
-  > /root/ollama.log 2>&1 &
-
-OLLAMA_PID=$!
+echo "🧠 Mounting 40GB RAM Disk..."
+mountpoint -q "$OLLAMA_HOME" || mount -t tmpfs -o size=40g tmpfs "$OLLAMA_HOME"
 
 # ===============================
-# 5) Health Check
+# 4) Start Ollama (Low Priority)
 # ===============================
-echo "⏳ Waiting for Ollama API..."
-for i in {1..60}; do
-    if curl -sf http://127.0.0.1:11434/api/tags >/dev/null; then
-        echo "✅ Ollama is ready."
-        break
-    fi
-    sleep 0.5
+echo "🤖 Starting Ollama..."
+nice -n 10 ollama serve > ollama.log 2>&1 &
+
+# ===============================
+# 5) Wait for HTTP API
+# ===============================
+echo "⏳ Waiting for Ollama HTTP..."
+until curl -sf http://127.0.0.1:11434/api/tags >/dev/null; do
+  sleep 1
+done
+
+echo "✅ Ollama is ready!"
+
+# ===============================
+# 6) Pull Models (Light + Heavy)
+# ===============================
+MODELS=(
+  "qwen2.5:7b"
+  "qwen2.5:32b"
+)
+
+for MODEL in "${MODELS[@]}"; do
+  if ! ollama list | grep -q "$MODEL"; then
+    echo "⬇️ Pulling $MODEL ..."
+    ollama pull "$MODEL"
+  else
+    echo "✔️ $MODEL already exists"
+  fi
 done
 
 # ===============================
-# 6) Pull Model (Once)
+# 7) Default Model (Light)
 # ===============================
-if ! ollama list | grep -q "qwen2.5:32b"; then
-    echo "⬇️ Pulling Qwen 2.5 32B (RAM cached)..."
-    ollama pull qwen2.5:32b
-fi
+export AI_MODEL_DEFAULT="qwen2.5:7b"
+export OLLAMA_HTTP_URL="http://127.0.0.1:11434/api/generate"
+
+echo "🎯 Default AI Model: $AI_MODEL_DEFAULT"
 
 # ===============================
-# 7) Start Bot (MAX PRIORITY)
+# 8) Start Bot (High Priority)
 # ===============================
-echo "🎵 Starting Bot (MAX PRIORITY / FAST RESPONSE)..."
-
-# خلي البوت على أنوية مختلفة (12-15)
-exec taskset -c 12-15 nice -n -10 python3 run.py
+echo "🎵 Starting Bot..."
+exec nice -n -5 python3 run.py
