@@ -1,37 +1,47 @@
-﻿# Authored By Certified Coders © 2025
+# Authored By Certified Coders 2026
+# Module: Auto Leave Control - Cleaned & Arabic
+
 import asyncio
 from datetime import datetime
-
+from pyrogram import filters
 from pyrogram.enums import ChatType
 
 import config
 from AnnieXMedia import app
 from AnnieXMedia.core.call import StreamController, autoend
 from AnnieXMedia.utils.database import get_client, is_active_chat, is_autoend
+from AnnieXMedia.misc import SUDOERS
 
+# ─── التحكم في المغادرة التلقائية عبر الأوامر ──────────────────
+
+@app.on_message(filters.command(["تفعيل المغادرة", "تعطيل المغادرة", "تفعيل مغادرة", "تعطيل مغادرة"]) & SUDOERS)
+async def control_auto_leave(_, message):
+    command = message.text
+    if "تفعيل" in command:
+        config.AUTO_LEAVING_ASSISTANT = True
+        await message.reply_text("تم تفعيل وضع المغادرة التلقائية للحساب المساعد بنجاح.")
+    elif "تعطيل" in command:
+        config.AUTO_LEAVING_ASSISTANT = False
+        await message.reply_text("تم تعطيل وضع المغادرة التلقائية للحساب المساعد بنجاح.")
+
+# ─── وظيفة المغادرة التلقائية ────────────────────────────────
 
 async def auto_leave():
-    if config.AUTO_LEAVING_ASSISTANT:
-        while not await asyncio.sleep(config.AUTO_LEAVE_ASSISTANT_TIME):
+    while True:
+        if config.AUTO_LEAVING_ASSISTANT:
             from AnnieXMedia.core.userbot import assistants
-
             for num in assistants:
                 client = await get_client(num)
                 left = 0
                 try:
                     async for i in client.get_dialogs():
-                        if i.chat.type in [
-                            ChatType.SUPERGROUP,
-                            ChatType.GROUP,
-                            ChatType.CHANNEL,
-                        ]:
-                            if (
-                                i.chat.id != config.LOGGER_ID
-                                and i.chat.id != -1002077986660
-                                and i.chat.id != -1002166290494
-                            ):
+                        if i.chat.type in [ChatType.SUPERGROUP, ChatType.GROUP, ChatType.CHANNEL]:
+                            # تم حذف الاستثناءات القديمة، الآن يستثني فقط جروب السجل
+                            if i.chat.id != config.LOGGER_ID:
+                                
                                 if left == 20:
-                                    continue
+                                    break 
+                                    
                                 if not await is_active_chat(i.chat.id):
                                     try:
                                         await client.leave_chat(i.chat.id)
@@ -40,10 +50,11 @@ async def auto_leave():
                                         continue
                 except:
                     pass
-
+        await asyncio.sleep(config.AUTO_LEAVE_ASSISTANT_TIME or 3600)
 
 asyncio.create_task(auto_leave())
 
+# ─── وظيفة إنهاء التشغيل عند خلو الكول ────────────────────────
 
 async def auto_end():
     while not await asyncio.sleep(5):
@@ -66,10 +77,9 @@ async def auto_end():
                 try:
                     await app.send_message(
                         chat_id,
-                        "» ʙᴏᴛ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ʟᴇғᴛ ᴠɪᴅᴇᴏᴄʜᴀᴛ ʙᴇᴄᴀᴜsᴇ ɴᴏ ᴏɴᴇ ᴡᴀs ʟɪsᴛᴇɴɪɴɢ ᴏɴ ᴠɪᴅᴇᴏᴄʜᴀᴛ.",
+                        "تم انهاء التشغيل تلقائيا لعدم وجود مستمعين في المكالمة الصوتية.",
                     )
                 except:
                     continue
-
 
 asyncio.create_task(auto_end())
