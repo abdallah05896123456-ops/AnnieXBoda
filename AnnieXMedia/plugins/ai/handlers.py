@@ -1,11 +1,13 @@
 # plugins/ai/handlers.py
 # Authored By Certified Coders © 2026
-# High-Performance AI Handlers (Streaming / Anti-Timeout / Stable Output)
+# High-Performance AI Handlers (Streaming / Control Keyboard / Stable Output)
 
+import os
 import re
-import asyncio
 import logging
-from pyrogram import filters, enums
+from typing import Optional
+
+from pyrogram import filters
 from pyrogram.types import (
     Message,
     CallbackQuery,
@@ -16,51 +18,38 @@ from pyrogram.types import (
 from AnnieXMedia import app
 from config import OWNER_ID
 
-from .engine import ask_ollama_stream, USER_HISTORY, CACHE
+from .engine import ask_ollama_stream, AI, USER_HISTORY, CACHE
 from .prompts import build_system_prompt
 
-# ===============================
-# Logging
-# ===============================
 logger = logging.getLogger("AnnieX_AI_Handlers")
+logging.basicConfig(level=logging.INFO)
 
-# ===============================
-# Globals
-# ===============================
-AI_STATUS = True
-AI_MODE = "عام"
-AI_MODEL = "qwen2.5:32b"
-
-PERMANENT_USERS = set()
-
-# ===============================
-# SUDO
-# ===============================
+# -------------------------
+# OWNER / SUDO
+# -------------------------
 if isinstance(OWNER_ID, (list, tuple, set)):
-    SUDO_USERS = set(OWNER_ID)
+    SUDO_USERS = list(OWNER_ID)
 else:
-    SUDO_USERS = {OWNER_ID}
+    SUDO_USERS = [OWNER_ID]
 
-SUDO_FILTER = filters.user(list(SUDO_USERS))
+SUDO_FILTER = filters.user(SUDO_USERS)
 
-# ===============================
+# -------------------------
 # Helpers
-# ===============================
-def is_sudo(uid: int) -> bool:
-    return uid in SUDO_USERS
-
-
+# -------------------------
 def extract_prompt(text: str) -> str:
-    trigger = re.match(r"^(ذكاء|يا بوت|بوت|بقولك)(\s+|$)", text)
+    trigger = re.match(r"^(ذكاء|يا بوت|بوت|بقولك)(\s+|$)", text or "", re.IGNORECASE)
     if trigger:
         return text[trigger.end():].strip()
-    return text.strip()
+    return (text or "").strip()
 
+def should_trigger_ai(message: Message, bot_id: Optional[int]) -> bool:
+    if not message.from_user:
+        return False
 
-def should_trigger_ai(message: Message, bot_id: int) -> bool:
     uid = message.from_user.id
 
-    if uid in PERMANENT_USERS:
+    if uid in AI.permanent_users:
         return True
 
     if message.reply_to_message:
@@ -70,189 +59,156 @@ def should_trigger_ai(message: Message, bot_id: int) -> bool:
         ):
             return True
 
-    if re.match(r"^(ذكاء|يا بوت|بوت|بقولك)", message.text or ""):
-        return True
+    return bool(re.match(r"^(ذكاء|يا بوت|بوت|بقولك)", message.text or "", re.IGNORECASE))
 
-    return False
+def owner_only_text() -> str:
+    return "هذا الزر مخصص للمالك فقط."
 
-
-def owner_only(cb: CallbackQuery) -> bool:
-    if not is_sudo(cb.from_user.id):
-        asyncio.create_task(
-            cb.answer("للمالك فقط.", show_alert=True)
-        )
-        return False
-    return True
-
-
-# ===============================
+# -------------------------
 # Keyboards
-# ===============================
-def main_ai_keyboard():
+# -------------------------
+def build_control_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
+            [InlineKeyboardButton("اوامر المستخدمين", callback_data="ai_kb_group")],
             [
-                InlineKeyboardButton("أوامر المستخدمين", callback_data="ai_users"),
-                InlineKeyboardButton("أوامر الأدمن", callback_data="ai_admin"),
+                InlineKeyboardButton("اوامر المالك", callback_data="ai_kb_owner"),
+                InlineKeyboardButton("اوامر الادمن", callback_data="ai_kb_admin"),
             ],
             [
-                InlineKeyboardButton("أوامر المالك", callback_data="ai_owner"),
+                InlineKeyboardButton("تشغيل / ايقاف", callback_data="ai_toggle"),
+                InlineKeyboardButton("تنظيف الذاكرة", callback_data="ai_clean"),
             ],
             [
-                InlineKeyboardButton("إغلاق", callback_data="ai_close"),
+                InlineKeyboardButton("تبديل الموديل", callback_data="ai_models"),
+                InlineKeyboardButton("اعادة تشغيل الذكاء", callback_data="ai_restart"),
             ],
+            [InlineKeyboardButton("اغلاق الكيبورد", callback_data="ai_close_kb")],
         ]
     )
 
+def build_models_keyboard() -> InlineKeyboardMarkup:
+    models = ["qwen2.5:7b", "qwen2.5:14b", "qwen2.5:32b"]
+    rows = [[InlineKeyboardButton(m, callback_data=f"ai_switch:{m}")] for m in models]
+    rows.append([InlineKeyboardButton("رجوع", callback_data="ai_back")])
+    return InlineKeyboardMarkup(rows)
 
-def owner_keyboard():
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton("تشغيل / إيقاف", callback_data="ai_toggle"),
-                InlineKeyboardButton("تبديل النمط", callback_data="ai_mode"),
-            ],
-            [
-                InlineKeyboardButton("تبديل الموديل", callback_data="ai_model"),
-                InlineKeyboardButton("إعادة تهيئة", callback_data="ai_reset"),
-            ],
-            [
-                InlineKeyboardButton("تنظيف الذكاء", callback_data="ai_clean"),
-            ],
-            [
-                InlineKeyboardButton("رجوع", callback_data="ai_back"),
-            ],
-        ]
+# -------------------------
+# Control Panel Command
+# -------------------------
+@app.on_message(filters.regex(r"^(كيب الذكاء|كيب ذكاء|اوامر الذكاء)$") & SUDO_FILTER)
+async def ai_control_panel(_, m: Message):
+    text = (
+        "لوحة تحكم الذكاء\n\n"
+        f"الحالة: {'مفعل' if AI.status else 'معطل'}\n"
+        f"النمط: {AI.mode}\n"
+        f"الموديل الحالي: {AI.model}\n"
+        f"عدد المستخدمين الدائمين: {len(AI.permanent_users)}\n"
     )
+    await m.reply_text(text, reply_markup=build_control_keyboard())
 
-
-# ===============================
-# AI Control Entry
-# ===============================
-@app.on_message(filters.regex(r"^(كيب الذكاء|كيب ذكاء|اوامر الذكاء)$"))
-async def ai_keyboard_entry(_, m: Message):
-    txt = (
-        "لوحة أوامر الذكاء الاصطناعي\n\n"
-        "اختر القسم المناسب."
-    )
-    await m.reply_text(txt, reply_markup=main_ai_keyboard())
-
-
-# ===============================
-# Callbacks (Navigation)
-# ===============================
+# -------------------------
+# Callbacks
+# -------------------------
 @app.on_callback_query(filters.regex("^ai_"))
-async def ai_callbacks(_, cb: CallbackQuery):
-    data = cb.data
+async def ai_callbacks(_, q: CallbackQuery):
+    data = q.data
+    uid = q.from_user.id
 
-    if data == "ai_close":
-        await cb.message.delete()
-        return
-
-    if data == "ai_back":
-        await cb.message.edit_text(
-            "لوحة أوامر الذكاء الاصطناعي",
-            reply_markup=main_ai_keyboard(),
+    if data == "ai_kb_group":
+        await q.answer(
+            "اوامر المستخدمين:\n"
+            "- ذكاء <سؤال>\n"
+            "- ذكاء دائم\n"
+            "- كفاية\n"
+            "- مسح ذاكرتي",
+            show_alert=True,
         )
         return
 
-    if data == "ai_users":
-        await cb.message.edit_text(
-            "أوامر المستخدمين:\n\n"
-            "ذكاء دائم\n"
-            "كفاية\n"
-            "النداء: ذكاء / يا بوت",
-            reply_markup=main_ai_keyboard(),
-        )
-        return
-
-    if data == "ai_admin":
-        await cb.message.edit_text(
-            "أوامر الأدمن:\n\n"
-            "لا يوجد تحكم مباشر.\n"
-            "التحكم الكامل للمالك فقط.",
-            reply_markup=main_ai_keyboard(),
-        )
-        return
-
-    if data == "ai_owner":
-        if not owner_only(cb):
+    if data == "ai_kb_owner":
+        if uid not in SUDO_USERS:
+            await q.answer(owner_only_text(), show_alert=True)
             return
-        await cb.message.edit_text(
-            "لوحة تحكم المالك\n\n"
-            f"الحالة: {'مفعل' if AI_STATUS else 'معطل'}\n"
-            f"النمط: {AI_MODE}\n"
-            f"الموديل: {AI_MODEL}",
-            reply_markup=owner_keyboard(),
-        )
+        await q.answer("هذه الاوامر مخصصة للمالك.", show_alert=True)
         return
 
-    # ===============================
-    # Owner Actions
-    # ===============================
-    if not owner_only(cb):
+    if data == "ai_kb_admin":
+        await q.answer("لا توجد اوامر اضافية للادمن حاليا.", show_alert=True)
         return
-
-    global AI_STATUS, AI_MODE, AI_MODEL
 
     if data == "ai_toggle":
-        AI_STATUS = not AI_STATUS
-        await cb.answer("تم التغيير.")
-    elif data == "ai_mode":
-        AI_MODE = "تقني" if AI_MODE == "عام" else "عام"
-        await cb.answer("تم تبديل النمط.")
-    elif data == "ai_model":
-        AI_MODEL = (
-            "qwen2.5:7b"
-            if AI_MODEL == "qwen2.5:32b"
-            else "qwen2.5:32b"
+        if uid not in SUDO_USERS:
+            await q.answer(owner_only_text(), show_alert=True)
+            return
+        AI.status = not AI.status
+        await q.answer(
+            f"تم {'تشغيل' if AI.status else 'ايقاف'} الذكاء الاصطناعي",
+            show_alert=True,
         )
-        await cb.answer("تم تبديل الموديل.")
-    elif data == "ai_reset":
-        USER_HISTORY.clear()
-        await cb.answer("تمت إعادة التهيئة.")
-    elif data == "ai_clean":
-        USER_HISTORY.clear()
-        CACHE._data.clear()
-        PERMANENT_USERS.clear()
-        await cb.answer("تم التنظيف الكامل.")
-
-    await cb.message.edit_text(
-        "لوحة تحكم المالك\n\n"
-        f"الحالة: {'مفعل' if AI_STATUS else 'معطل'}\n"
-        f"النمط: {AI_MODE}\n"
-        f"الموديل: {AI_MODEL}",
-        reply_markup=owner_keyboard(),
-    )
-
-
-# ===============================
-# User Commands
-# ===============================
-@app.on_message(filters.regex(r"^(ذكاء دائم|افتح دائم)$"))
-async def enable_permanent(_, m: Message):
-    PERMANENT_USERS.add(m.from_user.id)
-    await m.reply_text("تم تفعيل الوضع الدائم.")
-
-
-@app.on_message(filters.regex(r"^(كفاية|خروج من الذكاء|انهاء)$"))
-async def disable_permanent(_, m: Message):
-    if m.from_user.id in PERMANENT_USERS:
-        PERMANENT_USERS.remove(m.from_user.id)
-        await m.reply_text("تم الخروج من الوضع الدائم.")
-    else:
-        await m.reply_text("أنت غير مفعل الوضع الدائم.")
-
-
-# ===============================
-# Main AI Handler
-# ===============================
-@app.on_message(filters.text & ~filters.bot, group=60)
-async def ai_message_handler(client, m: Message):
-    if not AI_STATUS and not is_sudo(m.from_user.id):
         return
 
-    if not m.text:
+    if data == "ai_clean":
+        if uid not in SUDO_USERS:
+            await q.answer(owner_only_text(), show_alert=True)
+            return
+        USER_HISTORY.clear()
+        CACHE.clear()
+        AI.permanent_users.clear()
+        await q.answer("تم تنظيف الذاكرة بالكامل.", show_alert=True)
+        return
+
+    if data == "ai_models":
+        if uid not in SUDO_USERS:
+            await q.answer(owner_only_text(), show_alert=True)
+            return
+        await q.message.edit_text(
+            "اختر الموديل:", reply_markup=build_models_keyboard()
+        )
+        return
+
+    if data.startswith("ai_switch:"):
+        if uid not in SUDO_USERS:
+            await q.answer(owner_only_text(), show_alert=True)
+            return
+        AI.model = data.split(":", 1)[1]
+        await q.answer(f"تم التبديل الى الموديل {AI.model}", show_alert=True)
+        return
+
+    if data == "ai_restart":
+        if uid not in SUDO_USERS:
+            await q.answer(owner_only_text(), show_alert=True)
+            return
+        await q.answer("اعادة تشغيل النظام...", show_alert=True)
+        os._exit(0)
+
+    if data == "ai_close_kb":
+        await q.message.delete()
+
+# -------------------------
+# User Commands
+# -------------------------
+@app.on_message(filters.regex(r"^(ذكاء دائم)$") & ~filters.bot)
+async def enable_permanent(_, m: Message):
+    AI.permanent_users.add(m.from_user.id)
+    await m.reply_text("تم تفعيل وضع الذكاء الدائم.")
+
+@app.on_message(filters.regex(r"^(كفاية|خروج)$") & ~filters.bot)
+async def disable_permanent(_, m: Message):
+    AI.permanent_users.discard(m.from_user.id)
+    await m.reply_text("تم ايقاف الذكاء الدائم.")
+
+@app.on_message(filters.regex(r"^(مسح ذاكرتي)$") & ~filters.bot)
+async def clear_user(_, m: Message):
+    USER_HISTORY.pop(m.from_user.id, None)
+    await m.reply_text("تم مسح ذاكرتك.")
+
+# -------------------------
+# Main AI Handler
+# -------------------------
+@app.on_message(filters.text & ~filters.bot, group=60)
+async def ai_handler(client, m: Message):
+    if not AI.status and m.from_user.id not in SUDO_USERS:
         return
 
     try:
@@ -265,37 +221,22 @@ async def ai_message_handler(client, m: Message):
         return
 
     prompt = extract_prompt(m.text)
-    if not prompt:
-        return
+    system_prompt = build_system_prompt(AI.mode)
 
-    system_prompt = build_system_prompt(AI_MODE)
+    wait_msg = await m.reply_text("جاري التفكير...")
 
-    try:
-        await client.send_chat_action(m.chat.id, enums.ChatAction.TYPING)
-    except Exception:
-        pass
-
-    wait = await m.reply_text("جاري التفكير...")
-
-    last = ""
-
-    async def on_update(t: str):
-        nonlocal last
-        if t.strip() == last.strip():
-            return
-        last = t
+    async def on_update(text: str):
         try:
-            await wait.edit(t[:1800])
-        except Exception:
+            await wait_msg.edit(text[:1800])
+        except:
             pass
 
-    try:
-        reply = await ask_ollama_stream(
-            user_id=m.from_user.id,
-            prompt=prompt,
-            on_update=on_update,
-        )
-        await wait.edit(reply)
-    except Exception as e:
-        logger.error(e)
-        await wait.edit("حصل خطأ داخلي.")
+    reply = await ask_ollama_stream(
+        user_id=m.from_user.id,
+        prompt=prompt,
+        system_prompt=system_prompt,
+        model=AI.model,
+        on_update=on_update,
+    )
+
+    await wait_msg.edit(reply)
