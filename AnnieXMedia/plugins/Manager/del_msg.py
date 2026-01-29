@@ -1,4 +1,6 @@
-﻿# Authored By Certified Coders © 2025
+# Authored By Certified Coders 2026
+# Module: Delete All Messages (Purge) - Arabic & No Emojis
+
 import asyncio
 
 from pyrogram import filters, enums
@@ -21,11 +23,13 @@ from AnnieXMedia.utils.permissions import is_owner_or_sudoer, mention
 log = _LOGGER_FACTORY(__name__)
 
 
-
-
 def _confirm_kb(cmd: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[InlineKeyboardButton("Yes", callback_data=f"{cmd}_yes"),
-                                  InlineKeyboardButton("No", callback_data=f"{cmd}_no")]])
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("نعم", callback_data=f"{cmd}_yes"),
+            InlineKeyboardButton("لا", callback_data=f"{cmd}_no")
+        ]
+    ])
 
 
 async def _safe_edit(cb: CallbackQuery, text: str):
@@ -40,7 +44,7 @@ async def _safe_edit(cb: CallbackQuery, text: str):
         return False
     except Exception:
         try:
-            await cb.answer("Operation finished.", show_alert=False)
+            await cb.answer("تمت العملية.", show_alert=False)
         except Exception:
             pass
         return False
@@ -139,18 +143,18 @@ async def _fallback_batch_delete(assistant, chat_id, skip_ids=set(), concurrency
     return count
 
 
-@app.on_message(filters.command("deleteall") & filters.group)
+@app.on_message(filters.command(["حذف الكل", "deleteall"], prefixes=["/", "!", ".", ""]) & filters.group)
 async def deleteall_command(client, message: Message):
     ok, owner = await is_owner_or_sudoer(client, message.chat.id, message.from_user.id)
     if not ok:
-        owner_mention = mention(owner.id, owner.first_name) if owner else "the owner"
-        return await message.reply_text(f"Sorry {message.from_user.mention}, only {owner_mention} can use /deleteall.")
+        owner_mention = mention(owner.id, owner.first_name) if owner else "المالك"
+        return await message.reply_text(f"عذرا {message.from_user.mention}، فقط {owner_mention} يمكنه استخدام هذا الأمر.")
 
     bot_member = await client.get_chat_member(message.chat.id, client.me.id)
     if not _has(bot_member, "can_delete_messages", "can_invite_users", "can_promote_members"):
-        return await message.reply_text("I need to be admin with delete_messages, invite_users & promote_members.")
+        return await message.reply_text("أحتاج صلاحيات (حذف الرسائل، دعوة المستخدمين، إضافة مشرفين) ليعمل الأمر.")
 
-    await message.reply(f"{message.from_user.mention}, confirm delete all messages?",
+    await message.reply(f"{message.from_user.mention}، هل أنت متأكد من حذف جميع الرسائل؟",
                         reply_markup=_confirm_kb("deleteall"))
 
 
@@ -162,13 +166,13 @@ async def deleteall_callback(client, callback: CallbackQuery):
 
     ok, _ = await is_owner_or_sudoer(client, chat_id, uid)
     if not ok:
-        return await callback.answer("Only the group owner can confirm.", show_alert=True)
+        return await callback.answer("فقط مالك المجموعة يمكنه التأكيد.", show_alert=True)
 
     if ans == "no":
-        await _safe_edit(callback, "Delete all canceled.")
+        await _safe_edit(callback, "تم إلغاء حذف الكل.")
         return
 
-    await _safe_edit(callback, "⏳ Deleting all messages...")
+    await _safe_edit(callback, "جاري حذف جميع الرسائل...")
 
     assistant = await get_assistant(chat_id)
     ass_id = await _ensure_assistant_present_and_admin(client, assistant, chat_id)
@@ -176,17 +180,17 @@ async def deleteall_callback(client, callback: CallbackQuery):
     try:
         fast_ok = await _fast_clear_history(assistant, chat_id)
         if fast_ok:
-            await _safe_edit(callback, "✅ Cleared full chat history for everyone.")
+            await _safe_edit(callback, "تم مسح سجل المحادثة بالكامل للجميع.")
         else:
-            await _safe_edit(callback, "⚠️ Fast clear not permitted by Telegram. Falling back to high‑speed batch deletion…")
+            await _safe_edit(callback, "المسح السريع غير متاح. جاري الحذف التدريجي...")
             skip = {callback.message.id}
             deleted = await _fallback_batch_delete(assistant, chat_id, skip_ids=skip, concurrency=3, batch_size=100)
-            await _safe_edit(callback, f"✅ Deleted approximately {deleted} messages.")
+            await _safe_edit(callback, f"تم حذف ما يقارب {deleted} رسالة.")
     except ChatAdminRequired:
-        await _safe_edit(callback, "❌ Assistant lacks delete rights. Make me able to promote admins.")
+        await _safe_edit(callback, "المساعد لا يمتلك صلاحية الحذف. تأكد من إعطائي صلاحية رفع المشرفين.")
     except Exception as e:
         log.error("Delete-all fatal error: %s", e)
-        await _safe_edit(callback, f"❌ Failed: {e}")
+        await _safe_edit(callback, f"فشل الحذف: {e}")
     finally:
         try:
             try:
@@ -194,6 +198,7 @@ async def deleteall_callback(client, callback: CallbackQuery):
             except Exception as e:
                 log.warning("Assistant demote skipped: %s", e)
             try:
+                # هنا المساعد بيخرج بس بعد ما يخلص مسح الرسائل
                 await assistant.leave_chat(chat_id)
             except Exception:
                 pass
