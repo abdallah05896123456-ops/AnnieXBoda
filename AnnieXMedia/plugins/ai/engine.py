@@ -15,11 +15,14 @@ from typing import Optional, Callable, Any, Dict
 # =========================
 # Environment Configuration
 # =========================
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:32b")
+
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "127.0.0.1:11434").rstrip("/")
+OLLAMA_BASE_URL = f"http://{OLLAMA_HOST}"
+
+OLLAMA_MODEL_DEFAULT = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 
 OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "180"))
-FIRST_CHUNK_TIMEOUT = float(os.getenv("OLLAMA_FIRST_CHUNK_TIMEOUT", "2.0"))
+FIRST_CHUNK_TIMEOUT = float(os.getenv("OLLAMA_FIRST_CHUNK_TIMEOUT", "2.5"))
 CHUNK_SIZE = int(os.getenv("OLLAMA_CHUNK_SIZE", "2048"))
 
 AI_CONCURRENCY = int(os.getenv("AI_CONCURRENCY", "6"))
@@ -32,24 +35,30 @@ OLLAMA_MAX_TOKENS = int(os.getenv("OLLAMA_MAX_TOKENS", "1024"))
 
 DEFAULT_SYSTEM_PROMPT = os.getenv(
     "OLLAMA_SYSTEM_PROMPT",
-    "أجب بالعربية الفصحى فقط، بدقة وذكاء ومن دون إطالة غير ضرورية."
+    "أجب بالعربية الفصحى فقط، بدقة وذكاء، ومن دون إطالة غير ضرورية."
 )
 
 # =========================
 # Logging
 # =========================
+
 logger = logging.getLogger("AnnieX_AI_Engine")
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] - %(name)s - %(message)s"
+)
 
 # =========================
 # Runtime State
 # =========================
+
 REQUEST_SEMAPHORE = asyncio.Semaphore(AI_CONCURRENCY)
 USER_HISTORY: Dict[int, list] = {}
 
 # =========================
 # Arabic Detection
 # =========================
+
 ARABIC_RE = re.compile(r"[\u0600-\u06FF]")
 
 def looks_arabic(text: str, min_chars: int = 2) -> bool:
@@ -58,6 +67,7 @@ def looks_arabic(text: str, min_chars: int = 2) -> bool:
 # =========================
 # TTL Cache
 # =========================
+
 class SimpleCache:
     def __init__(self):
         self._data: Dict[str, tuple] = {}
@@ -78,8 +88,9 @@ class SimpleCache:
 CACHE = SimpleCache()
 
 # =========================
-# Text Extractor (Robust)
+# Response Text Extractor
 # =========================
+
 def extract_text(obj: Any) -> str:
     try:
         if obj is None:
@@ -87,19 +98,10 @@ def extract_text(obj: Any) -> str:
         if isinstance(obj, str):
             return obj.strip()
         if isinstance(obj, dict):
-            if "message" in obj and isinstance(obj["message"], dict):
-                c = obj["message"].get("content")
-                if isinstance(c, str):
-                    return c.strip()
-            for k in ("response", "text", "output", "result"):
-                if k in obj and isinstance(obj[k], str):
-                    return obj[k].strip()
-            if "choices" in obj and isinstance(obj["choices"], list):
-                for ch in obj["choices"]:
-                    if isinstance(ch, dict):
-                        t = ch.get("text")
-                        if isinstance(t, str):
-                            return t.strip()
+            if "message" in obj:
+                return obj["message"].get("content", "").strip()
+            if "response" in obj:
+                return str(obj["response"]).strip()
         return ""
     except Exception:
         return ""
@@ -107,16 +109,18 @@ def extract_text(obj: Any) -> str:
 # =========================
 # Core Engine (Streaming)
 # =========================
+
 async def ask_ollama_stream(
     user_id: int,
     prompt: str,
     on_update: Optional[Callable[[str], Any]] = None,
     system_prompt: Optional[str] = None,
+    model: Optional[str] = None,
     stream: bool = True,
     timeout: Optional[int] = None,
 ) -> str:
     """
-    الدالة الوحيدة المعتمدة من handlers.py
+    ⚠️ الدالة الوحيدة المسموح باستدعائها من handlers.py
     """
 
     if not prompt:
@@ -124,13 +128,14 @@ async def ask_ollama_stream(
 
     timeout = timeout or OLLAMA_TIMEOUT
     system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
+    model = model or OLLAMA_MODEL_DEFAULT
 
-    cache_key = f"{user_id}:{prompt}"
+    cache_key = f"{user_id}:{model}:{prompt}"
     cached = CACHE.get(cache_key)
     if cached:
         return cached
 
-    # ===== Build Messages =====
+    # ===== Messages =====
     messages = [{"role": "system", "content": system_prompt}]
 
     history = USER_HISTORY.get(user_id, [])[-MAX_HISTORY:]
@@ -141,7 +146,7 @@ async def ask_ollama_stream(
     messages.append({"role": "user", "content": prompt})
 
     payload = {
-        "model": OLLAMA_MODEL,
+        "model": model,
         "messages": messages,
         "stream": stream,
         "options": {
@@ -152,8 +157,8 @@ async def ask_ollama_stream(
     }
 
     endpoints = [
-        f"{OLLAMA_HOST}/api/chat",
-        f"{OLLAMA_HOST}/api/generate",
+        f"{OLLAMA_BASE_URL}/api/chat",
+        f"{OLLAMA_BASE_URL}/api/generate",
     ]
 
     async with REQUEST_SEMAPHORE:
@@ -166,19 +171,17 @@ async def ask_ollama_stream(
                             continue
 
                         final_text = ""
+                        buffer = ""
                         started = False
                         start_time = time.time()
-                        buffer = ""
 
                         async for chunk in resp.content.iter_chunked(CHUNK_SIZE):
-                            decoded = chunk.decode(errors="ignore")
-                            buffer += decoded
+                            buffer += chunk.decode(errors="ignore")
 
-                            lines = buffer.splitlines()
-                            buffer = lines.pop() if not buffer.endswith("\n") else ""
-
-                            for line in lines:
-                                if not line.strip():
+                            while "\n" in buffer:
+                                line, buffer = buffer.split("\n", 1)
+                                line = line.strip()
+                                if not line:
                                     continue
                                 if line.startswith("data:"):
                                     line = line[5:].strip()
@@ -192,34 +195,25 @@ async def ask_ollama_stream(
                                 if not part:
                                     continue
 
-                                if part.startswith(final_text):
-                                    part = part[len(final_text):]
-
                                 final_text += part
                                 started = True
 
                                 if on_update:
-                                    try:
-                                        r = on_update(final_text)
-                                        if asyncio.iscoroutine(r):
-                                            await r
-                                    except Exception:
-                                        pass
+                                    r = on_update(final_text)
+                                    if asyncio.iscoroutine(r):
+                                        await r
 
                             if not started and time.time() - start_time > FIRST_CHUNK_TIMEOUT:
                                 break
 
                         final_text = final_text.strip()
 
-                        # Arabic enforcement retry (non-stream)
+                        # Arabic enforcement fallback
                         if not looks_arabic(final_text):
                             retry_payload = {
-                                "model": OLLAMA_MODEL,
+                                "model": model,
                                 "messages": [
-                                    {
-                                        "role": "system",
-                                        "content": system_prompt + "\nأجب بالعربية فقط."
-                                    },
+                                    {"role": "system", "content": system_prompt + " أجب بالعربية فقط."},
                                     {"role": "user", "content": prompt},
                                 ],
                                 "stream": False,
@@ -239,6 +233,7 @@ async def ask_ollama_stream(
                         return final_text
 
             except asyncio.TimeoutError:
+                logger.warning("⏱️ Ollama timeout, trying fallback...")
                 continue
             except Exception:
                 logger.error(traceback.format_exc())
