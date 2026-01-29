@@ -1,4 +1,6 @@
-# Authored By Certified Coders © 2025
+# Authored By Certified Coders 2026
+# Module: Bot Settings - Arabic Commands + Language Support
+
 from pyrogram import filters
 from pyrogram.enums import ChatType
 from pyrogram.errors import MessageNotModified
@@ -32,9 +34,13 @@ from AnnieXMedia.utils.inline.settings import (
 from AnnieXMedia.utils.inline.start import private_panel
 from config import BANNED_USERS, OWNER_ID
 
-# ─── SETTINGS MESSAGE ──────────────────────────────────────────────
+# ─── قائمة الإعدادات ──────────────────────────────────────────────
 
-@app.on_message(filters.command(["settings", "setting"]) & filters.group & ~BANNED_USERS)
+@app.on_message(
+    filters.command(["settings", "setting", "الاعدادات", "اعدادات"], prefixes=["", "/", "!", "."]) 
+    & filters.group 
+    & ~BANNED_USERS
+)
 @language
 async def settings_mar(client, message: Message, _):
     buttons = setting_markup(_)
@@ -43,7 +49,7 @@ async def settings_mar(client, message: Message, _):
         reply_markup=InlineKeyboardMarkup(buttons),
     )
 
-# ─── SETTINGS CALLBACK (HELPER) ─────────────────────────────────────
+# ─── معالجة الرجوع في القوائم ─────────────────────────────────────
 
 @app.on_callback_query(filters.regex(r"^SETTINGS_BACK$") & ~BANNED_USERS)
 @languageCB
@@ -58,7 +64,7 @@ async def settings_cb(client, callback: CallbackQuery, _):
         reply_markup=InlineKeyboardMarkup(buttons),
     )
 
-# ─── SETTINGS BACK (PRIVATE vs. GROUP) ──────────────────────────────
+# ─── الرجوع (خاص vs مجموعة) ──────────────────────────────────────
 
 @app.on_callback_query(filters.regex(r"^SETTINGS_PRIVATE_BACK$") & ~BANNED_USERS)
 @languageCB
@@ -79,7 +85,7 @@ async def settings_back_markup(client, callback: CallbackQuery, _):
         buttons = setting_markup(_)
         return await callback.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(buttons))
 
-# ─── CALLBACK WITHOUT ADMIN RIGHTS ──────────────────────────────────
+# ─── معلومات الإعدادات (للجميع) ──────────────────────────────────
 
 @app.on_callback_query(
     filters.regex(
@@ -148,7 +154,7 @@ async def without_admin_rights(client, callback: CallbackQuery, _):
     except MessageNotModified:
         return
 
-# ─── VOTE COUNT ADJUSTMENT ──────────────────────────────────────────
+# ─── تعديل عدد الأصوات (للمشرفين) ──────────────────────────────────
 
 @app.on_callback_query(filters.regex(r"^(INCREASE_VOTE_COUNT|DECREASE_VOTE_COUNT)$") & ~BANNED_USERS)
 @ActualAdminCB
@@ -180,7 +186,7 @@ async def vote_count_adjust(client, callback: CallbackQuery, _):
     except MessageNotModified:
         return
 
-# ─── PLAYMODE / PLAYTYPE CHANGE ─────────────────────────────────────
+# ─── تغيير وضع التشغيل ونوعه ──────────────────────────────────────
 
 @app.on_callback_query(
     filters.regex(r"^(TOGGLE_SEARCH_MODE|TOGGLE_CHANNEL_MODE|TOGGLE_PLAY_TYPE)$") & ~BANNED_USERS
@@ -244,7 +250,7 @@ async def playmode_ans(client, callback: CallbackQuery, _):
     except MessageNotModified:
         return
 
-# ─── AUTH USERS (AUTH / AUTHLIST) ─────────────────────────────────────
+# ─── إعدادات الأدمنية (المصرح لهم) ──────────────────────────────────
 
 @app.on_callback_query(filters.regex(r"^(TOGGLE_AUTH_MODE|VIEW_AUTH_USERS)$") & ~BANNED_USERS)
 @ActualAdminCB
@@ -309,7 +315,7 @@ async def authusers_mar(client, callback: CallbackQuery, _):
     except MessageNotModified:
         return
 
-# ─── VOTE MODE CHANGE ────────────────────────────────────────────────
+# ─── تغيير وضع التصويت ──────────────────────────────────────────────
 
 @app.on_callback_query(filters.regex(r"^TOGGLE_VOTE_MODE$") & ~BANNED_USERS)
 @ActualAdminCB
