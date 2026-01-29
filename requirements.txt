@@ -60,3 +60,4 @@ pillow>=12.0.0
 apscheduler
 mutagen
 pytz
+googletrans
