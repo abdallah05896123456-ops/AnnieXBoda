@@ -1,4 +1,6 @@
-﻿# Authored By Certified Coders © 2025
+# Authored By Certified Coders 2026
+# Module: Help Menu & Commands - Arabic & No Emojis
+
 import re
 from typing import Union
 
@@ -21,7 +23,12 @@ from strings import get_string, helpers
 
 # ────────────────────────────────────────────────  /help entrypoints ──
 
-@app.on_message(filters.command(["help"]) & filters.private & ~BANNED_USERS)
+# نقطة الدخول في الخاص (Private)
+@app.on_message(
+    filters.command(["help", "مساعدة", "الاوامر", "اوامر"], prefixes=["", "/", "!", "."]) 
+    & filters.private 
+    & ~BANNED_USERS
+)
 @app.on_callback_query(filters.regex("open_help") & ~BANNED_USERS)
 @LanguageStart
 async def helper_private(client: Client, update: Union[Message, types.CallbackQuery], _):
@@ -45,7 +52,12 @@ async def helper_private(client: Client, update: Union[Message, types.CallbackQu
 
 # ────────────────────────────────────────────────  group /help notice ─
 
-@app.on_message(filters.command(["help"]) & filters.group & ~BANNED_USERS)
+# نقطة الدخول في المجموعات (Groups)
+@app.on_message(
+    filters.command(["help", "مساعدة", "الاوامر", "اوامر"], prefixes=["", "/", "!", "."]) 
+    & filters.group 
+    & ~BANNED_USERS
+)
 @LanguageStart
 async def help_com_group(client: Client, message: Message, _):
     keyboard = private_help_panel(_)
@@ -62,7 +74,7 @@ async def help_com_group(client: Client, message: Message, _):
 async def helper_cb(client: Client, CallbackQuery: types.CallbackQuery, _):
     match = re.match(r"help_callback hb(\d+)_p(\d+)", CallbackQuery.data)
     if not match:
-        return await CallbackQuery.answer("Invalid callback.", show_alert=True)
+        return await CallbackQuery.answer("بيانات غير صالحة.", show_alert=True)
 
     number = int(match.group(1))
     current_page = int(match.group(2))
@@ -79,7 +91,7 @@ async def helper_cb(client: Client, CallbackQuery: types.CallbackQuery, _):
     #── All other categories
     help_text = getattr(helpers, f"HELP_{number}", None)
     if not help_text:
-        return await CallbackQuery.answer("Invalid help topic.", show_alert=True)
+        return await CallbackQuery.answer("موضوع المساعدة غير صالح.", show_alert=True)
 
     await CallbackQuery.edit_message_text(
         help_text,
@@ -99,7 +111,7 @@ async def help_next_cb(client: Client, CallbackQuery: types.CallbackQuery, _):
             disable_web_page_preview=True
         )
     else:
-        await CallbackQuery.answer("No more pages.", show_alert=True)
+        await CallbackQuery.answer("لا توجد صفحات اخرى.", show_alert=True)
 
 @app.on_callback_query(filters.regex(r"help_prev_(\d+)") & ~BANNED_USERS)
 @languageCB
@@ -111,7 +123,7 @@ async def help_prev_cb(client: Client, CallbackQuery: types.CallbackQuery, _):
             disable_web_page_preview=True
         )
     else:
-        await CallbackQuery.answer("No previous page.", show_alert=True)
+        await CallbackQuery.answer("لا توجد صفحات سابقة.", show_alert=True)
 
 @app.on_callback_query(filters.regex(r"help_back_(\d+)") & ~BANNED_USERS)
 @languageCB
@@ -122,7 +134,7 @@ async def help_back_cb(client: Client, CallbackQuery: types.CallbackQuery, _):
     elif page == "2":
         keyboard = second_page(_)
     else:
-        return await CallbackQuery.answer("Invalid page.", show_alert=True)
+        return await CallbackQuery.answer("صفحة غير صالحة.", show_alert=True)
 
     await CallbackQuery.edit_message_text(
         _["help_1"].format(SUPPORT_CHAT),
