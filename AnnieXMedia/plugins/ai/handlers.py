@@ -1,9 +1,10 @@
 # plugins/ai/handlers.py
 # Authored By Certified Coders © 2026
-# AI Handlers - Fully Compatible with engine.py (Ollama)
+# AI Handlers - Stable / Fast / Settings Enabled
 
 import os
 import re
+import time
 import logging
 from typing import Optional, Set
 
@@ -23,7 +24,8 @@ from .engine import (
     ask_ollama_stream,
     clear_all_memory,
     clear_user_memory,
-    toggle_model,
+    set_light_model,
+    set_heavy_model,
     get_model,
 )
 
@@ -43,13 +45,14 @@ else:
 SUDO_FILTER = filters.user(list(SUDO_USERS))
 
 # -------------------------------------------------
-# AI STATE (UI + LOGIC)
+# AI STATE
 # -------------------------------------------------
 class AIState:
     def __init__(self):
         self.enabled: bool = True
-        self.mode: str = "default"
+        self.mode: str = "عام"
         self.permanent_users: Set[int] = set()
+        self.speed: str = "light"  # light | heavy
 
 AI_STATE = AIState()
 
@@ -57,11 +60,7 @@ AI_STATE = AIState()
 # Helpers
 # -------------------------------------------------
 def extract_prompt(text: str) -> str:
-    trigger = re.match(
-        r"^(ذكاء|يا بوت|بوت|بقولك)(\s+|$)",
-        text or "",
-        re.IGNORECASE,
-    )
+    trigger = re.match(r"^(ذكاء|يا بوت|بوت|بقولك)(\s+|$)", text or "", re.IGNORECASE)
     if trigger:
         return text[trigger.end():].strip()
     return (text or "").strip()
@@ -83,13 +82,7 @@ def should_trigger_ai(message: Message, bot_id: Optional[int]) -> bool:
         ):
             return True
 
-    return bool(
-        re.match(
-            r"^(ذكاء|يا بوت|بوت|بقولك)",
-            message.text or "",
-            re.IGNORECASE,
-        )
-    )
+    return bool(re.match(r"^(ذكاء|يا بوت|بوت|بقولك)", message.text or "", re.IGNORECASE))
 
 
 def owner_only_text() -> str:
@@ -111,10 +104,22 @@ def build_control_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton("تنظيف الذاكرة", callback_data="ai_clean"),
             ],
             [
-                InlineKeyboardButton("تبديل الموديل", callback_data="ai_model"),
+                InlineKeyboardButton("تبديل السرعة", callback_data="ai_speed"),
                 InlineKeyboardButton("اعادة تشغيل", callback_data="ai_restart"),
             ],
             [InlineKeyboardButton("اغلاق", callback_data="ai_close")],
+        ]
+    )
+
+
+def build_settings_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("خفيف (سريع)", callback_data="ai_light"),
+                InlineKeyboardButton("تقيل (ذكي)", callback_data="ai_heavy"),
+            ],
+            [InlineKeyboardButton("رجوع", callback_data="ai_back")],
         ]
     )
 
@@ -127,7 +132,8 @@ async def ai_control_panel(_, m: Message):
         "لوحة تحكم الذكاء الاصطناعي\n\n"
         f"الحالة: {'مفعل' if AI_STATE.enabled else 'معطل'}\n"
         f"الموديل الحالي: {get_model()}\n"
-        f"عدد المستخدمين الدائمين: {len(AI_STATE.permanent_users)}\n"
+        f"السرعة: {'خفيف' if AI_STATE.speed == 'light' else 'تقيل'}\n"
+        f"المستخدمين الدائمين: {len(AI_STATE.permanent_users)}\n"
     )
     await m.reply_text(text, reply_markup=build_control_keyboard())
 
@@ -157,16 +163,42 @@ async def ai_callbacks(_, q: CallbackQuery):
         await q.answer("لديك صلاحيات كاملة.", show_alert=True)
         return
 
+    if data == "ai_settings":
+        if uid not in SUDO_USERS:
+            await q.answer(owner_only_text(), show_alert=True)
+            return
+        await q.message.edit_text(
+            "اعدادات الذكاء الاصطناعي:",
+            reply_markup=build_settings_keyboard(),
+        )
+        return
+
+    if data == "ai_light":
+        set_light_model()
+        AI_STATE.speed = "light"
+        await q.answer("تم تفعيل الوضع الخفيف السريع.", show_alert=True)
+        return
+
+    if data == "ai_heavy":
+        set_heavy_model()
+        AI_STATE.speed = "heavy"
+        await q.answer("تم تفعيل الوضع التقيل الذكي.", show_alert=True)
+        return
+
+    if data == "ai_back":
+        await q.message.edit_text(
+            "لوحة تحكم الذكاء الاصطناعي:",
+            reply_markup=build_control_keyboard(),
+        )
+        return
+
     if data == "ai_toggle":
         if uid not in SUDO_USERS:
             await q.answer(owner_only_text(), show_alert=True)
             return
         AI_STATE.enabled = not AI_STATE.enabled
         AI.enabled = AI_STATE.enabled
-        await q.answer(
-            f"تم {'تشغيل' if AI_STATE.enabled else 'ايقاف'} الذكاء",
-            show_alert=True,
-        )
+        await q.answer("تم تحديث حالة الذكاء.", show_alert=True)
         return
 
     if data == "ai_clean":
@@ -178,19 +210,10 @@ async def ai_callbacks(_, q: CallbackQuery):
         await q.answer("تم تنظيف الذاكرة.", show_alert=True)
         return
 
-    if data == "ai_model":
-        if uid not in SUDO_USERS:
-            await q.answer(owner_only_text(), show_alert=True)
-            return
-        new_model = toggle_model()
-        await q.answer(f"تم التبديل الى {new_model}", show_alert=True)
-        return
-
     if data == "ai_restart":
         if uid not in SUDO_USERS:
             await q.answer(owner_only_text(), show_alert=True)
             return
-        await q.answer("اعادة تشغيل النظام.", show_alert=True)
         os._exit(0)
 
     if data == "ai_close":
@@ -215,7 +238,7 @@ async def clear_user(_, m: Message):
     await m.reply_text("تم مسح ذاكرتك.")
 
 # -------------------------------------------------
-# Main AI Handler
+# Main AI Handler (FAST + SAFE)
 # -------------------------------------------------
 @app.on_message(filters.text & ~filters.bot, group=60)
 async def ai_handler(client, m: Message):
@@ -223,8 +246,7 @@ async def ai_handler(client, m: Message):
         return
 
     try:
-        me = client.me or await client.get_me()
-        bot_id = me.id
+        bot_id = (client.me or await client.get_me()).id
     except Exception:
         bot_id = None
 
@@ -239,7 +261,14 @@ async def ai_handler(client, m: Message):
 
     wait_msg = await m.reply_text("جاري التفكير ...")
 
+    last_edit = 0
+
     async def on_update(text: str):
+        nonlocal last_edit
+        now = time.time()
+        if now - last_edit < 1.2:
+            return
+        last_edit = now
         try:
             await wait_msg.edit(text[:1800])
         except Exception:
