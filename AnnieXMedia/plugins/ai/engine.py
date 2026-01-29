@@ -1,419 +1,470 @@
-# plugins/ai/engine.py
-# Unified Ollama AI Engine — Ultra Fast / Streaming / Stable (Improved)
-# Authored By Certified Coders © 2026 (patched)
-# Notes:
-# - Robust URL handling (accepts host with or without http://)
-# - Uses messages for /api/chat and prompt for /api/generate where appropriate
-# - Strong streaming parser (handles JSON-per-line, SSE "data:" lines, partial chunks)
-# - Automatic non-stream fallback and strict Arabic retry
-# - Concurrency limiter, simple TTL cache, and history storage
-# - Safe under load and tolerant to Ollama variants
+# plugins/ai/handlers.py
+# Authored By Certified Coders © 2026
+# High-Performance AI Handlers (Streaming / Control Keyboard / Stable Output)
+# هذا الملف يحل مشكلة global ويضيف لوحة أوامر تفاعلية مع صلاحيات (مالك / أدمن / مستخدم)
 
-import aiohttp
-import asyncio
-import json
 import os
-import time
-import logging
-import traceback
-from typing import Optional, Callable, Any, Dict
-
-# =========================
-# Configuration
-# =========================
-
-_RAW_HOST = os.getenv("OLLAMA_HOST", "127.0.0.1:11434").rstrip("/")
-# Normalize to base URL with scheme
-if _RAW_HOST.startswith("http://") or _RAW_HOST.startswith("https://"):
-    OLLAMA_BASE_URL = _RAW_HOST.rstrip("/")
-else:
-    OLLAMA_BASE_URL = f"http://{_RAW_HOST}"
-
-OLLAMA_MODEL_DEFAULT = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
-
-OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "180"))
-FIRST_CHUNK_TIMEOUT = float(os.getenv("FIRST_CHUNK_TIMEOUT", "3.0"))
-CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "2048"))
-
-AI_CONCURRENCY = int(os.getenv("AI_CONCURRENCY", "6"))
-MAX_HISTORY = int(os.getenv("AI_MAX_HISTORY", "8"))
-CACHE_TTL = int(os.getenv("CACHE_TTL", "10"))
-
-OLLAMA_TEMP = float(os.getenv("OLLAMA_TEMP", "0.18"))
-OLLAMA_TOP_P = float(os.getenv("OLLAMA_TOP_P", "0.9"))
-OLLAMA_MAX_TOKENS = int(os.getenv("OLLAMA_MAX_TOKENS", "1024"))
-
-DEFAULT_SYSTEM_PROMPT = os.getenv(
-    "OLLAMA_SYSTEM_PROMPT",
-    "أجب بالعربية فقط وبشكل واضح ومباشر، من دون حشو أو خلط لغات."
-)
-
-# Endpoints to try (order matters)
-DEFAULT_ENDPOINTS = [
-    f"{OLLAMA_BASE_URL}/api/chat",
-    f"{OLLAMA_BASE_URL}/api/generate",
-]
-
-# =========================
-# Logging & State
-# =========================
-
-logger = logging.getLogger("AnnieX_AI_Engine")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-
-REQUEST_SEMAPHORE = asyncio.Semaphore(AI_CONCURRENCY)
-USER_HISTORY: Dict[int, list] = {}
-
-# =========================
-# Utilities: Arabic check, cache
-# =========================
-
 import re
-ARABIC_RE = re.compile(r"[\u0600-\u06FF]")
+import asyncio
+import logging
+from typing import Optional, Callable, Any, Set
 
-def looks_arabic(text: str, min_chars: int = 2) -> bool:
-    return bool(text and len(ARABIC_RE.findall(text)) >= min_chars)
+from pyrogram import filters, enums
+from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
-class SimpleCache:
+from AnnieXMedia import app
+from config import OWNER_ID
+
+# استيراد محرك الذكاء (الدالة الرئيسية للاستدعاء)
+from .engine import ask_ollama_stream  # واجهة الاستدعاء للبث
+from . import engine as ai_engine    # للوصول إلى USER_HISTORY و CACHE إن وُجدت
+from .prompts import build_system_prompt
+
+logger = logging.getLogger("AnnieX_AI_Handlers")
+logging.basicConfig(level=logging.INFO)
+
+# -------------------------
+# حالة النظام (بدون استخدام global مباشرة)
+# -------------------------
+class AIState:
     def __init__(self):
-        self._data: Dict[str, tuple] = {}
+        self.status: bool = True                # تشغيل / إيقاف الذكاء
+        self.mode: str = "عام"                  # "عام" أو "تقني"
+        self.model: str = getattr(ai_engine, "OLLAMA_MODEL_DEFAULT", os.getenv("OLLAMA_MODEL", "qwen2.5:7b"))
+        self.permanent_users: Set[int] = set()  # مستخدمين في وضع دائم
 
-    def get(self, key: str):
-        item = self._data.get(key)
-        if not item:
-            return None
-        exp, val = item
-        if time.time() > exp:
-            self._data.pop(key, None)
-            return None
-        return val
+AI = AIState()
 
-    def set(self, key: str, value: str, ttl: int = CACHE_TTL):
-        self._data[key] = (time.time() + ttl, value)
+# -------------------------
+# SUDO / OWNER configuration
+# -------------------------
+if isinstance(OWNER_ID, (list, tuple, set)):
+    SUDO_USERS = list(OWNER_ID)
+else:
+    SUDO_USERS = [OWNER_ID]
 
-CACHE = SimpleCache()
+SUDO_FILTER = filters.user(SUDO_USERS)
 
-# =========================
-# JSON/text extraction helper (robust)
-# =========================
-
-def extract_text_from_obj(obj: Any) -> str:
+# -------------------------
+# Helpers
+# -------------------------
+def extract_prompt(text: str) -> str:
     """
-    Try multiple common shapes returned by Ollama-like services.
+    يشيل كلمات النداء ويطلع الطلب الحقيقي
     """
+    trigger = re.match(r"^(ذكاء|يا بوت|بوت|بقولك)(\s+|$)", text or "", re.IGNORECASE)
+    if trigger:
+        return text[trigger.end():].strip()
+    return (text or "").strip()
+
+def should_trigger_ai(message: Message, bot_id: Optional[int]) -> bool:
+    """
+    الذكاء يشتغل في الحالات:
+    - رد مباشر على البوت
+    - مستخدم مفعل وضع دائم
+    - رسالة تبدأ بكلمة نداء
+    """
+    if not message.from_user:
+        return False
+    uid = message.from_user.id
+
+    if uid in AI.permanent_users:
+        return True
+
+    if message.reply_to_message:
+        if message.reply_to_message.from_user and getattr(message.reply_to_message.from_user, "id", None) == bot_id:
+            return True
+
+    if re.match(r"^(ذكاء|يا بوت|بوت|بقولك)", message.text or "", re.IGNORECASE):
+        return True
+
+    return False
+
+def owner_only_text() -> str:
+    return "هذا الزر مخصص للمالك فقط."
+
+# -------------------------
+# Keyboard / Panel builder
+# -------------------------
+def build_control_keyboard() -> InlineKeyboardMarkup:
+    """
+    يبني لوحة أوامر:
+    - صف للمستخدمين العاديين (زر عرض الأوامر العامة)
+    - صف للمالك (زر إجراء تحكم رئيسي)
+    - صف للأدمن (زر عرض أوامر الأدمن)
+    - صف أزرار تشغيل/إيقاف، تنظيف، تبديل موديل، رسترة، إغلاق اللوحة
+    """
+    kb = InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("أوامر المجموعة", callback_data="ai_kb_group")],
+            [InlineKeyboardButton("أوامر المالك", callback_data="ai_kb_owner"),
+             InlineKeyboardButton("أوامر الأدمن", callback_data="ai_kb_admin")],
+            [
+                InlineKeyboardButton("تشغيل/إيقاف الذكاء", callback_data="ai_toggle"),
+                InlineKeyboardButton("تنظيف الذاكرة", callback_data="ai_clean")
+            ],
+            [
+                InlineKeyboardButton("تبديل الموديل", callback_data="ai_models"),
+                InlineKeyboardButton("إعادة تشغيل الذكاء", callback_data="ai_restart")
+            ],
+            [InlineKeyboardButton("إغلاق اللوحة", callback_data="ai_close_kb")]
+        ]
+    )
+    return kb
+
+def build_models_keyboard() -> InlineKeyboardMarkup:
+    # قائمة موديلات افتراضية يمكنك تعديلها حسب ما هو متاح عندك
+    models = [
+        "qwen2.5:7b",
+        "qwen2.5:32b",
+        "qwen2.5:14b",
+        "local-lite"
+    ]
+    rows = [[InlineKeyboardButton(m, callback_data=f"ai_switch_model:{m}")] for m in models]
+    rows.append([InlineKeyboardButton("عودة", callback_data="ai_kb_back")])
+    return InlineKeyboardMarkup(rows)
+
+# -------------------------
+# Developer Control Panel (عرض اللوحة)
+# -------------------------
+@app.on_message(filters.regex(r"^(كيب الذكاء|كيب ذكاء|اوامر الذكاء)$") & SUDO_FILTER)
+async def ai_control_panel(_, m: Message):
+    status_txt = "مفعل" if AI.status else "معطل"
+    mode_txt = AI.mode
+    model_txt = AI.model
+
+    txt = (
+        "لوحة تحكم الذكاء\n\n"
+        f"الحالة: {status_txt}\n"
+        f"النمط: {mode_txt}\n"
+        f"الموديل الحالي: {model_txt}\n"
+        f"عدد المستخدمين في الوضع الدائم: {len(AI.permanent_users)}\n\n"
+        "اختر زر من اللوحة لمعرفة الأوامر أو للتحكم."
+    )
+
     try:
-        if obj is None:
-            return ""
-        if isinstance(obj, str):
-            return obj.strip()
-        if isinstance(obj, dict):
-            # common: {"message": {"role":"assistant","content":"..."}}
-            msg = obj.get("message")
-            if isinstance(msg, dict):
-                c = msg.get("content")
-                if isinstance(c, str) and c.strip():
-                    return c.strip()
-                # sometimes content is list of chunks
-                if isinstance(c, list):
-                    parts = []
-                    for p in c:
-                        if isinstance(p, str) and p.strip():
-                            parts.append(p.strip())
-                        elif isinstance(p, dict):
-                            t = p.get("text") or p.get("content")
-                            if isinstance(t, str) and t.strip():
-                                parts.append(t.strip())
-                    return " ".join(parts).strip()
-            # fallback keys
-            for k in ("response", "output", "text", "result"):
-                if k in obj and isinstance(obj[k], str) and obj[k].strip():
-                    return obj[k].strip()
-            # choices style
-            choices = obj.get("choices")
-            if isinstance(choices, list) and choices:
-                first = choices[0]
-                if isinstance(first, dict):
-                    t = first.get("text")
-                    if isinstance(t, str) and t.strip():
-                        return t.strip()
-                    nested = first.get("message") or first.get("delta") or first.get("output")
-                    if isinstance(nested, dict):
-                        c = nested.get("content") or nested.get("text")
-                        if isinstance(c, str) and c.strip():
-                            return c.strip()
-            # last resort: find first string anywhere
-            def find_any(o):
-                if isinstance(o, str) and o.strip():
-                    return o.strip()
-                if isinstance(o, dict):
-                    for v in o.values():
-                        s = find_any(v)
-                        if s:
-                            return s
-                if isinstance(o, list):
-                    for it in o:
-                        s = find_any(it)
-                        if s:
-                            return s
-                return None
-            found = find_any(obj)
-            return found or ""
-    except Exception:
-        logger.debug("extract_text_from_obj error", exc_info=True)
-    return ""
+        await m.reply_text(txt, reply_markup=build_control_keyboard())
+    except Exception as e:
+        logger.error("Failed to send control panel: %s", e)
+        try:
+            await m.reply_text(txt)
+        except:
+            pass
 
-# =========================
-# Core: ask_ollama_stream
-# =========================
+# -------------------------
+# Callback query handler (جميع أزرار اللوحة)
+# -------------------------
+@app.on_callback_query(filters.regex(r"^ai_"))
+async def ai_panel_callback(_, q: CallbackQuery):
+    data = q.data or ""
+    user_id = q.from_user.id
 
-async def ask_ollama_stream(
-    user_id: int,
-    prompt: str,
-    on_update: Optional[Callable[[str], Any]] = None,
-    system_prompt: Optional[str] = None,
-    model: Optional[str] = None,
-    endpoints: Optional[list] = None,
-    stream: bool = True,
-    timeout: Optional[int] = None,
-) -> str:
-    """
-    Main interface for handlers:
-        reply = await ask_ollama_stream(user_id, prompt, on_update=callback)
-    Behavior:
-    - Tries a list of endpoints (chat -> generate)
-    - Parses streaming JSON-per-line and SSE 'data:' lines
-    - Falls back to non-stream attempt if streaming returns nothing
-    - Performs a strict Arabic retry if output doesn't look Arabic
-    """
-    if not prompt:
-        return "لا يوجد نص للإجابة عليه."
+    # ---------- المجموعة (عرض أوامر عامة)
+    if data == "ai_kb_group":
+        group_txt = (
+            "أوامر للمستخدمين:\n"
+            "- اكتب 'ذكاء <سؤال>' أو راسل البوت مباشرة للرد.\n"
+            "- ارسل 'ذكاء دائم' لتفعيل الوضع الدائم لك.\n"
+            "- ارسل 'كفاية' أو 'خروج من الذكاء' للخروج من الوضع الدائم.\n"
+            "- ارسل 'مسح ذاكرتي' لمسح الذاكرة الخاصة بك."
+        )
+        await q.answer(group_txt, show_alert=True)
+        return
 
-    timeout = timeout or OLLAMA_TIMEOUT
-    system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
-    model = model or OLLAMA_MODEL_DEFAULT
-    endpoints = endpoints or DEFAULT_ENDPOINTS
+    # ---------- أوامر المالك (مطلوب صلاحية)
+    if data == "ai_kb_owner":
+        if user_id not in SUDO_USERS:
+            await q.answer(owner_only_text(), show_alert=True)
+            return
+        owner_txt = (
+            "أوامر المالك:\n"
+            "- تشغيل/إيقاف الذكاء (زر في اللوحة).\n"
+            "- تبديل الموديل.\n"
+            "- تنظيف الذاكرة العالمية.\n"
+            "- إعادة تشغيل خدمة الذكاء.\n"
+            "- إغلاق اللوحة."
+        )
+        await q.answer(owner_txt, show_alert=True)
+        return
 
-    cache_key = f"{user_id}:{model}:{prompt}"
-    cached = CACHE.get(cache_key)
-    if cached:
-        return cached
+    # ---------- أوامر الأدمن (معاينة)
+    if data == "ai_kb_admin":
+        admin_txt = (
+            "أوامر الأدمن:\n"
+            "- عرض أوامر المجموعة للأعضاء.\n"
+            "- لا توجد صلاحيات إدارية إضافية في هذه اللوحة حالياً."
+        )
+        await q.answer(admin_txt, show_alert=True)
+        return
 
-    # Build messages
-    messages = [{"role": "system", "content": system_prompt}]
-    history = USER_HISTORY.get(user_id, [])[-MAX_HISTORY:]
-    for h in history:
-        u = h.get("u"); a = h.get("a")
-        if u: messages.append({"role": "user", "content": u})
-        if a: messages.append({"role": "assistant", "content": a})
-    messages.append({"role": "user", "content": prompt})
+    # ---------- تبديل تشغيل/ايقاف الذكاء
+    if data == "ai_toggle":
+        if user_id not in SUDO_USERS:
+            await q.answer(owner_only_text(), show_alert=True)
+            return
+        AI.status = not AI.status
+        await q.answer(f"الحالة الآن: {'مفعل' if AI.status else 'معطل'}", show_alert=True)
+        # حدث رسالة اللوحة إن أمكن
+        try:
+            await q.message.edit_text(
+                "لوحة تحكم الذكاء\n\n"
+                f"الحالة: {'مفعل' if AI.status else 'معطل'}\n"
+                f"النمط: {AI.mode}\n"
+                f"الموديل الحالي: {AI.model}\n\n"
+                "اختر زر من اللوحة.", reply_markup=build_control_keyboard()
+            )
+        except:
+            pass
+        return
 
-    # payload variants
-    payload_messages = {
-        "model": model,
-        "messages": messages,
-        "stream": stream,
-        "options": {
-            "temperature": OLLAMA_TEMP,
-            "top_p": OLLAMA_TOP_P,
-            "num_predict": OLLAMA_MAX_TOKENS,
-        }
-    }
-    payload_prompt = {
-        "model": model,
-        "prompt": (system_prompt + "\n\n" if system_prompt else "") + prompt,
-        "stream": stream,
-        "options": payload_messages["options"],
-    }
+    # ---------- تنظيف الذاكرة
+    if data == "ai_clean":
+        if user_id not in SUDO_USERS:
+            await q.answer(owner_only_text(), show_alert=True)
+            return
+        # مسح الذاكرة في الموديل إن وُجد
+        cleaned = []
+        try:
+            if hasattr(ai_engine, "USER_HISTORY"):
+                ai_engine.USER_HISTORY.clear()
+                cleaned.append("USER_HISTORY")
+        except Exception:
+            logger.exception("Failed to clear USER_HISTORY")
+        try:
+            if hasattr(ai_engine, "CACHE"):
+                try:
+                    # بعض نسخ تستخدم كائن cache مختلف
+                    ai_engine.CACHE._data.clear()
+                except Exception:
+                    # fallback
+                    ai_engine.CACHE = None
+                cleaned.append("CACHE")
+        except Exception:
+            logger.exception("Failed to clear CACHE")
+        # تنظيف في الكلاس المحلي أيضاً
+        AI.permanent_users.clear()
+        result_txt = "تم تنظيف الذاكرة."
+        await q.answer(result_txt, show_alert=True)
+        return
 
-    async with REQUEST_SEMAPHORE:
-        # Try endpoints in order with backoff between them
-        for endpoint in endpoints:
+    # ---------- فتح قائمة الموديلات
+    if data == "ai_models":
+        if user_id not in SUDO_USERS:
+            await q.answer(owner_only_text(), show_alert=True)
+            return
+        try:
+            await q.message.edit_text("اختر موديل للتبديل:", reply_markup=build_models_keyboard())
+        except Exception:
+            await q.answer("خطأ في عرض قائمة الموديلات.", show_alert=True)
+        return
+
+    # ---------- تبديل موديل محدد
+    if data.startswith("ai_switch_model:"):
+        if user_id not in SUDO_USERS:
+            await q.answer(owner_only_text(), show_alert=True)
+            return
+        _, model_name = data.split(":", 1)
+        model_name = model_name.strip()
+        # قم بتبديل الموديل في الحالة وفي المحرك إن كان موجوداً
+        AI.model = model_name
+        try:
+            # إذا محرك ai_engine يدعم تعديل الموديل الافتراضي
+            if hasattr(ai_engine, "OLLAMA_MODEL_DEFAULT"):
+                ai_engine.OLLAMA_MODEL_DEFAULT = model_name
+            if hasattr(ai_engine, "OLLAMA_MODEL"):
+                ai_engine.OLLAMA_MODEL = model_name
+        except Exception:
+            logger.exception("Failed to set engine model variable")
+        await q.answer(f"تم تبديل الموديل إلى: {model_name}", show_alert=True)
+        try:
+            await q.message.edit_text(
+                "لوحة تحكم الذكاء\n\n"
+                f"الحالة: {'مفعل' if AI.status else 'معطل'}\n"
+                f"النمط: {AI.mode}\n"
+                f"الموديل الحالي: {AI.model}\n\n"
+                "اختر زر من اللوحة.", reply_markup=build_control_keyboard()
+            )
+        except:
+            pass
+        return
+
+    # ---------- اعادة اللوحة الرئيسية
+    if data == "ai_kb_back":
+        try:
+            await q.message.edit_text(
+                "لوحة تحكم الذكاء\n\n"
+                f"الحالة: {'مفعل' if AI.status else 'معطل'}\n"
+                f"النمط: {AI.mode}\n"
+                f"الموديل الحالي: {AI.model}\n\n"
+                "اختر زر من اللوحة.", reply_markup=build_control_keyboard()
+            )
+        except:
+            pass
+        return
+
+    # ---------- اعادة تشغيل الذكاء (مالك فقط)
+    if data == "ai_restart":
+        if user_id not in SUDO_USERS:
+            await q.answer(owner_only_text(), show_alert=True)
+            return
+        await q.answer("جارٍ إعادة تشغيل خدمة الذكاء.", show_alert=True)
+        # تنفيذ عملية إعادة التشغيل بطريقة بسيطة: حاول إنهاء العملية ليعاد تشغيلها من النظام (إذا أدارته)
+        try:
+            # إن أردت تنفيذ أوامر إضافية هنا يمكنك استدعاء سكربت خارجي
+            os._exit(0)
+        except Exception:
+            pass
+        return
+
+    # ---------- اغلاق اللوحة
+    if data == "ai_close_kb":
+        # مسموح للجميع بغلق الرسالة نفسها
+        try:
+            await q.message.delete()
+        except:
             try:
-                client_timeout = aiohttp.ClientTimeout(total=timeout)
-                async with aiohttp.ClientSession(timeout=client_timeout) as session:
-                    # pick payload type based on endpoint pattern
-                    use_messages = endpoint.endswith("/api/chat") or endpoint.endswith("/api/create")
-                    body = payload_messages if use_messages else payload_prompt
+                await q.answer("تم إغلاق اللوحة.", show_alert=True)
+            except:
+                pass
+        return
 
-                    # POST
-                    async with session.post(endpoint, json=body) as resp:
-                        status = resp.status
-                        if status >= 400:
-                            # log and continue to next endpoint
-                            try:
-                                txt = await resp.text()
-                            except Exception:
-                                txt = f"HTTP {status}"
-                            logger.warning("Ollama %s returned %s: %s", endpoint, status, txt[:200])
-                            continue
+    # فشل افتراضي
+    await q.answer("إجراء غير معروف.", show_alert=True)
 
-                        # streaming handling
-                        final_text = ""
-                        buffer = ""
-                        started = False
-                        start_time = time.time()
+# -------------------------
+# Simple commands (نفس نصوصك مع تحسين)
+# -------------------------
+@app.on_message(filters.regex(r"^(تعطيل الذكاء|اقفل الذكاء)$") & SUDO_FILTER)
+async def disable_ai_cmd(_, m: Message):
+    AI.status = False
+    await m.reply_text("تم تعطيل الذكاء.")
 
-                        if stream:
-                            # some endpoints send newline-separated JSON objects or SSE-like "data: {...}"
-                            async for chunk in resp.content.iter_chunked(CHUNK_SIZE):
-                                if not chunk:
-                                    continue
-                                try:
-                                    piece = chunk.decode("utf-8", errors="ignore")
-                                except Exception:
-                                    piece = str(chunk)
-                                buffer += piece
+@app.on_message(filters.regex(r"^(تشغيل الذكاء|افتح الذكاء)$") & SUDO_FILTER)
+async def enable_ai_cmd(_, m: Message):
+    AI.status = True
+    await m.reply_text("تم تشغيل الذكاء.")
 
-                                # process complete lines
-                                while True:
-                                    if "\n" not in buffer:
-                                        break
-                                    line, buffer = buffer.split("\n", 1)
-                                    line = line.strip()
-                                    if not line:
-                                        continue
-                                    # SSE style
-                                    if line.startswith("data:"):
-                                        line = line[len("data:"):].strip()
-                                    if line in ("[DONE]", ""):
-                                        continue
-                                    parsed = None
-                                    chunk_text = ""
-                                    # try json
-                                    try:
-                                        parsed = json.loads(line)
-                                        chunk_text = extract_text_from_obj(parsed)
-                                    except Exception:
-                                        # not JSON — treat as raw text
-                                        chunk_text = line
+@app.on_message(filters.regex(r"^(وضع تقني)$") & SUDO_FILTER)
+async def switch_tech_cmd(_, m: Message):
+    AI.mode = "تقني"
+    await m.reply_text("تم التحويل للوضع التقني.")
 
-                                    if not chunk_text:
-                                        continue
+@app.on_message(filters.regex(r"^(وضع عام)$") & SUDO_FILTER)
+async def switch_general_cmd(_, m: Message):
+    AI.mode = "عام"
+    await m.reply_text("تم التحويل للوضع العام.")
 
-                                    # append smartly avoiding obvious duplication
-                                    if final_text and chunk_text.startswith(final_text):
-                                        add = chunk_text[len(final_text):]
-                                    else:
-                                        add = chunk_text if not final_text else (" " + chunk_text)
+# -------------------------
+# User commands (وضع دائم ومسح ذاكرة شخصية)
+# -------------------------
+@app.on_message(filters.regex(r"^(ذكاء دائم|افتح دائم)$") & ~filters.bot)
+async def enable_permanent(_, m: Message):
+    uid = m.from_user.id
+    AI.permanent_users.add(uid)
+    await m.reply_text("تم تفعيل الوضع الدائم لك.")
 
-                                    if add:
-                                        final_text = (final_text + add).strip()
-                                        started = True
-                                        if on_update:
-                                            try:
-                                                res = on_update(final_text)
-                                                if asyncio.iscoroutine(res):
-                                                    await res
-                                            except Exception:
-                                                logger.debug("on_update callback error", exc_info=True)
+@app.on_message(filters.regex(r"^(كفاية|خروج من الذكاء|انهاء)$") & ~filters.bot)
+async def disable_permanent(_, m: Message):
+    uid = m.from_user.id
+    if uid in AI.permanent_users:
+        AI.permanent_users.discard(uid)
+        await m.reply_text("تم الخروج من الوضع الدائم.")
+    else:
+        await m.reply_text("أنت لست في الوضع الدائم.")
 
-                                # timeout for first chunk to avoid hanging too long
-                                if not started and (time.time() - start_time) > FIRST_CHUNK_TIMEOUT:
-                                    # break out to fallback (non-stream) attempt for this endpoint
-                                    break
+@app.on_message(filters.regex(r"^(مسح ذاكرتي|نسيان|تصفير)$") & ~filters.bot)
+async def user_clear_history(_, m: Message):
+    uid = m.from_user.id
+    try:
+        if hasattr(ai_engine, "USER_HISTORY"):
+            ai_engine.USER_HISTORY.pop(uid, None)
+        await m.reply_text("تم مسح الذاكرة الخاصة بك.")
+    except Exception:
+        await m.reply_text("لم أتمكن من مسح الذاكرة الآن.")
 
-                            # after stream loop, if we got something return it
-                            final_text = final_text.strip()
-                            if final_text:
-                                # strict Arabic enforcement: if result is not Arabic, try non-stream strict retry
-                                if not looks_arabic(final_text):
-                                    try:
-                                        strict_body = payload_messages if use_messages else payload_prompt
-                                        # modify strict system if using messages
-                                        if use_messages:
-                                            strict_body = dict(strict_body)
-                                            strict_msgs = list(strict_body["messages"])
-                                            strict_msgs[0] = {"role": "system", "content": (system_prompt + " أجب بالعربية فقط.")}
-                                            strict_body["messages"] = strict_msgs
-                                        else:
-                                            strict_body = dict(strict_body)
-                                            strict_body["prompt"] = "أجب بالعربية فقط.\n\n" + strict_body.get("prompt", "")
-                                        async with session.post(endpoint, json=strict_body) as r2:
-                                            if r2.status == 200:
-                                                try:
-                                                    d2 = await r2.json(content_type=None)
-                                                    strict_text = extract_text_from_obj(d2)
-                                                    if strict_text and looks_arabic(strict_text):
-                                                        final_text = strict_text.strip()
-                                                except Exception:
-                                                    txt2 = await r2.text()
-                                                    if txt2 and looks_arabic(txt2):
-                                                        final_text = txt2.strip()
-                                    except Exception:
-                                        logger.debug("strict retry failed", exc_info=True)
+# -------------------------
+# Main AI Handler (Streaming)
+# -------------------------
+@app.on_message(filters.text & ~filters.bot, group=60)
+async def ai_message_handler(client, m: Message):
+    # منع الرد لو الذكاء متوقف إلا للمالك
+    if not AI.status and m.from_user.id not in SUDO_USERS:
+        return
 
-                                final_text = final_text or "لم يتم توليد رد صالح."
-                                CACHE.set(cache_key, final_text)
-                                USER_HISTORY.setdefault(user_id, []).append({"u": prompt, "a": final_text})
-                                USER_HISTORY[user_id] = USER_HISTORY[user_id][-MAX_HISTORY:]
-                                return final_text
+    if not m.text:
+        return
 
-                            # if stream produced nothing, try non-stream below for same endpoint
-                            # fallthrough to non-stream attempt
-                        # non-stream path (or fallback)
-                        try:
-                            # ensure non-stream body
-                            non_stream_body = dict(payload_messages) if use_messages else dict(payload_prompt)
-                            non_stream_body["stream"] = False
-                            async with session.post(endpoint, json=non_stream_body) as resp2:
-                                if resp2.status >= 400:
-                                    txt = await resp2.text()
-                                    logger.warning("Ollama non-stream %s returned %s: %s", endpoint, resp2.status, txt[:200])
-                                    continue
-                                # parse JSON or raw text
-                                try:
-                                    data = await resp2.json(content_type=None)
-                                    out = extract_text_from_obj(data)
-                                except Exception:
-                                    out = (await resp2.text()).strip()
-                                out = (out or "").strip()
-                                if out:
-                                    # strict Arabic enforcement
-                                    if not looks_arabic(out):
-                                        # try strict system once
-                                        try:
-                                            if use_messages:
-                                                sbody = dict(non_stream_body)
-                                                msgs = list(sbody["messages"])
-                                                msgs[0] = {"role": "system", "content": system_prompt + " أجب بالعربية فقط."}
-                                                sbody["messages"] = msgs
-                                                async with session.post(endpoint, json=sbody) as r3:
-                                                    d3 = await r3.json(content_type=None)
-                                                    out2 = extract_text_from_obj(d3)
-                                                    if out2 and looks_arabic(out2):
-                                                        out = out2
-                                            else:
-                                                sbody = dict(non_stream_body)
-                                                sbody["prompt"] = "أجب بالعربية فقط.\n\n" + sbody.get("prompt", "")
-                                                async with session.post(endpoint, json=sbody) as r3:
-                                                    d3 = await r3.json(content_type=None)
-                                                    out2 = extract_text_from_obj(d3)
-                                                    if out2 and looks_arabic(out2):
-                                                        out = out2
-                                        except Exception:
-                                            logger.debug("strict retry (non-stream) failed", exc_info=True)
-                                    out = out or "لم يتم توليد رد صالح."
-                                    CACHE.set(cache_key, out)
-                                    USER_HISTORY.setdefault(user_id, []).append({"u": prompt, "a": out})
-                                    USER_HISTORY[user_id] = USER_HISTORY[user_id][-MAX_HISTORY:]
-                                    return out
-                                else:
-                                    # nothing; try next endpoint
-                                    continue
-                        except Exception:
-                            # fallback failed for this endpoint
-                            logger.debug("non-stream attempt failed for endpoint %s", endpoint, exc_info=True)
-                            continue
+    try:
+        me = client.me or await client.get_me()
+        bot_id = getattr(me, "id", None)
+    except Exception:
+        bot_id = None
 
-            except asyncio.TimeoutError:
-                logger.warning("Timeout when contacting %s", endpoint)
-                continue
-            except aiohttp.ClientConnectorError as e:
-                logger.warning("Connection error to %s: %s", endpoint, e)
-                continue
-            except Exception:
-                logger.error("Unexpected error while contacting Ollama endpoint", exc_info=True)
-                continue
+    if not should_trigger_ai(m, bot_id):
+        return
 
-    # all endpoints exhausted
-    return "حصل خطأ في خدمة الذكاء الاصطناعي، حاول لاحقاً."
+    prompt = extract_prompt(m.text)
+    if not prompt:
+        await m.reply_text("نعم؟")
+        return
+
+    # بناء system prompt من ملف prompts.py
+    system_prompt = build_system_prompt(AI.mode)
+
+    # مؤشر كتابة
+    try:
+        await client.send_chat_action(m.chat.id, enums.ChatAction.TYPING)
+    except:
+        pass
+
+    wait_msg = None
+    try:
+        wait_msg = await m.reply_text("جار التفكير...")
+    except:
+        wait_msg = None
+
+    last_sent = ""
+
+    async def on_update(partial: str):
+        nonlocal last_sent, wait_msg
+        if not wait_msg:
+            return
+        if partial.strip() == last_sent.strip():
+            return
+        last_sent = partial
+        preview = partial.strip()
+        if len(preview) > 1800:
+            preview = preview[:1800]
+        try:
+            await wait_msg.edit(preview)
+        except:
+            pass
+
+    try:
+        # استدعاء محرك الذكاء مع الموديل من الحالة
+        reply = await ask_ollama_stream(
+            user_id=m.from_user.id,
+            prompt=prompt,
+            on_update=on_update,
+            system_prompt=system_prompt,
+            model=AI.model,
+            stream=True,
+            timeout=None
+        )
+
+        if wait_msg:
+            try:
+                await wait_msg.edit(reply)
+            except:
+                await m.reply_text(reply)
+        else:
+            await m.reply_text(reply)
+
+    except asyncio.TimeoutError:
+        await m.reply_text("الذكاء تأخر في الرد. حاول مجدداً.")
+    except Exception as e:
+        logger.exception("AI handler error: %s", e)
+        try:
+            await m.reply_text("حصل خطأ داخلي. حاول لاحقاً.")
+        except:
+            pass
