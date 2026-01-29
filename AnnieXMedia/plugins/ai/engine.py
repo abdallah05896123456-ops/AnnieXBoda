@@ -2,6 +2,7 @@
 # Authored By Certified Coders © 2026
 # Local AI Engine - Ollama HTTP Streaming
 # FULLY COMPATIBLE WITH handlers.py
+# MODELS: llama3.1:8b / llama3.1:70b
 
 import os
 import json
@@ -24,8 +25,9 @@ logging.basicConfig(level=logging.INFO)
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
 OLLAMA_CHAT_ENDPOINT = f"{OLLAMA_HOST}/api/chat"
 
-LIGHT_MODEL = os.getenv("OLLAMA_LIGHT_MODEL", "qwen2.5:7b")
-HEAVY_MODEL = os.getenv("OLLAMA_HEAVY_MODEL", "qwen2.5:32b")
+# 🔥 MODELS (LLAMA 3.1)
+LIGHT_MODEL = os.getenv("OLLAMA_LIGHT_MODEL", "llama3.1:8b")
+HEAVY_MODEL = os.getenv("OLLAMA_HEAVY_MODEL", "llama3.1:70b")
 
 DEFAULT_MODEL = LIGHT_MODEL
 
@@ -48,7 +50,7 @@ class AIEngineState:
         self.model: str = DEFAULT_MODEL
         self.temperature: float = 0.7
 
-    # 👇 توافق مع handlers
+    # 👇 REQUIRED BY handlers.py
     @property
     def status(self) -> bool:
         return self.enabled
@@ -83,7 +85,7 @@ def _build_messages(user_id: int, prompt: str, system_prompt: str) -> list:
     messages.append({
         "role": "user",
         "content": prompt
-    })
+        })
 
     return messages
 
@@ -211,10 +213,7 @@ def set_heavy_model():
 
 
 def toggle_model() -> str:
-    if AI.model == LIGHT_MODEL:
-        AI.model = HEAVY_MODEL
-    else:
-        AI.model = LIGHT_MODEL
+    AI.model = HEAVY_MODEL if AI.model == LIGHT_MODEL else LIGHT_MODEL
     return AI.model
 
 
@@ -222,7 +221,7 @@ def get_model() -> str:
     return AI.model
 
 
-# 👇 Alias required by handlers
+# 👇 REQUIRED BY handlers.py
 def get_current_model() -> str:
     return AI.model
 
