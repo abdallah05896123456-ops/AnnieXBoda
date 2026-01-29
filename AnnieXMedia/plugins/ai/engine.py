@@ -16,8 +16,7 @@ from AnnieXMedia import app
 from config import OWNER_ID
 
 # استيراد محرك الذكاء (الدالة الرئيسية للاستدعاء)
-from .engine import ask_ollama_stream  # واجهة الاستدعاء للبث
-from . import engine as ai_engine    # للوصول إلى USER_HISTORY و CACHE إن وُجدت
+
 from .prompts import build_system_prompt
 
 logger = logging.getLogger("AnnieX_AI_Handlers")
