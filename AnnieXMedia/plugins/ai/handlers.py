@@ -43,7 +43,7 @@ else:
 SUDO_FILTER = filters.user(list(SUDO_USERS))
 
 # -------------------------------------------------
-# AI STATE (UI ONLY)
+# AI STATE (UI + LOGIC)
 # -------------------------------------------------
 class AIState:
     def __init__(self):
@@ -57,7 +57,11 @@ AI_STATE = AIState()
 # Helpers
 # -------------------------------------------------
 def extract_prompt(text: str) -> str:
-    trigger = re.match(r"^(ذكاء|يا بوت|بوت|بقولك)(\s+|$)", text or "", re.IGNORECASE)
+    trigger = re.match(
+        r"^(ذكاء|يا بوت|بوت|بقولك)(\s+|$)",
+        text or "",
+        re.IGNORECASE,
+    )
     if trigger:
         return text[trigger.end():].strip()
     return (text or "").strip()
@@ -79,7 +83,13 @@ def should_trigger_ai(message: Message, bot_id: Optional[int]) -> bool:
         ):
             return True
 
-    return bool(re.match(r"^(ذكاء|يا بوت|بوت|بقولك)", message.text or "", re.IGNORECASE))
+    return bool(
+        re.match(
+            r"^(ذكاء|يا بوت|بوت|بقولك)",
+            message.text or "",
+            re.IGNORECASE,
+        )
+    )
 
 
 def owner_only_text() -> str:
@@ -227,7 +237,7 @@ async def ai_handler(client, m: Message):
 
     system_prompt = build_system_prompt(AI_STATE.mode)
 
-    wait_msg = await m.reply_text("جاري التفكير...")
+    wait_msg = await m.reply_text("جاري التفكير ...")
 
     async def on_update(text: str):
         try:
