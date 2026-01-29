@@ -1,42 +1,70 @@
-﻿# Authored By Certified Coders © 2025
+# Authored By Certified Coders 2026
+# Module: Repo/Source Info - Updated Support Link
+
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from AnnieXMedia import app
-from config import BOT_USERNAME
+from config import BOT_USERNAME, OWNER_ID
 
-repo_caption = """**
-🚀 ᴄʟᴏɴᴇ ᴀɴᴅ ᴅᴇᴘʟᴏʏ – ᴄᴇʀᴛɪꜰɪᴇᴅ ᴄᴏᴅᴇʀꜱ ʀᴇᴘᴏ 🚀
+# الصورة الاحتياطية
+FALLBACK_PHOTO = "https://files.catbox.moe/z15chx.jpg"
 
-➤ ᴅᴇᴘʟᴏʏ ᴇᴀsɪʟʏ ᴏɴ ʜᴇʀᴏᴋᴜ ᴡɪᴛʜᴏᴜᴛ ᴇʀʀᴏʀꜱ  
-➤ ɴᴏ ʜᴇʀᴏᴋᴜ ʙᴀɴ ɪꜱꜱᴜᴇ  
-➤ ɴᴏ ɪᴅ ʙᴀɴ ɪꜱꜱᴜᴇ  
-➤ ᴜɴʟɪᴍɪᴛᴇᴅ ᴅʏɴᴏꜱ  
-➤ ʀᴜɴ 24/7 ʟᴀɢ ꜰʀᴇᴇ
+# نص السورس
+repo_caption = """
+<b>• اهلا بك في معلومات السورس
+• يقدم لك السورس تجربة استماع مميزة
+• سيرفرات قوية تعمل 24/7 بدون تقطيع
+• حماية كاملة من الحظر والمشاكل
+• تحديثات مستمرة لضمان الاستقرار
 
-ɪꜰ ʏᴏᴜ ꜰᴀᴄᴇ ᴀɴʏ ᴘʀᴏʙʟᴇᴍ, ꜱᴇɴᴅ ꜱꜱ ɪɴ ꜱᴜᴘᴘᴏʀᴛ
-**"""
+• للتنصيب او الاستفسار تواصل مع المطور</b>
+"""
 
-@app.on_message(filters.command("repo"))
-async def show_repo(_, msg):
+@app.on_message(filters.command(["repo", "سورس", "السورس", "يا سورس"], prefixes=["", "/", "!", "."]))
+async def show_repo(client, msg):
+    
+    # رابط الدعم الجديد
+    support_link = "https://t.me/music0587"
+
     buttons = [
-        [InlineKeyboardButton("➕ ᴀᴅᴅ ᴍᴇ ʙᴀʙʏ ✨", url=f"https://t.me/{BOT_USERNAME}?startgroup=true")],
         [
-            InlineKeyboardButton("👑 ᴏᴡɴᴇʀ", url="https://t.me/CertifiedCoder"),
-            InlineKeyboardButton("💬 ꜱᴜᴘᴘᴏʀᴛ", url="https://t.me/CertifiedCodes")
+            InlineKeyboardButton(
+                "اضف البوت لمجموعتك", 
+                url=f"https://t.me/{BOT_USERNAME}?startgroup=true"
+            )
         ],
         [
-            InlineKeyboardButton("🛠️ ꜱᴜᴘᴘᴏʀᴛ ᴄʜᴀᴛ", url="https://t.me/CertifiedCoders"),
-            InlineKeyboardButton("🎵 ɢɪᴛʜᴜʙ", url="https://github.com/CertifiedCoders/AnnieXMusic")
+            InlineKeyboardButton("المطور", url="https://t.me/S_G0C7"),
+            InlineKeyboardButton("الدعم الفني", url=support_link)
         ]
     ]
 
     reply_markup = InlineKeyboardMarkup(buttons)
+    
+    # منطق تحديد الصورة
+    photo_to_send = FALLBACK_PHOTO  # الافتراضي
+    
+    # محاولة جلب صورة المستخدم
+    if msg.from_user:
+        try:
+            async for photo in client.get_chat_photos(msg.from_user.id, limit=1):
+                photo_to_send = photo.file_id
+        except Exception:
+            pass 
 
     try:  
         await msg.reply_photo(
-            photo="https://telegra.ph/file/58afe55fee5ae99d6901b.jpg",
+            photo=photo_to_send,
             caption=repo_caption,
             reply_markup=reply_markup
         )
-    except:
-        pass
+    except Exception as e:
+        print(f"Repo Error: {e}")
+        try:
+            await msg.reply_photo(
+                photo=FALLBACK_PHOTO,
+                caption=repo_caption,
+                reply_markup=reply_markup
+            )
+        except:
+            pass
