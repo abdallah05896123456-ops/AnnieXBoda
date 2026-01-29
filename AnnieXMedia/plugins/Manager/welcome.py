@@ -1,4 +1,6 @@
-﻿# Authored By Certified Coders © 2025
+# Authored By Certified Coders 2026
+# Module: Image Welcome - Arabic Commands + English Caption + Modified Button
+
 import os
 import asyncio
 from functools import lru_cache
@@ -13,9 +15,11 @@ BG_PATH = "AnnieXMedia/assets/annie/welcome.png"
 FALLBACK_PIC = "AnnieXMedia/assets/upic.png"
 FONT_PATH = "AnnieXMedia/assets/annie/Arimo.ttf"
 
-BTN_VIEW = "๏ ᴠɪᴇᴡ ɴᴇᴡ ᴍᴇᴍʙᴇʀ ๏"
-BTN_ADD = "๏ ᴋɪᴅɴᴀᴘ ᴍᴇ ๏"
+# --- [ تعديل الزر كما طلبت ] ---
+BTN_VIEW = "๏ عرض العضو ๏"
+BTN_ADD = "๏ اضفني لمجموعتك ๏"
 
+# --- [ نص الترحيب (إنجليزي) ] ---
 CAPTION_TXT = """
 **❅────✦ ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ✦────❅
 {chat_title}
@@ -70,10 +74,12 @@ async def safe_send(func, *args, **kwargs):
     except:
         return None
 
-@app.on_message(filters.command("welcome") & filters.group)
+# --- [ أوامر التحكم (تفعيل/تعطيل/وقف/فعل) ] ---
+@app.on_message(filters.command(["تفعيل", "فعل", "تعطيل", "وقف"], prefixes=["", "/", "!", "."]) & filters.group)
 async def toggle(client, m: Message):
-    if len(m.command) != 2:
-        return await m.reply_text("**Usage:**\n⦿/welcome [on|off]\n➤ Annie Special Welcome.....")
+    if len(m.command) < 2 or m.command[1] != "الترحيب":
+        return 
+    
     user_id = m.from_user.id if m.from_user else (m.sender_chat.id if m.sender_chat else None)
     if not user_id:
         return
@@ -82,17 +88,27 @@ async def toggle(client, m: Message):
     except:
         return
     if u.status not in (enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER):
-        return await m.reply_text("**sᴏʀʀʏ ᴏɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴄʜᴀɴɢᴇ ᴡᴇʟᴄᴏᴍᴇ ɴᴏᴛɪғɪᴄᴀᴛɪᴏɴ sᴛᴀᴛᴜs!**")
-    flag = m.command[1].lower()
-    if flag not in ("on", "off"):
-        return await m.reply_text("**Usage:**\n⦿/welcome [on|off]\n➤ Annie Special Welcome.....")
+        return await m.reply_text("**عذرا، المشرفين فقط يمكنهم تغيير إعدادات الترحيب.**")
+    
+    command_word = m.command[0]
+    
+    if command_word in ["تفعيل", "فعل"]:
+        db_flag = "on"
+        text_flag = "تفعيل"
+    elif command_word in ["تعطيل", "وقف"]:
+        db_flag = "off"
+        text_flag = "تعطيل"
+    else:
+        return
+    
     cur = await is_on(m.chat.id)
-    if flag == "off" and not cur:
-        return await m.reply_text("**ᴡᴇʟᴄᴏᴍᴇ ɴᴏᴛɪғɪᴄᴀᴛɪᴏɴ ᴀʟʀᴇᴀᴅʏ ᴅɪsᴀʙʟᴇᴅ!**")
-    if flag == "on" and cur:
-        return await m.reply_text("**ᴡᴇʟᴄᴏᴍᴇ ɴᴏᴛɪғɪᴄᴀᴛɪᴏɴ ᴀʟʀᴇᴀᴅʏ ᴇɴᴀʙʟᴇᴅ!**")
-    await set_state(m.chat.id, flag)
-    await m.reply_text(f"**{'ᴇɴᴀʙʟᴇᴅ' if flag == 'on' else 'ᴅɪsᴀʙʟᴇᴅ'} ᴡᴇʟᴄᴏᴍᴇ ɪɴ {m.chat.title}**")
+    if db_flag == "off" and not cur:
+        return await m.reply_text("**الترحيب معطل بالفعل.**")
+    if db_flag == "on" and cur:
+        return await m.reply_text("**الترحيب مفعل بالفعل.**")
+        
+    await set_state(m.chat.id, db_flag)
+    await m.reply_text(f"**تم {text_flag} الترحيب في {m.chat.title} بنجاح.**")
 
 @app.on_chat_member_updated(filters.group, group=-3)
 async def welcome(client, update: ChatMemberUpdated):
@@ -119,7 +135,7 @@ async def welcome(client, update: ChatMemberUpdated):
 
     if not await is_on(cid):
         if await auto_on(cid):
-            await safe_send(client.send_message, cid, "**ᴡᴇʟᴄᴏᴍᴇ ᴍᴇssᴀɢᴇs ʀᴇ-ᴇɴᴀʙʟᴇᴅ.**")
+            await safe_send(client.send_message, cid, "**تم إعادة تفعيل رسائل الترحيب.**")
         else:
             return
 
@@ -127,7 +143,7 @@ async def welcome(client, update: ChatMemberUpdated):
     if burst >= JOIN_THRESHOLD:
         minutes = min(60, COOL_MINUTES + max(0, burst - JOIN_THRESHOLD) * 2)
         await cool(cid, minutes)
-        await safe_send(client.send_message, cid, f"**ᴍᴀssɪᴠᴇ ᴊᴏɪɴ ᴅᴇᴛᴇᴄᴛᴇᴅ (x{burst}). ᴡᴇʟᴄᴏᴍᴇ ᴍᴇssᴀɢᴇs ᴅɪsᴀʙʟᴇᴅ ғᴏʀ {minutes} ᴍɪɴᴜᴛᴇs.**")
+        await safe_send(client.send_message, cid, f"**تم اكتشاف انضمام جماعي (x{burst}). تم تعطيل الترحيب لمدة {minutes} دقيقة.**")
         return
 
     user = new.user
