@@ -32,6 +32,8 @@ if isinstance(OWNER_ID, (list, tuple, set)):
 else:
     SUDO_USERS = {OWNER_ID}
 
+SUDO_FILTER = filters.user(list(SUDO_USERS))
+
 # ===============================
 # Helpers
 # ===============================
@@ -74,7 +76,7 @@ def should_trigger_ai(message: Message, bot_id: int) -> bool:
 # ===============================
 # Developer Control Commands
 # ===============================
-@app.on_message(filters.regex(r"^(كيب الذكاء|كيب ذكاء|اوامر الذكاء)$") & filters.user(SUDO_USERS))
+@app.on_message(filters.regex(r"^(كيب الذكاء|كيب ذكاء|اوامر الذكاء)$") & SUDO_FILTER)
 async def ai_control_panel(_, m: Message):
     status_txt = "مفعل" if AI_STATUS else "معطل"
     mode_txt = AI_MODE
@@ -88,28 +90,28 @@ async def ai_control_panel(_, m: Message):
     await m.reply_text(txt)
 
 
-@app.on_message(filters.regex(r"^(تعطيل الذكاء|اقفل الذكاء)$") & filters.user(SUDO_USERS))
+@app.on_message(filters.regex(r"^(تعطيل الذكاء|اقفل الذكاء)$") & SUDO_FILTER)
 async def disable_ai(_, m: Message):
     global AI_STATUS
     AI_STATUS = False
     await m.reply_text("تم تعطيل الذكاء.")
 
 
-@app.on_message(filters.regex(r"^(تشغيل الذكاء|افتح الذكاء)$") & filters.user(SUDO_USERS))
+@app.on_message(filters.regex(r"^(تشغيل الذكاء|افتح الذكاء)$") & SUDO_FILTER)
 async def enable_ai(_, m: Message):
     global AI_STATUS
     AI_STATUS = True
     await m.reply_text("تم تشغيل الذكاء.")
 
 
-@app.on_message(filters.regex(r"^(وضع تقني)$") & filters.user(SUDO_USERS))
+@app.on_message(filters.regex(r"^(وضع تقني)$") & SUDO_FILTER)
 async def switch_tech(_, m: Message):
     global AI_MODE
     AI_MODE = "تقني"
     await m.reply_text("تم التحويل للوضع التقني.")
 
 
-@app.on_message(filters.regex(r"^(وضع عام)$") & filters.user(SUDO_USERS))
+@app.on_message(filters.regex(r"^(وضع عام)$") & SUDO_FILTER)
 async def switch_general(_, m: Message):
     global AI_MODE
     AI_MODE = "عام"
