@@ -1,24 +1,47 @@
 app = "anniexboda-5ncltw"
 primary_region = "iad"
 
+# ===============================
+# Build
+# ===============================
 [build]
   dockerfile = "Dockerfile"
 
-# ⛔️ شيلنا أمر التشغيل عشان ياخده من الـ Dockerfile
-# [processes]
-#   app = "python3 -m AnnieXMedia"
+# ===============================
+# Runtime (Worker Only)
+# ===============================
+# مفيش http_service
+# مفيش ports
+# شغال كـ background worker
 
-# ⛔️ ملغي عشان يشتغل Worker بدون بورت
-# [http_service]
-#   internal_port = 8080
-#   force_https = true
-#   auto_stop_machines = false
-#   auto_start_machines = true
-#   min_machines_running = 1
-#   processes = ["app"]
+# ===============================
+# Environment
+# ===============================
+[env]
+  PYTHONUNBUFFERED = "1"
+  PYTHONDONTWRITEBYTECODE = "1"
 
-# 🔥 المواصفات (16 CPU / 90GB RAM) 🔥
+  # Ollama
+  OLLAMA_HOST = "127.0.0.1:11434"
+  OLLAMA_KEEP_ALIVE = "1h"
+  OLLAMA_MAX_QUEUE = "2"
+  OLLAMA_NUM_THREADS = "16"
+  OLLAMA_FLASH_ATTENTION = "1"
+  OLLAMA_KV_CACHE_TYPE = "f16"
+
+  # CPU / BLAS Acceleration
+  OMP_NUM_THREADS = "16"
+  MKL_NUM_THREADS = "16"
+  NUMEXPR_NUM_THREADS = "16"
+
+  # Models
+  OLLAMA_LIGHT_MODEL = "llama3.1:8b"
+  OLLAMA_HEAVY_MODEL = "llama3.1:70b"
+
+# ===============================
+# Machine Specs
+# ===============================
 [[vm]]
   cpu_kind = "performance"
   cpus = 16
-  memory_mb = 92160
+  memory_mb = 131072
