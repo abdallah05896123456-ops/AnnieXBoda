@@ -1,9 +1,10 @@
-﻿# Authored By Certified Coders © 2025
-import asyncio
+# Authored By Certified Coders 2026
+# Module: Broadcast System - No Emojis, No Underscores, Assistant Auto-Join
 
-from pyrogram import filters
-from pyrogram.enums import ChatMembersFilter
-from pyrogram.errors import FloodWait
+import asyncio
+from pyrogram import filters, Client
+from pyrogram.enums import ChatMembersFilter, ChatType
+from pyrogram.errors import FloodWait, UserAlreadyParticipant
 
 from AnnieXMedia import app
 from AnnieXMedia.misc import SUDOERS
@@ -20,41 +21,100 @@ from config import adminlist
 
 IS_BROADCASTING = False
 
-
-@app.on_message(filters.command("broadcast") & SUDOERS)
+@app.on_message(filters.command(["broadcast", "اذاعة", "إذاعة", "نشر", "عم"]) & SUDOERS)
 @language
 async def braodcast_message(client, message, _):
     global IS_BROADCASTING
+    
+    # ─── التحقق من المدخلات ───
     if message.reply_to_message:
         x = message.reply_to_message.id
         y = message.chat.id
     else:
         if len(message.command) < 2:
-            return await message.reply_text(_["broad_2"])
+            return await message.reply_text(
+                "يجب كتابة نص أو الرد على رسالة للاذاعة.\n\n"
+                "الانواع المتاحة:\n"
+                "-تثبيت : لتثبيت الرسالة بدون صوت\n"
+                "-عام : لتثبيت الرسالة بصوت\n"
+                "-مساعد : للنشر عبر المساعد (لتفعيل البوتات)\n"
+                "-خاص : للنشر في الخاص\n"
+                "-انضمام : يتبعها يوزر الجروب، لجعل المساعد ينضم ويرسل الرسالة هناك"
+            )
+        
+        # استخراج النص
         query = message.text.split(None, 1)[1]
-        if "-pin" in query:
-            query = query.replace("-pin", "")
-        if "-nobot" in query:
-            query = query.replace("-nobot", "")
-        if "-pinloud" in query:
-            query = query.replace("-pinloud", "")
-        if "-assistant" in query:
-            query = query.replace("-assistant", "")
-        if "-user" in query:
-            query = query.replace("-user", "")
-        if query == "":
-            return await message.reply_text(_["broad_8"])
+    
+    # ─── منطق الانضمام والنشر في جروب محدد ───
+    if "-انضمام" in message.text:
+        # المتوقع: نشر -انضمام @username الرسالة
+        try:
+            parts = message.text.split()
+            # البحث عن اليوزر نيم (الكلمة التي تبدأ بـ @ أو رابط تليجرام)
+            target_chat = None
+            msg_content = ""
+            
+            for word in parts:
+                if word.startswith("@") or "t.me" in word:
+                    target_chat = word
+                elif word not in ["-انضمام", "/نشر", "/اذاعة", "نشر", "اذاعة"]:
+                    msg_content += word + " "
+            
+            if not target_chat:
+                return await message.reply_text("يجب كتابة معرف الجروب او الرابط بعد كلمة -انضمام")
+            
+            if not msg_content and not message.reply_to_message:
+                return await message.reply_text("لا يوجد نص لارساله.")
+
+            await message.reply_text(f"جاري محاولة انضمام المساعد الى {target_chat} والنشر...")
+            
+            # استخدام المساعد الأول للانضمام
+            from AnnieXMedia.core.userbot import assistants
+            ub_client = await get_client(assistants[0])
+            
+            try:
+                await ub_client.join_chat(target_chat)
+            except UserAlreadyParticipant:
+                pass
+            except Exception as e:
+                return await message.reply_text(f"فشل انضمام المساعد: {e}")
+
+            # إرسال الرسالة
+            try:
+                if message.reply_to_message:
+                    await ub_client.forward_messages(target_chat, y, x)
+                else:
+                    await ub_client.send_message(target_chat, msg_content)
+                await message.reply_text("تم الانضمام والنشر بنجاح.")
+            except Exception as e:
+                await message.reply_text(f"فشل الارسال: {e}")
+            
+            return # إنهاء الدالة هنا لأن هذا وضع خاص
+
+        except Exception as e:
+            return await message.reply_text(f"حدث خطأ في عملية الانضمام: {e}")
+
+    # ─── تنظيف النص من الفلاجات للاذاعة العامة ───
+    if not message.reply_to_message:
+        flags = ["-عام", "-تثبيت", "-بدون بوت", "-مساعد", "-خاص"]
+        for flag in flags:
+            query = query.replace(flag, "")
+        
+        if query.strip() == "":
+            return await message.reply_text("لا يوجد نص لارساله بعد حذف العلامات.")
 
     IS_BROADCASTING = True
-    await message.reply_text(_["broad_1"])
+    await message.reply_text("جار بدء الاذاعة...")
 
-    if "-nobot" not in message.text:
+    # ─── 1. الاذاعة عبر البوت (للمجموعات) ───
+    if "-مساعد" not in message.text and "-بدون بوت" not in message.text:
         sent = 0
         pin = 0
         chats = []
         schats = await get_served_chats()
         for chat in schats:
             chats.append(int(chat["chat_id"]))
+        
         for i in chats:
             try:
                 m = (
@@ -62,13 +122,14 @@ async def braodcast_message(client, message, _):
                     if message.reply_to_message
                     else await app.send_message(i, text=query)
                 )
-                if "-pin" in message.text:
+                
+                if "-تثبيت" in message.text:
                     try:
                         await m.pin(disable_notification=True)
                         pin += 1
                     except:
                         continue
-                elif "-pinloud" in message.text:
+                elif "-عام" in message.text:
                     try:
                         await m.pin(disable_notification=False)
                         pin += 1
@@ -84,16 +145,18 @@ async def braodcast_message(client, message, _):
             except:
                 continue
         try:
-            await message.reply_text(_["broad_3"].format(sent, pin))
+            await message.reply_text(f"تم الاذاعة في {sent} مجموعة.\nتم التثبيت في {pin} مجموعة.")
         except:
             pass
 
-    if "-user" in message.text:
+    # ─── 2. الاذاعة للاعضاء (الخاص) ───
+    if "-خاص" in message.text:
         susr = 0
         served_users = []
         susers = await get_served_users()
         for user in susers:
             served_users.append(int(user["user_id"]))
+        
         for i in served_users:
             try:
                 m = (
@@ -111,42 +174,49 @@ async def braodcast_message(client, message, _):
             except:
                 pass
         try:
-            await message.reply_text(_["broad_4"].format(susr))
+            await message.reply_text(f"تم الاذاعة لـ {susr} مستخدم في الخاص.")
         except:
             pass
 
-    if "-assistant" in message.text:
-        aw = await message.reply_text(_["broad_5"])
-        text = _["broad_6"]
+    # ─── 3. الاذاعة عبر المساعد (لتشغيل البوتات) ───
+    if "-مساعد" in message.text:
+        aw = await message.reply_text("جار الاذاعة عبر الحساب المساعد...")
+        text = "تقرير نشر المساعد:\n"
         from AnnieXMedia.core.userbot import assistants
 
         for num in assistants:
             sent = 0
             client = await get_client(num)
             async for dialog in client.get_dialogs():
-                try:
-                    await client.forward_messages(
-                        dialog.chat.id, y, x
-                    ) if message.reply_to_message else await client.send_message(
-                        dialog.chat.id, text=query
-                    )
-                    sent += 1
-                    await asyncio.sleep(3)
-                except FloodWait as fw:
-                    flood_time = int(fw.value)
-                    if flood_time > 200:
+                if dialog.chat.type in [
+                    ChatType.SUPERGROUP,
+                    ChatType.GROUP,
+                    ChatType.CHANNEL
+                ]:
+                    try:
+                        await client.forward_messages(
+                            dialog.chat.id, y, x
+                        ) if message.reply_to_message else await client.send_message(
+                            dialog.chat.id, text=query
+                        )
+                        sent += 1
+                        await asyncio.sleep(2.0) 
+                    except FloodWait as fw:
+                        flood_time = int(fw.value)
+                        if flood_time > 200:
+                            continue
+                        await asyncio.sleep(flood_time)
+                    except:
                         continue
-                    await asyncio.sleep(flood_time)
-                except:
-                    continue
-            text += _["broad_7"].format(num, sent)
+            text += f"المساعد {num}: نشر في {sent} محادثة.\n"
         try:
             await aw.edit_text(text)
         except:
             pass
+            
     IS_BROADCASTING = False
 
-
+# ─── تنظيف قائمة الادمن تلقائيا ───
 async def auto_clean():
     while not await asyncio.sleep(10):
         try:
@@ -165,6 +235,5 @@ async def auto_clean():
                         adminlist[chat_id].append(user_id)
         except:
             continue
-
 
 asyncio.create_task(auto_clean())
