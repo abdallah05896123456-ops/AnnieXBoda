@@ -1,4 +1,6 @@
-﻿# Authored By Certified Coders © 2025
+# Authored By Certified Coders 2026
+# Module: Playback Callback & Control - Arabic & No Emojis
+
 import asyncio
 import random
 from pyrogram import filters
@@ -50,12 +52,12 @@ async def unban_assistant(_, callback: CallbackQuery):
     try:
         await app.unban_chat_member(chat_id, userbot.id)
         await callback.answer(
-            "ᴍʏ ᴀssɪsᴛᴀɴᴛ ɪᴅ ᴜɴʙᴀɴɴᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ🥰🥳\n\n➻ ɴᴏᴡ ʏᴏᴜ ᴄᴀɴ ᴘʟᴀʏ sᴏɴɢs🫠🔉\n\nTʜᴀɴᴋ ʏᴏᴜ💗",
+            "تم الغاء حظر الحساب المساعد بنجاح\nيمكنك الان تشغيل الاغاني",
             show_alert=True,
         )
     except Exception:
         await callback.answer(
-            "Fᴀɪʟᴇᴅ ᴛᴏ ᴜɴʙᴀɴ ᴍʏ ᴀssɪsᴛᴀɴᴛ ʙᴇᴄᴀᴜsᴇ ɪ ᴅᴏɴ'ᴛ ʜᴀᴠᴇ ʙᴀɴ ᴘᴏᴡᴇʀ\n\n➻ Pʟᴇᴀsᴇ ᴘʀᴏᴠɪᴅᴇ ᴍᴇ ʙᴀɴ ᴘᴏᴡᴇʀ sᴏ ᴛʜᴀᴛ ɪ ᴄᴀɴ ᴜɴʙᴀɴ ᴍʏ ᴀssɪsᴛᴀɴᴛ ɪᴅ",
+            "فشل الغاء حظر المساعد لانني لا املك صلاحية الحظر\nيرجى اعطائي صلاحية الحظر حتى اتمكن من فك الحظر عن المساعد",
             show_alert=True,
         )
 
@@ -128,7 +130,8 @@ async def handle_skip_replay(callback: CallbackQuery, _, chat_id: int, command: 
         return await callback.answer(_["queue_2"], show_alert=True)
 
     if command == "Skip":
-        text_msg = f"➻ sᴛʀᴇᴀᴍ sᴋɪᴩᴩᴇᴅ 🎄\n│ \n└ʙʏ : {user_mention} 🥀"
+        # تعريب رسالة التخطي
+        text_msg = f"تم تخطي الاغنية\nبواسطة : {user_mention}"
         try:
             popped = playlist.pop(0)
             if popped:
@@ -148,7 +151,8 @@ async def handle_skip_replay(callback: CallbackQuery, _, chat_id: int, command: 
             )
             return await StreamController.stop_stream(chat_id)
     else:
-        text_msg = f"➻ sᴛʀᴇᴀᴍ sᴋɪᴩᴩᴇᴅ 🎄\n│ \n└ʙʏ : {user_mention} 🥀"
+        # تعريب رسالة إعادة التشغيل
+        text_msg = f"تم تخطي الاغنية\nبواسطة : {user_mention}"
 
     await callback.answer()
 
@@ -297,9 +301,9 @@ async def handle_seek(callback: CallbackQuery, _, chat_id: int, command: str, us
     if int(command) in [1, 3]:
         if (duration_played - duration_to_skip) <= 10:
             bet = seconds_to_min(duration_played)
+            # تعريب رسالة خطأ التقديم/التاخير
             return await callback.answer(
-                f"» ʙᴏᴛ ɪs ᴜɴᴀʙʟᴇ ᴛᴏ sᴇᴇᴋ ʙᴇᴄᴀᴜsᴇ ᴛʜᴇ ᴅᴜʀᴀᴛɪᴏɴ ᴇxᴄᴇᴇᴅs.\n\n"
-                f"ᴄᴜʀʀᴇɴᴛʟʏ ᴩʟᴀʏᴇᴅ :** {bet}** ᴍɪɴᴜᴛᴇs ᴏᴜᴛ ᴏғ **{duration}** ᴍɪɴᴜᴛᴇs.",
+                f"لا يمكن التقديم لان المدة تتجاوز الحد\n\nتم تشغيل : {bet} دقيقة من اصل {duration} دقيقة",
                 show_alert=True
             )
         to_seek = duration_played - duration_to_skip + 1
@@ -307,8 +311,7 @@ async def handle_seek(callback: CallbackQuery, _, chat_id: int, command: str, us
         if (duration_seconds - (duration_played + duration_to_skip)) <= 10:
             bet = seconds_to_min(duration_played)
             return await callback.answer(
-                f"» ʙᴏᴛ ɪs ᴜɴᴀʙʟᴇ ᴛᴏ sᴇᴇᴋ ʙᴇᴄᴀᴜsᴇ ᴛʜᴇ ᴅᴜʀᴀᴛɪᴏɴ ᴇxᴄᴇᴇᴅs.\n\n"
-                f"ᴄᴜʀʀᴇɴᴛʟʏ ᴩʟᴀʏᴇᴅ :** {bet}** ᴍɪɴᴜᴛᴇs ᴏᴜᴛ ᴏғ **{duration}** ᴍɪɴᴜᴛᴇs.",
+                f"لا يمكن التقديم لان المدة تتجاوز الحد\n\nتم تشغيل : {bet} دقيقة من اصل {duration} دقيقة",
                 show_alert=True
             )
         to_seek = duration_played + duration_to_skip + 1
@@ -333,7 +336,8 @@ async def handle_seek(callback: CallbackQuery, _, chat_id: int, command: str, us
     else:
         db[chat_id][0]["played"] += duration_to_skip
     seek_message = _["admin_25"].format(seconds_to_min(to_seek))
-    await mystic.edit_text(f"{seek_message}\n\nᴄʜᴀɴɢᴇs ᴅᴏɴᴇ ʙʏ : {user_mention} !")
+    # تعريب رسالة تأكيد التقديم
+    await mystic.edit_text(f"{seek_message}\n\nبواسطة : {user_mention}")
 
 
 async def markup_timer():
@@ -383,7 +387,8 @@ async def close_menu(_, query: CallbackQuery):
     try:
         await query.answer()
         await query.message.delete()
-        msg = await query.message.reply_text(f"✅ ᴄʟᴏꜱᴇᴅ ʙʏ : {query.from_user.mention}")
+        # تعريب رسالة الإغلاق
+        msg = await query.message.reply_text(f"تم الاغلاق بواسطة : {query.from_user.mention}")
         await asyncio.sleep(2)
         await msg.delete()
     except:
