@@ -5,7 +5,7 @@
 import os
 import re
 import logging
-from typing import Optional
+from typing import Optional, Set
 
 from pyrogram import filters
 from pyrogram.types import (
@@ -18,30 +18,50 @@ from pyrogram.types import (
 from AnnieXMedia import app
 from config import OWNER_ID
 
-from .engine import ask_ollama_stream, AI, USER_HISTORY, CACHE
+from .engine import (
+    ask_ollama_stream,
+    ENGINE,
+    USER_HISTORY,
+    clear_all_memory,
+    clear_user_memory,
+    set_default_model,
+    get_current_model,
+)
 from .prompts import build_system_prompt
 
 logger = logging.getLogger("AnnieX_AI_Handlers")
 logging.basicConfig(level=logging.INFO)
 
-# -------------------------
+# -------------------------------------------------
 # OWNER / SUDO
-# -------------------------
+# -------------------------------------------------
 if isinstance(OWNER_ID, (list, tuple, set)):
-    SUDO_USERS = list(OWNER_ID)
+    SUDO_USERS = set(OWNER_ID)
 else:
-    SUDO_USERS = [OWNER_ID]
+    SUDO_USERS = {OWNER_ID}
 
-SUDO_FILTER = filters.user(SUDO_USERS)
+SUDO_FILTER = filters.user(list(SUDO_USERS))
 
-# -------------------------
+# -------------------------------------------------
+# AI STATE (بديل AI.status و CACHE)
+# -------------------------------------------------
+class AIState:
+    def __init__(self):
+        self.enabled: bool = True
+        self.mode: str = "default"
+        self.permanent_users: Set[int] = set()
+
+AI_STATE = AIState()
+
+# -------------------------------------------------
 # Helpers
-# -------------------------
+# -------------------------------------------------
 def extract_prompt(text: str) -> str:
     trigger = re.match(r"^(ذكاء|يا بوت|بوت|بقولك)(\s+|$)", text or "", re.IGNORECASE)
     if trigger:
         return text[trigger.end():].strip()
     return (text or "").strip()
+
 
 def should_trigger_ai(message: Message, bot_id: Optional[int]) -> bool:
     if not message.from_user:
@@ -49,7 +69,7 @@ def should_trigger_ai(message: Message, bot_id: Optional[int]) -> bool:
 
     uid = message.from_user.id
 
-    if uid in AI.permanent_users:
+    if uid in AI_STATE.permanent_users:
         return True
 
     if message.reply_to_message:
@@ -61,12 +81,13 @@ def should_trigger_ai(message: Message, bot_id: Optional[int]) -> bool:
 
     return bool(re.match(r"^(ذكاء|يا بوت|بوت|بقولك)", message.text or "", re.IGNORECASE))
 
+
 def owner_only_text() -> str:
     return "هذا الزر مخصص للمالك فقط."
 
-# -------------------------
+# -------------------------------------------------
 # Keyboards
-# -------------------------
+# -------------------------------------------------
 def build_control_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
@@ -87,29 +108,30 @@ def build_control_keyboard() -> InlineKeyboardMarkup:
         ]
     )
 
+
 def build_models_keyboard() -> InlineKeyboardMarkup:
     models = ["qwen2.5:7b", "qwen2.5:14b", "qwen2.5:32b"]
     rows = [[InlineKeyboardButton(m, callback_data=f"ai_switch:{m}")] for m in models]
     rows.append([InlineKeyboardButton("رجوع", callback_data="ai_back")])
     return InlineKeyboardMarkup(rows)
 
-# -------------------------
-# Control Panel Command
-# -------------------------
+# -------------------------------------------------
+# Control Panel
+# -------------------------------------------------
 @app.on_message(filters.regex(r"^(كيب الذكاء|كيب ذكاء|اوامر الذكاء)$") & SUDO_FILTER)
 async def ai_control_panel(_, m: Message):
     text = (
         "لوحة تحكم الذكاء\n\n"
-        f"الحالة: {'مفعل' if AI.status else 'معطل'}\n"
-        f"النمط: {AI.mode}\n"
-        f"الموديل الحالي: {AI.model}\n"
-        f"عدد المستخدمين الدائمين: {len(AI.permanent_users)}\n"
+        f"الحالة: {'مفعل' if AI_STATE.enabled else 'معطل'}\n"
+        f"النمط: {AI_STATE.mode}\n"
+        f"الموديل الحالي: {get_current_model()}\n"
+        f"عدد المستخدمين الدائمين: {len(AI_STATE.permanent_users)}\n"
     )
     await m.reply_text(text, reply_markup=build_control_keyboard())
 
-# -------------------------
+# -------------------------------------------------
 # Callbacks
-# -------------------------
+# -------------------------------------------------
 @app.on_callback_query(filters.regex("^ai_"))
 async def ai_callbacks(_, q: CallbackQuery):
     data = q.data
@@ -130,7 +152,7 @@ async def ai_callbacks(_, q: CallbackQuery):
         if uid not in SUDO_USERS:
             await q.answer(owner_only_text(), show_alert=True)
             return
-        await q.answer("هذه الاوامر مخصصة للمالك.", show_alert=True)
+        await q.answer("اوامر تحكم كاملة بالذكاء.", show_alert=True)
         return
 
     if data == "ai_kb_admin":
@@ -141,9 +163,9 @@ async def ai_callbacks(_, q: CallbackQuery):
         if uid not in SUDO_USERS:
             await q.answer(owner_only_text(), show_alert=True)
             return
-        AI.status = not AI.status
+        AI_STATE.enabled = not AI_STATE.enabled
         await q.answer(
-            f"تم {'تشغيل' if AI.status else 'ايقاف'} الذكاء الاصطناعي",
+            f"تم {'تشغيل' if AI_STATE.enabled else 'ايقاف'} الذكاء الاصطناعي",
             show_alert=True,
         )
         return
@@ -152,9 +174,8 @@ async def ai_callbacks(_, q: CallbackQuery):
         if uid not in SUDO_USERS:
             await q.answer(owner_only_text(), show_alert=True)
             return
-        USER_HISTORY.clear()
-        CACHE.clear()
-        AI.permanent_users.clear()
+        clear_all_memory()
+        AI_STATE.permanent_users.clear()
         await q.answer("تم تنظيف الذاكرة بالكامل.", show_alert=True)
         return
 
@@ -171,8 +192,9 @@ async def ai_callbacks(_, q: CallbackQuery):
         if uid not in SUDO_USERS:
             await q.answer(owner_only_text(), show_alert=True)
             return
-        AI.model = data.split(":", 1)[1]
-        await q.answer(f"تم التبديل الى الموديل {AI.model}", show_alert=True)
+        model = data.split(":", 1)[1]
+        set_default_model(model)
+        await q.answer(f"تم التبديل الى الموديل {model}", show_alert=True)
         return
 
     if data == "ai_restart":
@@ -185,30 +207,30 @@ async def ai_callbacks(_, q: CallbackQuery):
     if data == "ai_close_kb":
         await q.message.delete()
 
-# -------------------------
+# -------------------------------------------------
 # User Commands
-# -------------------------
+# -------------------------------------------------
 @app.on_message(filters.regex(r"^(ذكاء دائم)$") & ~filters.bot)
 async def enable_permanent(_, m: Message):
-    AI.permanent_users.add(m.from_user.id)
+    AI_STATE.permanent_users.add(m.from_user.id)
     await m.reply_text("تم تفعيل وضع الذكاء الدائم.")
 
 @app.on_message(filters.regex(r"^(كفاية|خروج)$") & ~filters.bot)
 async def disable_permanent(_, m: Message):
-    AI.permanent_users.discard(m.from_user.id)
+    AI_STATE.permanent_users.discard(m.from_user.id)
     await m.reply_text("تم ايقاف الذكاء الدائم.")
 
 @app.on_message(filters.regex(r"^(مسح ذاكرتي)$") & ~filters.bot)
 async def clear_user(_, m: Message):
-    USER_HISTORY.pop(m.from_user.id, None)
+    clear_user_memory(m.from_user.id)
     await m.reply_text("تم مسح ذاكرتك.")
 
-# -------------------------
+# -------------------------------------------------
 # Main AI Handler
-# -------------------------
+# -------------------------------------------------
 @app.on_message(filters.text & ~filters.bot, group=60)
 async def ai_handler(client, m: Message):
-    if not AI.status and m.from_user.id not in SUDO_USERS:
+    if not AI_STATE.enabled and m.from_user.id not in SUDO_USERS:
         return
 
     try:
@@ -221,21 +243,24 @@ async def ai_handler(client, m: Message):
         return
 
     prompt = extract_prompt(m.text)
-    system_prompt = build_system_prompt(AI.mode)
+    if not prompt:
+        return
+
+    system_prompt = build_system_prompt(AI_STATE.mode)
 
     wait_msg = await m.reply_text("جاري التفكير...")
 
     async def on_update(text: str):
         try:
             await wait_msg.edit(text[:1800])
-        except:
+        except Exception:
             pass
 
     reply = await ask_ollama_stream(
         user_id=m.from_user.id,
         prompt=prompt,
         system_prompt=system_prompt,
-        model=AI.model,
+        model=get_current_model(),
         on_update=on_update,
     )
 
