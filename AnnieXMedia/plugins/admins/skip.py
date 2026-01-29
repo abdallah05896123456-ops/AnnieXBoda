@@ -1,4 +1,6 @@
-﻿# Authored By Certified Coders © 2025
+# Authored By Certified Coders 2026
+# Module: Skip Stream - Arabic Commands + Language Support
+
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, Message
 
@@ -15,7 +17,9 @@ from config import BANNED_USERS
 
 
 @app.on_message(
-    filters.command(["skip", "cskip", "next", "cnext"], prefixes=["/", "!"]) & filters.group & ~BANNED_USERS
+    filters.command(["skip", "cskip", "next", "cnext", "تخطي", "التالي"], prefixes=["", "/", "!", "."]) 
+    & filters.group 
+    & ~BANNED_USERS
 )
 @AdminRightsCheck
 async def skip(cli, message: Message, _, chat_id):
@@ -23,6 +27,7 @@ async def skip(cli, message: Message, _, chat_id):
         loop = await get_loop(chat_id)
         if loop != 0:
             return await message.reply_text(_["admin_8"])
+        
         state = message.text.split(None, 1)[1].strip()
         if state.isnumeric():
             state = int(state)
@@ -108,6 +113,7 @@ async def skip(cli, message: Message, _, chat_id):
         db[chat_id][0]["seconds"] = check[0]["old_second"]
         db[chat_id][0]["speed_path"] = None
         db[chat_id][0]["speed"] = 1.0
+        
     if "live_" in queued:
         n, link = await YouTube.video(videoid, True)
         if n == 0:
@@ -134,6 +140,7 @@ async def skip(cli, message: Message, _, chat_id):
         )
         db[chat_id][0]["mystic"] = run
         db[chat_id][0]["markup"] = "tg"
+        
     elif "vid_" in queued:
         mystic = await message.reply_text(_["call_7"], disable_web_page_preview=True)
         try:
@@ -168,6 +175,7 @@ async def skip(cli, message: Message, _, chat_id):
         db[chat_id][0]["mystic"] = run
         db[chat_id][0]["markup"] = "stream"
         await mystic.delete()
+        
     elif "index_" in queued:
         try:
             await StreamController.skip_stream(chat_id, videoid, video=status)
@@ -181,6 +189,7 @@ async def skip(cli, message: Message, _, chat_id):
         )
         db[chat_id][0]["mystic"] = run
         db[chat_id][0]["markup"] = "tg"
+        
     else:
         if videoid == "telegram":
             image = None
