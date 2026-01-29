@@ -1,4 +1,3 @@
-# plugins/ai/engine.py
 # Authored By Certified Coders © 2026
 # Local AI Engine (Ollama HTTP / Streaming / Stable State)
 
@@ -6,7 +5,7 @@ import os
 import json
 import asyncio
 import logging
-from typing import Dict, Optional, Callable
+from typing import Dict, Optional, Callable, List
 
 import aiohttp
 
@@ -21,39 +20,40 @@ OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
 OLLAMA_CHAT_ENDPOINT = f"{OLLAMA_HOST}/api/chat"
 
 OLLAMA_MODEL_DEFAULT = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "0"))  # 0 = بدون حد
 
 # ------------------------------------------------------------------
-# ذاكرة المستخدمين (محادثات)
+# ذاكرة المستخدمين
 # ------------------------------------------------------------------
 
-USER_HISTORY: Dict[int, list] = {}
+USER_HISTORY: Dict[int, List[Dict[str, str]]] = {}
+
+MAX_HISTORY_MESSAGES = int(os.getenv("AI_MAX_HISTORY", "40"))
 
 # ------------------------------------------------------------------
-# حالة المحرك (مرتبطة بالهاندلرز)
+# حالة الذكاء (State)
 # ------------------------------------------------------------------
 
-class EngineState:
+class AIState:
     def __init__(self):
+        self.enabled: bool = True
         self.model: str = OLLAMA_MODEL_DEFAULT
-        self.temperature: float = 0.7
+        self.temperature: float = float(os.getenv("AI_TEMPERATURE", "0.7"))
 
-ENGINE = EngineState()
+AI = AIState()
 
 # ------------------------------------------------------------------
-# أدوات مساعدة
+# أدوات داخلية
 # ------------------------------------------------------------------
 
 def _build_messages(
     user_id: int,
     prompt: str,
     system_prompt: str
-) -> list:
-    """
-    يبني سجل الرسائل بالـ system + history + prompt الحالي
-    """
+) -> List[Dict[str, str]]:
     history = USER_HISTORY.get(user_id, [])
 
-    messages = []
+    messages: List[Dict[str, str]] = []
 
     if system_prompt:
         messages.append({
@@ -71,10 +71,7 @@ def _build_messages(
     return messages
 
 
-def _save_assistant_reply(user_id: int, prompt: str, reply: str):
-    """
-    يحفظ السؤال والرد في الذاكرة
-    """
+def _save_history(user_id: int, prompt: str, reply: str) -> None:
     history = USER_HISTORY.setdefault(user_id, [])
 
     history.append({
@@ -86,9 +83,8 @@ def _save_assistant_reply(user_id: int, prompt: str, reply: str):
         "content": reply
     })
 
-    # تحديد حد أقصى للذاكرة
-    if len(history) > 40:
-        USER_HISTORY[user_id] = history[-40:]
+    if len(history) > MAX_HISTORY_MESSAGES:
+        USER_HISTORY[user_id] = history[-MAX_HISTORY_MESSAGES:]
 
 
 # ------------------------------------------------------------------
@@ -100,43 +96,48 @@ async def ask_ollama_stream(
     prompt: str,
     system_prompt: str = "",
     model: Optional[str] = None,
-    temperature: float = 0.7,
-    on_update: Optional[Callable[[str], None]] = None,
+    temperature: Optional[float] = None,
+    on_update: Optional[Callable[[str], asyncio.Future]] = None,
 ) -> str:
     """
-    استدعاء Ollama مع بث تدريجي
+    استدعاء Ollama ببث تدريجي (Streaming)
     """
-    used_model = model or ENGINE.model
+
+    if not AI.enabled:
+        return "الذكاء الاصطناعي متوقف حالياً."
+
+    used_model = model or AI.model
+    used_temp = temperature if temperature is not None else AI.temperature
 
     payload = {
         "model": used_model,
-        "messages": _build_messages(user_id, prompt, system_prompt),
         "stream": True,
+        "messages": _build_messages(user_id, prompt, system_prompt),
         "options": {
-            "temperature": temperature
+            "temperature": used_temp
         }
     }
 
     full_reply = ""
 
-    timeout = aiohttp.ClientTimeout(total=None)
+    timeout = aiohttp.ClientTimeout(total=None if OLLAMA_TIMEOUT == 0 else OLLAMA_TIMEOUT)
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.post(OLLAMA_CHAT_ENDPOINT, json=payload) as resp:
             if resp.status != 200:
-                text = await resp.text()
-                raise RuntimeError(f"Ollama error {resp.status}: {text}")
+                body = await resp.text()
+                raise RuntimeError(f"Ollama HTTP {resp.status}: {body}")
 
-            async for line in resp.content:
-                if not line:
+            async for raw in resp.content:
+                if not raw:
                     continue
 
                 try:
-                    data = json.loads(line.decode("utf-8"))
+                    data = json.loads(raw.decode("utf-8"))
                 except Exception:
                     continue
 
-                if data.get("done"):
+                if data.get("done") is True:
                     break
 
                 delta = data.get("message", {}).get("content")
@@ -151,14 +152,26 @@ async def ask_ollama_stream(
                     except Exception:
                         pass
 
-    _save_assistant_reply(user_id, prompt, full_reply)
+    _save_history(user_id, prompt, full_reply)
 
-    return full_reply
-
+    return full_reply.strip()
 
 # ------------------------------------------------------------------
-# أدوات تحكم (يستخدمها handlers)
+# أدوات تحكم (تُستخدم من handlers)
 # ------------------------------------------------------------------
+
+def enable_ai():
+    AI.enabled = True
+
+
+def disable_ai():
+    AI.enabled = False
+
+
+def toggle_ai() -> bool:
+    AI.enabled = not AI.enabled
+    return AI.enabled
+
 
 def clear_user_memory(user_id: int):
     USER_HISTORY.pop(user_id, None)
@@ -168,11 +181,17 @@ def clear_all_memory():
     USER_HISTORY.clear()
 
 
-def set_default_model(model_name: str):
-    global OLLAMA_MODEL_DEFAULT
-    OLLAMA_MODEL_DEFAULT = model_name
-    ENGINE.model = model_name
+def set_model(model_name: str):
+    AI.model = model_name
 
 
-def get_current_model() -> str:
-    return ENGINE.model
+def get_model() -> str:
+    return AI.model
+
+
+def set_temperature(value: float):
+    AI.temperature = float(value)
+
+
+def get_status() -> bool:
+    return AI.enabled
