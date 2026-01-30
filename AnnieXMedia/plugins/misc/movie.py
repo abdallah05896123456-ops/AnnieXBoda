@@ -1,142 +1,73 @@
-# Authored By Certified Coders © 2026
-# MOVIE SEARCH SYSTEM - AnnieXMedia OFFICIAL
-# Logic: TMDB Metadata + AI-Powered Web Scanning for Streaming Links
-
-import httpx
-import os
-import re
+# Authored By Certified Coders © 2025
 from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.types import Message
 from pyrogram.enums import ParseMode
-from g4f.client import AsyncClient as AIClient
 from AnnieXMedia import app
+import httpx
 
-# --- إعدادات المحركات والبيانات الأساسية ---
+
 TMDB_API_KEY = "23c3b139c6d59ebb608fe6d5b974d888"
-TMDB_BASE_URL = "https://api.themoviedb.org/3"
-IMAGE_SERVER = "https://image.tmdb.org/t/p/w500"
+TMDB_BASE = "https://api.themoviedb.org/3"
 
-# تهيئة محرك البحث الذكي (AI Engine)
-search_engine = AIClient()
 
-async def get_streaming_link_via_ai(movie_name: str):
-    """
-    استخدام تقنيات الاستدلال المنطقي للذكاء الاصطناعي للبحث عن 
-    روابط المشاهدة النشطة في الوقت الحالي.
-    """
-    instruction = (
-        "أنت محرك بحث متقدم متخصص في العثور على روابط الأفلام العربية. "
-        "مهمتك هي تزويدي برابط مباشر وصالح لمشاهدة الفيلم المطلوب من مواقع: "
-        "إيجي بيست، عرب سيد، أو فاصل إعلاني. "
-        "يجب أن يكون الرد عبارة عن الرابط فقط بدون أي نصوص أو مقدمات. "
-        "إذا تعذر العثور على رابط مباشر، رد بكلمة NULL."
-    )
-    try:
-        response = await search_engine.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": instruction},
-                {"role": "user", "content": f"ابحث عن رابط مشاهدة فيلم: {movie_name}"}
-            ]
-        )
-        found_link = response.choices[0].message.content.strip()
-        if found_link and found_link.startswith("http") and "NULL" not in found_link:
-            return found_link
-        return None
-    except Exception:
-        return None
-
-async def fetch_movie_metadata(movie_query: str):
-    """جلب المعلومات الرسمية من قاعدة بيانات TMDB"""
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        # البحث الأولي عن الفيلم مع تفعيل اللغة العربية
-        search_req = await client.get(f"{TMDB_BASE_URL}/search/movie", params={
-            "api_key": TMDB_API_KEY,
-            "query": movie_query,
-            "language": "ar"
-        })
-        results = search_req.json().get("results")
-        if not results:
-            return None
-
-        primary_data = results[0]
-        movie_id = primary_data["id"]
-
-        # جلب التفاصيل الإضافية (مثل الإيرادات والموقع الرسمي)
-        details_req = await client.get(f"{TMDB_BASE_URL}/movie/{movie_id}", params={
-            "api_key": TMDB_API_KEY,
-            "language": "ar"
-        })
-        details = details_req.json()
-
-        # جلب قائمة الممثلين الرئيسية
-        credits_req = await client.get(f"{TMDB_BASE_URL}/movie/{movie_id}/credits", params={
-            "api_key": TMDB_API_KEY,
-            "language": "ar"
-        })
-        cast_list = ", ".join([member["name"] for member in credits_req.json().get("cast", [])[:5]])
-
-        # تنسيق البيانات النصية
-        revenue_val = details.get("revenue", 0)
-        revenue_formatted = f"${revenue_val:,}" if revenue_val > 0 else "غير متوفر"
-        
-        caption_text = (
-            f"العنوان: {details.get('title')}\n"
-            f"تاريخ الإصدار: {details.get('release_date')}\n"
-            f"التقييم العام: {details.get('vote_average')}/10\n"
-            f"طاقم التمثيل: {cast_list}\n"
-            f"صندوق التذاكر: {revenue_formatted}\n\n"
-            f"قصة الفيلم:\n{details.get('overview')}\n\n"
-            f"نظام معلومات AnnieXMedia"
+@app.on_message(filters.command("movie"))
+async def movie_command(client: Client, message: Message):
+    if len(message.command) < 2:
+        return await message.reply_text(
+            "❌ Please provide a movie name.\n\nExample: `/movie Inception`",
+            parse_mode=ParseMode.MARKDOWN
         )
 
-        return {
-            "id_title": details.get('title'),
-            "caption": caption_text,
-            "poster": f"{IMAGE_SERVER}{details.get('poster_path')}" if details.get('poster_path') else None,
-            "official_url": details.get("homepage")
-        }
-
-# --- معالج الأوامر المباشر (No-Prefix) ---
-@app.on_message(filters.regex(r"^(فيلم|فلم|movie)($| )") & ~filters.bot)
-async def movie_search_processor(client: Client, message: Message):
-    # التحقق من وجود اسم الفيلم في نص الرسالة
-    if len(message.text.split()) < 2:
-        return await message.reply_text("يرجى كتابة اسم الفيلم بعد الأمر لبدء عملية البحث.")
-
-    search_query = message.text.split(None, 1)[1]
-    status_prompt = await message.reply_text("جاري استخلاص البيانات الرسمية والبحث عن روابط المشاهدة عبر الذكاء الاصطناعي...")
+    movie_name = " ".join(message.command[1:])
+    status = await message.reply_text("🔎 Searching for the movie...")
 
     try:
-        # 1. جلب البيانات الأساسية والبوستر
-        metadata = await fetch_movie_metadata(search_query)
-        if not metadata:
-            return await status_prompt.edit("لم يتم العثور على الفيلم المطلوب في قاعدة البيانات.")
+        info = await get_movie_info(movie_name)
+        await status.edit_text(info, parse_mode=ParseMode.MARKDOWN)
+    except Exception as e:
+        print(f"[Movie Error] {e}")
+        await status.edit_text("❌ Failed to fetch movie information.")
 
-        # 2. البحث عن روابط خارجية للمشاهدة (البحث الذكي)
-        streaming_url = await get_streaming_link_via_ai(metadata["id_title"])
-        
-        # 3. بناء لوحة التحكم (الروابط)
-        navigation_buttons = []
-        if streaming_url:
-            navigation_buttons.append([InlineKeyboardButton(text="روابـط الـتـنـزيـل", url=streaming_url)])
-        
-        if metadata["official_url"]:
-            navigation_buttons.append([InlineKeyboardButton(text="الموقع الرسمي", url=metadata["official_url"])])
-            
-        markup_interface = InlineKeyboardMarkup(navigation_buttons) if navigation_buttons else None
 
-        # 4. تسليم النتيجة للمستخدم
-        if metadata["poster"]:
-            await message.reply_photo(
-                photo=metadata["poster"],
-                caption=metadata["caption"],
-                reply_markup=markup_interface,
-                parse_mode=ParseMode.MARKDOWN
-            )
-            await status_prompt.delete()
-        else:
-            await status_prompt.edit(metadata["caption"], reply_markup=markup_interface, parse_mode=ParseMode.MARKDOWN)
+async def get_movie_info(query: str) -> str:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        search = await client.get(f"{TMDB_BASE}/search/movie", params={
+            "api_key": TMDB_API_KEY,
+            "query": query
+        })
+        search_data = search.json()
+        if not search_data.get("results"):
+            return "❌ Movie not found."
 
-    except Exception:
-        await status_prompt.edit("حدث خطأ فني غير متوقع أثناء معالجة طلبك.")
+        movie = search_data["results"][0]
+        movie_id = movie["id"]
+
+        details = await client.get(f"{TMDB_BASE}/movie/{movie_id}", params={
+            "api_key": TMDB_API_KEY
+        })
+        details_data = details.json()
+
+        cast = await client.get(f"{TMDB_BASE}/movie/{movie_id}/credits", params={
+            "api_key": TMDB_API_KEY
+        })
+        cast_data = cast.json()
+        actors = ", ".join([actor["name"] for actor in cast_data.get("cast", [])[:5]]) or "N/A"
+
+        title = details_data.get("title", "N/A")
+        release = details_data.get("release_date", "N/A")
+        overview = details_data.get("overview", "N/A")
+        rating = details_data.get("vote_average", "N/A")
+        revenue = details_data.get("revenue", 0)
+
+        revenue_str = f"${revenue:,}" if revenue else "Not Available"
+
+        info = (
+            f"🎬 **Title:** {title}\n"
+            f"📅 **Release Date:** {release}\n"
+            f"⭐ **Rating:** {rating}/10\n"
+            f"🎭 **Top Cast:** {actors}\n"
+            f"💰 **Box Office:** {revenue_str}\n\n"
+            f"📝 **Overview:**\n{overview}"
+        )
+
+        return info
