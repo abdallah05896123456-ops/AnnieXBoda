@@ -75,7 +75,7 @@ def schedule_athkar(scheduler):
 async def athkar_sabah_reply(client, message: Message):
     """يرد بدعاء عشوائي من قائمة أذكار الصباح عند طلب المستخدم"""
     selected_dua = random.choice(MORNING_DUAS)
-    await message.reply_text(f"{selected_dua}\n\n➻ sᴏᴜʀᴄᴇ : بُودَا | ʙᴏᴅَا")
+    await message.reply_text(f"{selected_dua}")
     # السماح بمرور الرسالة للمعالجات الأخرى
     message.continue_propagation()
 
@@ -83,12 +83,12 @@ async def athkar_sabah_reply(client, message: Message):
 async def athkar_night_reply(client, message: Message):
     """يرد بدعاء عشوائي من قائمة أذكار المساء عند طلب المستخدم"""
     selected_dua = random.choice(NIGHT_DUAS)
-    await message.reply_text(f"{selected_dua}\n\n➻ sᴏᴜʀᴄᴇ : بُودَا | ʙᴏᴅَا")
+    await message.reply_text(f"{selected_dua}")
     message.continue_propagation()
 
 @app.on_message(filters.regex(r"^(ذكر|اذكار|أذكار)$") & ~filters.bot, group=AZAN_GROUP + 4)
 async def athkar_general_reply(client, message: Message):
     """يرد بذكر عام عشوائي عند كتابة كلمة ذكر"""
     selected_thikr = random.choice(ATHKAR_GENERAL)
-    await message.reply_text(f"{selected_thikr}\n\n➻ sᴏᴜʀᴄᴇ : بُودَا | ʙᴏᴅَا")
+    await message.reply_text(f"{selected_thikr}")
     message.continue_propagation()
