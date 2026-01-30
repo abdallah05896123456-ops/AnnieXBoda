@@ -1,32 +1,19 @@
 # Authored By Certified Coders 2026
-# Module: Auto Leave Control - Cleaned & Arabic
+# Module: Auto Leave Background Tasks (Misc)
 
 import asyncio
 from datetime import datetime
-from pyrogram import filters
 from pyrogram.enums import ChatType
 
 import config
 from AnnieXMedia import app
 from AnnieXMedia.core.call import StreamController, autoend
 from AnnieXMedia.utils.database import get_client, is_active_chat, is_autoend
-from AnnieXMedia.misc import SUDOERS
 
-# ─── التحكم في المغادرة التلقائية عبر الأوامر ──────────────────
-
-@app.on_message(filters.command(["تفعيل المغادرة", "تعطيل المغادرة", "تفعيل مغادرة", "تعطيل مغادرة"]) & SUDOERS)
-async def control_auto_leave(_, message):
-    command = message.text
-    if "تفعيل" in command:
-        config.AUTO_LEAVING_ASSISTANT = True
-        await message.reply_text("تم تفعيل وضع المغادرة التلقائية للحساب المساعد بنجاح.")
-    elif "تعطيل" in command:
-        config.AUTO_LEAVING_ASSISTANT = False
-        await message.reply_text("تم تعطيل وضع المغادرة التلقائية للحساب المساعد بنجاح.")
-
-# ─── وظيفة المغادرة التلقائية ────────────────────────────────
+# ─── وظيفة المغادرة التلقائية (Background Task) ────────────────
 
 async def auto_leave():
+    """وظيفة تعمل في الخلفية لفحص المجموعات والمغادرة منها"""
     while True:
         if config.AUTO_LEAVING_ASSISTANT:
             from AnnieXMedia.core.userbot import assistants
@@ -36,27 +23,34 @@ async def auto_leave():
                 try:
                     async for i in client.get_dialogs():
                         if i.chat.type in [ChatType.SUPERGROUP, ChatType.GROUP, ChatType.CHANNEL]:
-                            # تم حذف الاستثناءات القديمة، الآن يستثني فقط جروب السجل
+                            # استثناء مجموعة السجل (Logger)
                             if i.chat.id != config.LOGGER_ID:
                                 
+                                # مغادرة 20 مجموعة في الدورة الواحدة لتجنب الحظر
                                 if left == 20:
                                     break 
                                     
+                                # المغادرة إذا لم تكن هناك مكالمة نشطة
                                 if not await is_active_chat(i.chat.id):
                                     try:
                                         await client.leave_chat(i.chat.id)
                                         left += 1
+                                        await asyncio.sleep(1) # تأخير بسيط بين كل مغادرة
                                     except:
                                         continue
                 except:
                     pass
+        # إعادة الفحص كل ساعة (أو حسب المحدد في الكونفج)
         await asyncio.sleep(config.AUTO_LEAVE_ASSISTANT_TIME or 3600)
 
+# تشغيل المهمة فوراً عند بدء البوت
 asyncio.create_task(auto_leave())
+
 
 # ─── وظيفة إنهاء التشغيل عند خلو الكول ────────────────────────
 
 async def auto_end():
+    """وظيفة لإنهاء البث إذا كان الكول فارغاً لفترة محددة"""
     while not await asyncio.sleep(5):
         ender = await is_autoend()
         if not ender:
@@ -82,4 +76,5 @@ async def auto_end():
                 except:
                     continue
 
+# تشغيل المهمة فوراً عند بدء البوت
 asyncio.create_task(auto_end())
