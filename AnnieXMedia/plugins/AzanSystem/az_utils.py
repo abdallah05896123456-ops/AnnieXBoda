@@ -27,8 +27,7 @@ from pyrogram.errors import (
     PeerIdInvalid,
     ChannelInvalid,
     UserNotParticipant,
-    UserAlreadyParticipant,
-    GroupcallAlreadyJoined,
+    UserAlreadyParticipant, # ✅ تم التصحيح: الاسم الصحيح في مكتبتك
     GroupcallInvalid,
     ChatAdminRequired
 )
@@ -196,7 +195,7 @@ async def prepare_call_environment(chat_id: int, assistant, force_log: bool = Fa
         # فحص حالة الكول أولاً
         try:
             await assistant.get_group_call(chat_id)
-        except (GroupcallInvalid, GroupcallAlreadyJoined):
+        except (GroupcallInvalid, UserAlreadyParticipant): # ✅ تم التعديل
             # الكول مش شغال أو فيه مشكلة بسيطة -> نكمل لمحاولة الإنشاء
             pass 
         except Exception:
@@ -213,7 +212,7 @@ async def prepare_call_environment(chat_id: int, assistant, force_log: bool = Fa
             await asyncio.sleep(2) # انتظار الانتشار
         except Exception as e:
             # تجاهل الأخطاء التي تعني أن الكول يعمل بالفعل
-            if "GROUPCALL_ALREADY_JOINED" in str(e) or "SCHEDULED" in str(e):
+            if "GROUPCALL_ALREADY_JOINED" in str(e) or "SCHEDULED" in str(e) or "UserAlreadyParticipant" in str(e):
                 pass
             elif "CHAT_ADMIN_REQUIRED" in str(e):
                 if force_log: logger.warning(f"Assistant needs Admin rights in {chat_id} to start call.")
