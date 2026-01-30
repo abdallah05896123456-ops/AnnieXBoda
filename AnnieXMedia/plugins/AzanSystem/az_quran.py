@@ -101,8 +101,7 @@ async def auto_malal_reply(client, message: Message):
     reply_text = (
         f"يا {user_name}، اذكر الله يطمئن قلبك.\n"
         "استمع لهذه الآية الكريمة لعلها تكون رسالة لك في هذا الوقت 💙:\n\n"
-        f"<b>{verse}</b>\n\n"
-        "➻ sᴏᴜʀᴄᴇ : بُودَا | ʙᴏᴅَا"
+        f"<b>{verse}</b>"
     )
     await message.reply_text(reply_text)
     message.continue_propagation()
@@ -116,8 +115,7 @@ async def quran_verse_reply(client, message: Message):
     
     reply_text = (
         "إليك آية مختارة من كتاب الله عز وجل، طمأن الله بها قلبك 💙:\n\n"
-        f"<b>{verse}</b>\n\n"
-        "➻ sᴏᴜʀᴄᴇ : بُودَا | ʙᴏᴅَا"
+        f"<b>{verse}</b>"
     )
     await message.reply_text(reply_text)
     message.continue_propagation()
@@ -128,5 +126,5 @@ async def quran_verse_reply(client, message: Message):
 async def text_aya_cmd(client, message: Message):
     """إرسال الآية فقط بدون أي نص إضافي"""
     verse = random.choice(QURAN_VERSES)
-    await message.reply_text(f"{verse}\n\n➻ sᴏᴜʀᴄᴇ : بُودَا | ʙᴏᴅَا")
+    await message.reply_text(f"{verse}")
     message.continue_propagation()
