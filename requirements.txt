@@ -4,7 +4,10 @@ argon2
 apscheduler
 bing_image_downloader
 bs4
+brotli
 cachetools
+certifi
+curl_cffi>=0.6.2
 deepai
 edge-tts
 ffmpeg-python
@@ -52,12 +55,9 @@ kurigram>=2.2.17
 git+https://github.com/CertifiedCoders/youtube-search-python.git
 yt-dlp>=2026.1.29
 pyromod
-g4f
-lyricsgenius
+g4f>=0.2.0
 fuzzywuzzy
 python-Levenshtein
-pillow>=12.0.0
-apscheduler
 mutagen
 pytz
 googletrans
