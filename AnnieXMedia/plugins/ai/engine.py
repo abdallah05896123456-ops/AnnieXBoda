@@ -1,13 +1,15 @@
 # plugins/ai/engine.py
 # Authored By Certified Coders © 2026
-# Local AI Engine - Switched to G4F (Fast Cloud)
+# Local AI Engine - Smart G4F (Auto-Healing & Robust)
 # FULLY COMPATIBLE WITH handlers.py
 
 import logging
 import asyncio
+import inspect
+import time
 from typing import Dict, Optional, Callable
 
-# ✅ استدعاء العميل فقط (بدون تحديد المزودات لتجنب أخطاء الأسماء)
+# ✅ استدعاء العميل الأساسي
 from g4f.client import AsyncClient
 
 # ------------------------------------------------------------------
@@ -18,26 +20,22 @@ logger = logging.getLogger("AnnieX_AI")
 logging.basicConfig(level=logging.INFO)
 
 # ------------------------------------------------------------------
-# Models Mapping (Light vs Heavy)
+# Models Mapping
 # ------------------------------------------------------------------
 
-# Light = GPT-3.5 or Mini (Fastest)
-# المكتبة ستقوم تلقائياً بتحويل هذا الطلب لأسرع مزود متاح
 LIGHT_MODEL = "gpt-3.5-turbo"
-
-# Heavy = GPT-4 (Smartest)
-# المكتبة ستبحث عن مزودات تدعم GPT-4 مثل Copilot أو Bing
 HEAVY_MODEL = "gpt-4"
-
 DEFAULT_MODEL = LIGHT_MODEL
 
 # ------------------------------------------------------------------
-# Memory & Cache
+# Memory & Cache Management
 # ------------------------------------------------------------------
 
 USER_HISTORY: Dict[int, list] = {}
 CACHE: Dict[str, str] = {}
-MAX_HISTORY = 12  # تقليل السياق قليلاً لضمان استجابة المزودات المجانية
+MAX_HISTORY = 12       # عدد الرسائل المحفوظة لكل مستخدم
+MAX_CACHE_SIZE = 500   # أقصى عدد ردود محفوظة في الكاش
+MAX_USERS_IN_MEM = 100 # أقصى عدد مستخدمين في الذاكرة لتجنب استهلاك الرامات
 
 # ------------------------------------------------------------------
 # Engine State
@@ -47,7 +45,6 @@ class AIEngineState:
     def __init__(self):
         self.enabled: bool = True
         self.model: str = DEFAULT_MODEL
-        # g4f providers often ignore temperature, but kept for compatibility
         self.temperature: float = 0.7 
 
     @property
@@ -58,13 +55,23 @@ class AIEngineState:
         self.enabled = True
         self.model = DEFAULT_MODEL
 
-
 AI = AIEngineState()
 ENGINE = AI
 
 # ------------------------------------------------------------------
-# Internal Helpers
+# Internal Helpers (Smart Logic)
 # ------------------------------------------------------------------
+
+def _clean_memory_if_needed():
+    """تنظيف الذاكرة بذكاء إذا زاد الحمل"""
+    if len(USER_HISTORY) > MAX_USERS_IN_MEM:
+        # حذف أقدم 20 مستخدم لم يتفاعلوا مؤخراً
+        keys_to_remove = list(USER_HISTORY.keys())[:20]
+        for k in keys_to_remove:
+            del USER_HISTORY[k]
+    
+    if len(CACHE) > MAX_CACHE_SIZE:
+        CACHE.clear()
 
 def _build_messages(user_id: int, prompt: str, system_prompt: str) -> list:
     messages = []
@@ -81,8 +88,8 @@ def _build_messages(user_id: int, prompt: str, system_prompt: str) -> list:
     messages.append({"role": "user", "content": prompt})
     return messages
 
-
 def _save_history(user_id: int, prompt: str, reply: str):
+    _clean_memory_if_needed()
     history = USER_HISTORY.setdefault(user_id, [])
     history.append({"role": "user", "content": prompt})
     history.append({"role": "assistant", "content": reply})
@@ -91,7 +98,7 @@ def _save_history(user_id: int, prompt: str, reply: str):
         USER_HISTORY[user_id] = history[-MAX_HISTORY:]
 
 # ------------------------------------------------------------------
-# Core G4F Logic (Replaces Ollama)
+# Core G4F Logic (The Smartest Implementation)
 # ------------------------------------------------------------------
 
 async def ask_ollama_stream(
@@ -103,8 +110,7 @@ async def ask_ollama_stream(
     on_update: Optional[Callable[[str], None]] = None,
 ) -> str:
     """
-    Function name kept as 'ask_ollama_stream' for compatibility 
-    with existing handlers.py, but logic is pure G4F.
+    دالة الذكاء الاصطناعي الأساسية
     """
 
     if not AI.enabled:
@@ -112,52 +118,73 @@ async def ask_ollama_stream(
 
     used_model = model or AI.model
     
-    # Check Cache (Simple caching)
+    # 1. فحص الكاش للسرعة
     cache_key = f"{used_model}:{prompt}" 
     if cache_key in CACHE:
         return CACHE[cache_key]
 
     messages = _build_messages(user_id, prompt, system_prompt)
     
-    # ✅ FIX: Initialize G4F Client (Auto Mode)
-    # عدم تمرير provider يجعل المكتبة تختار الأفضل تلقائياً وتتجنب الأخطاء
+    # 2. تهيئة العميل (بدون تحديد مزود ليختار الأفضل تلقائياً)
     client = AsyncClient()
 
     full_reply = ""
     
     try:
-        # Request from G4F
-        response = await client.chat.completions.create(
+        # 🔥 [الذكاء البرمجي هنا] 🔥
+        # نقوم بإنشاء الطلب ولكن لا نستخدم await فوراً
+        # لأن بعض النسخ تعيد Generator والبعض يعيد Coroutine
+        response = client.chat.completions.create(
             model=used_model,
             messages=messages,
             stream=True 
         )
 
+        # فحص نوع الاستجابة بذكاء
+        # لو كانت دالة انتظار (Coroutine)، ننتظرها
+        if inspect.iscoroutine(response):
+            response = await response
+
+        # الآن معنا الـ Stream، نلف عليه
         async for chunk in response:
-            if chunk.choices[0].delta.content:
-                delta = chunk.choices[0].delta.content
-                full_reply += delta
+            content = None
+            
+            # محاولة استخراج النص بأكثر من صيغة لضمان التوافق مع كل المزودات
+            if hasattr(chunk.choices[0].delta, "content"):
+                content = chunk.choices[0].delta.content
+            elif hasattr(chunk, "content"):
+                content = chunk.content
+            
+            if content:
+                full_reply += content
                 
-                # Update Message (Streaming effect)
-                # We update every few chars to avoid flooding Telegram API
-                if on_update and len(full_reply) % 15 == 0: 
+                # تحديث الرسالة كل 20 حرف لتجنب حظر التليجرام (Flood Wait)
+                if on_update and len(full_reply) % 20 == 0: 
                     try:
                         await on_update(full_reply)
                     except:
                         pass
         
-        # Final update to ensure complete text is shown
+        # التحديث النهائي للنص الكامل
         if on_update:
             await on_update(full_reply)
 
     except Exception as e:
-        logger.error(f"G4F Error: {e}")
-        return f"عذراً، الخوادم مشغولة حالياً، حاول مرة أخرى. ({e})"
+        logger.error(f"G4F Smart Error: {e}")
+        err_msg = str(e).lower()
+        
+        # ردود ذكية حسب نوع الخطأ
+        if "404" in err_msg or "not found" in err_msg:
+            return "الموديل ده عليه ضغط حالياً أو غير متاح، جرب تغير الوضع (سريع/ذكي)."
+        elif "429" in err_msg or "rate limit" in err_msg:
+            return "السيرفر مشغول جداً، جرب تاني كمان ثواني."
+        else:
+            return f"حصل خطأ بسيط في الاتصال، حاول مرة كمان. ({e})"
 
     if not full_reply:
-        return "لم أستطع الحصول على رد، حاول مرة أخرى."
+        return "لم يصل رد من السيرفر، جرب مرة أخرى."
 
-    # Save logic
+    # حفظ في الذاكرة والكاش
     _save_history(user_id, prompt, full_reply)
     CACHE[cache_key] = full_reply
     
@@ -203,7 +230,7 @@ def get_current_model() -> str:
 __all__ = [
     "AI",
     "ENGINE",
-    "ask_ollama_stream", # Kept name for compatibility
+    "ask_ollama_stream", 
     "clear_user_memory",
     "clear_all_memory",
     "toggle_model",
