@@ -27,7 +27,7 @@ from pyrogram.errors import (
     PeerIdInvalid,
     ChannelInvalid,
     UserNotParticipant,
-    UserAlreadyParticipant, # ✅ تم التصحيح: الاسم الصحيح في مكتبتك
+    UserAlreadyParticipant, # ✅ تم التصحيح
     GroupcallInvalid,
     ChatAdminRequired
 )
@@ -39,7 +39,8 @@ from AnnieXMedia.core.call import StreamController
 from AnnieXMedia.core.userbot import assistants
 
 # --- [ Database Imports ] ---
-from AnnieXMedia.utils.database import chatsdb, remove_served_chat
+# ✅ تم إضافة get_client هنا لحل مشكلة الـ Integer
+from AnnieXMedia.utils.database import chatsdb, remove_served_chat, get_client
 
 # --- [ Configuration & Local DB ] ---
 from .az_conf import (
@@ -195,7 +196,7 @@ async def prepare_call_environment(chat_id: int, assistant, force_log: bool = Fa
         # فحص حالة الكول أولاً
         try:
             await assistant.get_group_call(chat_id)
-        except (GroupcallInvalid, UserAlreadyParticipant): # ✅ تم التعديل
+        except (GroupcallInvalid, UserAlreadyParticipant):
             # الكول مش شغال أو فيه مشكلة بسيطة -> نكمل لمحاولة الإنشاء
             pass 
         except Exception:
@@ -254,8 +255,13 @@ async def start_azan_stream(chat_id: int, prayer_key: str, play_target: str = No
             except: pass
 
             # 2. اختيار مساعد وتجهيز الكول
-            # اختيار مساعد عشوائي لتوزيع الحمل
-            assistant = random.choice(assistants)
+            # ✅✅ [تصحيح الخطأ هنا] تحويل الرقم إلى كلاينت حقيقي
+            try:
+                assistant_idx = random.choice(assistants)
+                assistant = await get_client(assistant_idx) # تحويل الرقم لكلاينت
+            except Exception as e:
+                logger.error(f"Failed to get assistant client: {e}")
+                return
             
             success = await prepare_call_environment(chat_id, assistant, force_log=force_test)
             if not success and force_test:
