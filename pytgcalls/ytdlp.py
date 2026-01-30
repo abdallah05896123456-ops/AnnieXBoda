@@ -1,5 +1,6 @@
 # Authored By Certified Coders © 2026
 # RACE MODE: Android/iOS Spoofing + No-Check Flags + IPv4 Force
+# FIXED: Removed deprecated arguments
 
 import asyncio
 import logging
@@ -55,7 +56,7 @@ class YtDlp:
             # --- تخطي الفحوصات (Skip Checks) ---
             '--no-playlist',              
             '--no-check-formats',         # سرعة صاروخية (يأخذ أول صيغة تقابله)
-            '--no-remote-subtitles',      # توفير HTTP Request
+            # '--no-remote-subtitles',    # ❌ تم الحذف: هذا الأمر يسبب توقف البوت
             '--no-write-subs',
             '--no-warnings',
             '--ignore-errors',
