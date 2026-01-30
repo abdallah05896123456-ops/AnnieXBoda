@@ -7,9 +7,8 @@ import logging
 import asyncio
 from typing import Dict, Optional, Callable
 
-# استدعاء مكتبة G4F والعميل غير المتزامن
+# ✅ استدعاء العميل فقط (بدون تحديد المزودات لتجنب أخطاء الأسماء)
 from g4f.client import AsyncClient
-from g4f.Provider import RetryProvider, Bing, FreeGpt, Liaobots, DarkAI, Blackbox
 
 # ------------------------------------------------------------------
 # Logger
@@ -23,9 +22,11 @@ logging.basicConfig(level=logging.INFO)
 # ------------------------------------------------------------------
 
 # Light = GPT-3.5 or Mini (Fastest)
+# المكتبة ستقوم تلقائياً بتحويل هذا الطلب لأسرع مزود متاح
 LIGHT_MODEL = "gpt-3.5-turbo"
 
 # Heavy = GPT-4 (Smartest)
+# المكتبة ستبحث عن مزودات تدعم GPT-4 مثل Copilot أو Bing
 HEAVY_MODEL = "gpt-4"
 
 DEFAULT_MODEL = LIGHT_MODEL
@@ -118,11 +119,9 @@ async def ask_ollama_stream(
 
     messages = _build_messages(user_id, prompt, system_prompt)
     
-    # Initialize G4F Client with RetryProvider for stability
-    # This automatically tries multiple providers if one fails
-    client = AsyncClient(
-        provider=RetryProvider([Bing, Blackbox, FreeGpt, Liaobots, DarkAI], shuffle=False)
-    )
+    # ✅ FIX: Initialize G4F Client (Auto Mode)
+    # عدم تمرير provider يجعل المكتبة تختار الأفضل تلقائياً وتتجنب الأخطاء
+    client = AsyncClient()
 
     full_reply = ""
     
