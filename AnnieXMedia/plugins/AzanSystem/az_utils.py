@@ -37,6 +37,8 @@ from pyrogram.errors import (
 # --- [ Internal Imports ] ---
 from AnnieXMedia import app, YouTube
 from AnnieXMedia.core.call import StreamController
+# [تطوير] استيراد قائمة المساعدين لحل مشكلة الانضمام
+from AnnieXMedia.core.userbot import assistants
 
 # --- [ Database Imports ] ---
 # استيراد قاعدة البيانات الشاملة لضمان الوصول لكل الجروبات
@@ -64,7 +66,8 @@ logger = logging.getLogger("Azan_Maestro_Live")
 
 # --- [ Constants & Global Variables ] ---
 CAIRO_TZ = pytz.timezone('Africa/Cairo')
-MAX_CONCURRENT_STREAMS = 40  # عدد العمليات المتزامنة (تم الرفع للسرعة)
+# [تطوير] تقليل العدد قليلاً لضمان استقرار FFmpeg حتى مع السيرفر القوي
+MAX_CONCURRENT_STREAMS = 20  
 stream_semaphore = asyncio.Semaphore(MAX_CONCURRENT_STREAMS)
 scheduler = AsyncIOScheduler(timezone=CAIRO_TZ)
 
@@ -211,7 +214,8 @@ async def load_resources():
 # [SECTION 3] Stream Logic (The Core Engine)
 # ==================================================================
 
-async def start_azan_stream(chat_id: int, prayer_key: str, play_target: str, force_test: bool = False):
+# [تطوير] جعل play_target اختيارياً لمنع الأخطاء عند الاستدعاء اليدوي
+async def start_azan_stream(chat_id: int, prayer_key: str, play_target: str = None, force_test: bool = False):
     """
     تشغيل الأذان في مجموعة واحدة باستخدام الرابط المجهز مسبقاً.
     - يتخطى واجهة الأزرار.
@@ -224,6 +228,10 @@ async def start_azan_stream(chat_id: int, prayer_key: str, play_target: str, for
         if not res:
             logger.error(f"start_azan_stream: missing resource for {prayer_key}")
             return
+
+        # [تطوير] استخدام الرابط المخزن إذا لم يتم تمرير هدف (لحل مشكلة التست)
+        if not play_target:
+            play_target = res.get("link")
 
         try:
             # --- [ الخطوة 1: إرسال الوسائط ] ---
@@ -241,6 +249,23 @@ async def start_azan_stream(chat_id: int, prayer_key: str, play_target: str, for
                 await app.send_message(chat_id, caption)
             except Exception:
                 logger.debug("Failed to send azan caption")
+
+            # --- [ الخطوة 1.5 (تطوير): التحقق من وجود المساعد ] ---
+            # هذا الكود يمنع خطأ JOIN ERROR ومحاولة الانضمام التلقائي
+            try:
+                assistant = assistants[0]
+                try:
+                    await assistant.get_chat_member(chat_id, "me")
+                except UserNotParticipant:
+                    if force_test: logger.info(f"Assistant joining {chat_id}...")
+                    try:
+                        invite_link = await app.export_chat_invite_link(chat_id)
+                        await assistant.join_chat(invite_link)
+                        await asyncio.sleep(1) # انتظار بسيط للتفعيل
+                    except Exception as join_err:
+                        logger.warning(f"Auto-Join failed for {chat_id}: {join_err}")
+            except Exception as e:
+                logger.error(f"Assistant check error: {e}")
 
             # --- [ الخطوة 2: الانضمام والتشغيل ] ---
             try:
@@ -324,18 +349,21 @@ async def broadcast_azan(prayer_key: str):
     
     # --- [ المرحلة 1: تجهيز الرابط مركزياً ] ---
     try:
-        # نمرر None للمعامل الثاني لمنع رسالة "جاري التجهيز"
-        play_target, is_stream = await YouTube.download(
-            res["link"], 
-            None, 
-            video=False, 
-            videoid=False
-        )
-        
+        # [تطوير] التعامل مع الروابط المباشرة لتجنب أخطاء YouTube
+        if "youtube" in res["link"] or "youtu.be" in res["link"]:
+            play_target, is_stream = await YouTube.download(
+                res["link"], 
+                None, 
+                video=False, 
+                videoid=False
+            )
+        else:
+            play_target = res["link"] # استخدام الرابط المباشر كما هو
+            
         # إذا فشل التحميل، نستخدم الرابط الخام
         if not play_target:
             play_target = res["link"]
-            logger.warning("YouTube download returned None, using raw link.")
+            logger.warning("Download failed, using raw link.")
         else:
             logger.info("Direct link extracted successfully.")
 
@@ -363,8 +391,8 @@ async def broadcast_azan(prayer_key: str):
             )
             active_tasks += 1
             
-            # فاصل زمني صغير جداً لتجنب تجميد البوت
-            await asyncio.sleep(0.1)
+            # [تطوير] فاصل زمني 0.2 لمنع الحظر مع العدد الكبير من الطلبات
+            await asyncio.sleep(0.2)
 
     elapsed = time.time() - start_time
     logger.info(f"🏁 Broadcast Completed. Targets: {active_tasks}. Time: {elapsed:.2f}s")
