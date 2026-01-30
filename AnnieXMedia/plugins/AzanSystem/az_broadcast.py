@@ -1,6 +1,6 @@
 # Authored By Certified Coders © 2026
-# System: AnnieX Advanced Broadcaster (Visuals Updated)
-# Architecture: Async Batch Processing + Smart Formatting
+# System: AnnieX Advanced Broadcaster (Clean - No Footer)
+# Location: AnnieXMedia/plugins/AzanSystem/az_broadcast.py
 
 import asyncio
 import random
@@ -28,7 +28,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("Azan_Broadcaster")
 
 # ==========================================================
-# 📜 [1] القوائم (تم إعادة الإيموجي للأذكار فقط)
+# 📜 [1] القوائم (النصوص كما هي بالظبط مع الإيموجي)
 # ==========================================================
 
 SALAWAT_LIST = [
@@ -68,19 +68,16 @@ JUMMAH_MESSAGES = [
 
 async def send_safe_message(chat_id: int, text: str, is_pin: bool) -> bool:
     """
-    إرسال رسالة آمنة (محمية من الحظر والتكرار).
+    إرسال رسالة آمنة (تم إزالة التذييل نهائياً).
     """
     try:
-        # إرسال الاستيكر أولاً
+        # إرسال الاستيكر (لو موجود)
         if CURRENT_DUA_STICKER:
             try: await app.send_sticker(chat_id, CURRENT_DUA_STICKER)
             except: pass
         
-        # إرسال النص
-        msg = await app.send_message(
-            chat_id, 
-            f"<b>{text}</b>\n\n<b>➻ المصدر : بـوت الأذان الـذكـي</b>"
-        )
+        # إرسال النص (نظيف)
+        msg = await app.send_message(chat_id, f"<b>{text}</b>")
         
         # التثبيت
         if is_pin:
@@ -93,12 +90,12 @@ async def send_safe_message(chat_id: int, text: str, is_pin: bool) -> bool:
         logger.warning(f"FloodWait detected: {e.value}s")
         await asyncio.sleep(e.value + 1)
         try:
-            await app.send_message(chat_id, text)
+            await app.send_message(chat_id, f"<b>{text}</b>")
             return True
         except: return False
 
     except (InputUserDeactivated, UserIsBlocked, PeerIdInvalid, ChannelInvalid):
-        # حذف الجروب الميت فوراً
+        # تنظيف الجروبات الميتة
         await settings_db.delete_one({"chat_id": chat_id})
         return False
 
@@ -107,13 +104,14 @@ async def send_safe_message(chat_id: int, text: str, is_pin: bool) -> bool:
 
 async def broadcast_core_engine(text_message: str, is_pin: bool = False) -> Tuple[int, int, float]:
     """
-    المحرك الرئيسي: يعالج الرسائل في دفعات (20 رسالة في المرة).
+    المحرك الرئيسي: يعالج الرسائل في دفعات لزيادة السرعة ومنع الحظر.
     """
     start_time = time.time()
     sent = 0
     failed = 0
     tasks = []
     
+    # النشر فقط للمفعلين (Azan Active)
     cursor = settings_db.find({"azan_active": True})
     
     async for doc in cursor:
@@ -122,7 +120,7 @@ async def broadcast_core_engine(text_message: str, is_pin: bool = False) -> Tupl
         
         tasks.append(send_safe_message(chat_id, text_message, is_pin))
         
-        # تنفيذ كل 20 رسالة معاً
+        # معالجة كل 20 رسالة دفعة واحدة
         if len(tasks) >= 20:
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for res in results:
@@ -130,7 +128,7 @@ async def broadcast_core_engine(text_message: str, is_pin: bool = False) -> Tupl
                 else: failed += 1
             
             tasks = []
-            await asyncio.sleep(1.0) # راحة قصيرة
+            await asyncio.sleep(1.0) 
             
     # المتبقي
     if tasks:
@@ -148,7 +146,7 @@ async def broadcast_core_engine(text_message: str, is_pin: bool = False) -> Tupl
 # ==========================================================
 
 async def execute_auto_random():
-    """اختيار عشوائي"""
+    """اختيار عشوائي للنشر التلقائي"""
     if random.choice([True, False]):
         msg = random.choice(SALAWAT_LIST)
     else:
@@ -161,13 +159,13 @@ async def execute_auto_jummah():
     await broadcast_core_engine(msg, is_pin=True)
 
 def init_broadcast_schedule(scheduler):
-    """تهيئة الجدول مع جسر الأمان"""
+    """تهيئة الجدولة"""
     
     def safe_runner(coro):
         try: app.loop.create_task(coro())
         except: pass
 
-    # جدول الأيام العادية
+    # الأيام العادية
     scheduler.add_job(
         safe_runner, "cron", 
         day_of_week='sat,sun,mon,tue,wed,thu', 
@@ -175,7 +173,7 @@ def init_broadcast_schedule(scheduler):
         args=[execute_auto_random], id="brd_normal"
     )
 
-    # جدول الجمعة
+    # الجمعة
     scheduler.add_job(
         safe_runner, "cron", 
         day_of_week='fri', 
@@ -202,7 +200,7 @@ async def manual_salawat(client, message: Message):
     
     sent, failed, time_taken = await broadcast_core_engine(msg)
     
-    # تم إزالة الإيموجي من هنا حسب طلبك
+    # نص الإحصائيات بدون إيموجي حسب طلبك
     await status.edit_text(
         f"**تم النشر بنجاح**\n\n"
         f"**المرسل:** {sent}\n"
