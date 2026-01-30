@@ -1,17 +1,18 @@
 # Authored By Certified Coders 2026
-# Module: Action/Reaction Commands (GIFs) - Default OFF & Toggleable
+# Module: Action/Reaction Core Logic (Misc)
 
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from pyrogram.enums import ParseMode
 from nekosbest import Client as NekoClient
+import config
 from AnnieXMedia import app
-from AnnieXMedia.misc import SUDOERS
 
 neko_client = NekoClient()
 
-# ─── المتغير المتحكم (مغلق افتراضيا عند الريستارت) ───
-ANIMATION_MODE = False  
+# التأكد من تعريف المتغير لتجنب الأخطاء عند البدء
+if not hasattr(config, "ANIMATION_MODE"):
+    config.ANIMATION_MODE = False
 
 # خريطة الأوامر
 COMMANDS_MAP = {
@@ -48,31 +49,15 @@ async def get_animation(action: str):
         result = await neko_client.get_image(action)
         return result.url
     except Exception as e:
-        print(f"❌ NekoClient error: {e}")
+        print(f"NekoClient error: {e}")
         return None
-
-# ─── أوامر التفعيل والتعطيل (للمطورين فقط) ───
-
-@app.on_message(filters.command(["تفعيل الانمي", "تعطيل الانمي"]) & SUDOERS)
-async def toggle_anime_mode(client, message):
-    global ANIMATION_MODE
-    command = message.text
-    
-    if "تفعيل" in command:
-        ANIMATION_MODE = True
-        await message.reply_text("✅ تم تفعيل وضع الانمي (الصور المتحركة) بنجاح.")
-    else:
-        ANIMATION_MODE = False
-        await message.reply_text("⛔ تم تعطيل وضع الانمي بنجاح.")
 
 # ─── معالجة أوامر التفاعل ───
 
 @app.on_message(filters.command(list(COMMANDS_MAP.keys()), prefixes=["", "/", "!", "."]) & ~filters.forwarded & ~filters.via_bot)
 async def animation_command(client: Client, message: Message):
-    global ANIMATION_MODE
-    
-    # التحقق من حالة الوضع
-    if not ANIMATION_MODE:
+    # التحقق من الحالة عبر ملف config المشترك
+    if not config.ANIMATION_MODE:
         return await message.reply_text("الوضع متوقف مؤقتا .")
 
     command = message.command[0]
