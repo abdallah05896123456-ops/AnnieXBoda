@@ -1,16 +1,22 @@
 # plugins/ai/engine.py
-# Authored By Certified Coders © 2026
-# Local AI Engine - Smart G4F (Auto-Healing & Robust)
-# FULLY COMPATIBLE WITH handlers.py
+# Authored By Certified Coders (c) 2026
+# Local AI Engine - Enterprise Edition (Persona Fixed)
+# Fixes: "I am OpenAI" response, API Key Errors, Throttling
 
 import logging
 import asyncio
-import inspect
 import time
+import random
 from typing import Dict, Optional, Callable
 
-# ✅ استدعاء العميل الأساسي
+# استدعاء العميل والمزودات المحترمة فقط
 from g4f.client import AsyncClient
+from g4f.Provider import (
+    Blackbox,      # العمدة (بيقبل الشخصيات وسريع)
+    PollinationsAI, # ممتاز جدا في تقمص الأدوار
+    DarkAI,         # بديل قوي
+    ChatGptEs,      # بيدعم GPT-4 مجانا
+)
 
 # ------------------------------------------------------------------
 # Logger
@@ -20,22 +26,25 @@ logger = logging.getLogger("AnnieX_AI")
 logging.basicConfig(level=logging.INFO)
 
 # ------------------------------------------------------------------
-# Models Mapping
+# Constants & Config
 # ------------------------------------------------------------------
 
-LIGHT_MODEL = "gpt-3.5-turbo"
-HEAVY_MODEL = "gpt-4"
-DEFAULT_MODEL = LIGHT_MODEL
+# تم حذف DuckDuckGo لانه هو اللي كان بيبوظ الردود
+# الاعتماد الكلي على Blackbox و Pollinations لانهم بيسمعوا الكلام
 
-# ------------------------------------------------------------------
-# Memory & Cache Management
-# ------------------------------------------------------------------
+FAST_PROVIDERS = [Blackbox, PollinationsAI]  # للوضع السريع
+SMART_PROVIDERS = [Blackbox, DarkAI, ChatGptEs] # للوضع التقيل
 
+LIGHT_MODEL = "gpt-3.5-turbo" 
+HEAVY_MODEL = "gpt-4-turbo"   
+DEFAULT_MODEL = HEAVY_MODEL   # خلينا الديفولت التقيل عشان الجودة
+
+# اعدادات الذاكرة
 USER_HISTORY: Dict[int, list] = {}
 CACHE: Dict[str, str] = {}
-MAX_HISTORY = 12       # عدد الرسائل المحفوظة لكل مستخدم
-MAX_CACHE_SIZE = 500   # أقصى عدد ردود محفوظة في الكاش
-MAX_USERS_IN_MEM = 100 # أقصى عدد مستخدمين في الذاكرة لتجنب استهلاك الرامات
+MAX_HISTORY = 10       
+MAX_CACHE_SIZE = 500   
+MAX_USERS_IN_MEM = 50 
 
 # ------------------------------------------------------------------
 # Engine State
@@ -47,10 +56,6 @@ class AIEngineState:
         self.model: str = DEFAULT_MODEL
         self.temperature: float = 0.7 
 
-    @property
-    def status(self) -> bool:
-        return self.enabled
-
     def reset(self):
         self.enabled = True
         self.model = DEFAULT_MODEL
@@ -59,32 +64,29 @@ AI = AIEngineState()
 ENGINE = AI
 
 # ------------------------------------------------------------------
-# Internal Helpers (Smart Logic)
+# Internal Helpers
 # ------------------------------------------------------------------
 
 def _clean_memory_if_needed():
-    """تنظيف الذاكرة بذكاء إذا زاد الحمل"""
     if len(USER_HISTORY) > MAX_USERS_IN_MEM:
-        # حذف أقدم 20 مستخدم لم يتفاعلوا مؤخراً
-        keys_to_remove = list(USER_HISTORY.keys())[:20]
-        for k in keys_to_remove:
-            del USER_HISTORY[k]
-    
+        keys = list(USER_HISTORY.keys())[:15]
+        for k in keys: del USER_HISTORY[k]
     if len(CACHE) > MAX_CACHE_SIZE:
         CACHE.clear()
 
 def _build_messages(user_id: int, prompt: str, system_prompt: str) -> list:
     messages = []
     
-    # System Prompt
+    # اجبار المزود على احترام الشخصية
+    # بعض المزودات بتحتاج الـ System Prompt يكون في الاول
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
-
-    # User History
+    
+    # تنظيف الذاكرة القديمة جدا
     history = USER_HISTORY.get(user_id, [])
-    messages.extend(history)
-
-    # Current Message
+    recent_history = history[-6:] 
+    
+    messages.extend(recent_history)
     messages.append({"role": "user", "content": prompt})
     return messages
 
@@ -93,12 +95,11 @@ def _save_history(user_id: int, prompt: str, reply: str):
     history = USER_HISTORY.setdefault(user_id, [])
     history.append({"role": "user", "content": prompt})
     history.append({"role": "assistant", "content": reply})
-    
     if len(history) > MAX_HISTORY:
         USER_HISTORY[user_id] = history[-MAX_HISTORY:]
 
 # ------------------------------------------------------------------
-# Core G4F Logic (The Smartest Implementation)
+# Core Logic (Smart Throttling + Persona Fix)
 # ------------------------------------------------------------------
 
 async def ask_ollama_stream(
@@ -110,88 +111,107 @@ async def ask_ollama_stream(
     on_update: Optional[Callable[[str], None]] = None,
 ) -> str:
     """
-    دالة الذكاء الاصطناعي الأساسية
+    دالة ذكية تتفادى الردود الالية وتستخدم موديلات قوية فقط
     """
-
     if not AI.enabled:
-        return "الذكاء الاصطناعي متوقف حاليا."
+        return "الذكاء الاصطناعي متوقف للصيانة."
 
     used_model = model or AI.model
     
-    # 1. فحص الكاش للسرعة
+    # 1. فحص الكاش
     cache_key = f"{used_model}:{prompt}" 
     if cache_key in CACHE:
         return CACHE[cache_key]
 
+    # 2. تحديد المزود (Provider)
+    # هنا التعديل: استخدمنا Blackbox و Pollinations في الحالتين
+    # لانهم الافضل في تقمص الشخصيات
+    current_provider = None
+    if used_model == LIGHT_MODEL:
+        current_provider = random.choice(FAST_PROVIDERS)
+    else:
+        current_provider = random.choice(SMART_PROVIDERS)
+
+    # بناء الرسائل
     messages = _build_messages(user_id, prompt, system_prompt)
     
-    # 2. تهيئة العميل (بدون تحديد مزود ليختار الأفضل تلقائياً)
-    client = AsyncClient()
+    # اعداد العميل
+    client = AsyncClient(provider=current_provider)
 
     full_reply = ""
-    
-    try:
-        # 🔥 [الذكاء البرمجي هنا] 🔥
-        # نقوم بإنشاء الطلب ولكن لا نستخدم await فوراً
-        # لأن بعض النسخ تعيد Generator والبعض يعيد Coroutine
-        response = client.chat.completions.create(
-            model=used_model,
-            messages=messages,
-            stream=True 
-        )
+    last_update_time = 0
+    last_sent_text = ""
 
-        # فحص نوع الاستجابة بذكاء
-        # لو كانت دالة انتظار (Coroutine)، ننتظرها
-        if inspect.iscoroutine(response):
-            response = await response
-
-        # الآن معنا الـ Stream، نلف عليه
-        async for chunk in response:
-            content = None
+    # محاولة الاتصال مع نظام اعادة المحاولة (Retry)
+    for attempt in range(2): 
+        try:
+            if attempt > 0:
+                # لو فشل، جرب Blackbox لانه الجوكر
+                client = AsyncClient(provider=Blackbox) 
             
-            # محاولة استخراج النص بأكثر من صيغة لضمان التوافق مع كل المزودات
-            if hasattr(chunk.choices[0].delta, "content"):
-                content = chunk.choices[0].delta.content
-            elif hasattr(chunk, "content"):
-                content = chunk.content
+            response = await client.chat.completions.create(
+                model=used_model,
+                messages=messages,
+                stream=True
+            )
             
-            if content:
-                full_reply += content
+            async for chunk in response:
+                content = ""
+                if hasattr(chunk.choices[0].delta, "content"):
+                    content = chunk.choices[0].delta.content
+                elif hasattr(chunk, "content"):
+                    content = chunk.content
                 
-                # تحديث الرسالة كل 20 حرف لتجنب حظر التليجرام (Flood Wait)
-                if on_update and len(full_reply) % 20 == 0: 
-                    try:
-                        await on_update(full_reply)
-                    except:
-                        pass
-        
-        # التحديث النهائي للنص الكامل
-        if on_update:
-            await on_update(full_reply)
+                if content:
+                    full_reply += content
+                    
+                    # Smart Throttling System
+                    # نفس نظام الحماية من التعليق اللي عجبك
+                    current_time = time.time()
+                    if on_update and (current_time - last_update_time > 1.5) and (full_reply != last_sent_text):
+                        try:
+                            await on_update(full_reply)
+                            last_update_time = current_time
+                            last_sent_text = full_reply 
+                        except Exception as e:
+                            # تجاهل اخطاء التعديل لمنع التعليق
+                            if "MESSAGE_NOT_MODIFIED" in str(e):
+                                pass
+                            else:
+                                pass # تجاهل صامت
 
-    except Exception as e:
-        logger.error(f"G4F Smart Error: {e}")
-        err_msg = str(e).lower()
-        
-        # ردود ذكية حسب نوع الخطأ
-        if "404" in err_msg or "not found" in err_msg:
-            return "الموديل ده عليه ضغط حالياً أو غير متاح، جرب تغير الوضع (سريع/ذكي)."
-        elif "429" in err_msg or "rate limit" in err_msg:
-            return "السيرفر مشغول جداً، جرب تاني كمان ثواني."
-        else:
-            return f"حصل خطأ بسيط في الاتصال، حاول مرة كمان. ({e})"
+            # لو الرد جه وكان مش فاضي ومش الرد الالي الغبي
+            if full_reply and "I am an AI" not in full_reply:
+                break 
+            elif attempt == 0:
+                # لو رد الرد الالي، نعتبره فشل ونحاول تاني بمزود مختلف
+                full_reply = "" 
+                continue
+
+        except Exception as e:
+            logger.error(f"Attempt {attempt+1} failed: {e}")
+            if attempt == 1: 
+                return "حدث خطأ في الاتصال بالسيرفرات، حاول مرة اخرى."
+            await asyncio.sleep(1)
 
     if not full_reply:
-        return "لم يصل رد من السيرفر، جرب مرة أخرى."
+        return "السيرفر لم يرسل اي رد مفيد."
 
-    # حفظ في الذاكرة والكاش
+    # التحديث النهائي
+    if on_update and full_reply != last_sent_text:
+        try:
+            await on_update(full_reply)
+        except:
+            pass
+
+    # حفظ النتائج
     _save_history(user_id, prompt, full_reply)
     CACHE[cache_key] = full_reply
     
     return full_reply
 
 # ------------------------------------------------------------------
-# Controls (Standard - Fully Compatible)
+# Controls
 # ------------------------------------------------------------------
 
 def clear_user_memory(user_id: int):
@@ -217,9 +237,6 @@ def toggle_model() -> str:
     AI.model = HEAVY_MODEL if AI.model == LIGHT_MODEL else LIGHT_MODEL
     return AI.model
 
-def get_model() -> str:
-    return AI.model
-
 def get_current_model() -> str:
     return AI.model
 
@@ -236,6 +253,5 @@ __all__ = [
     "toggle_model",
     "set_light_model",
     "set_heavy_model",
-    "get_model",
     "get_current_model",
 ]
