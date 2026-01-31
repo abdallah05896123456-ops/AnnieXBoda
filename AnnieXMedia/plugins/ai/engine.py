@@ -1,7 +1,7 @@
 # plugins/ai/engine.py
 # Authored By Certified Coders (c) 2026
-# Local AI Engine - Enterprise Edition (Persona Fixed)
-# Fixes: "I am OpenAI" response, API Key Errors, Throttling
+# Local AI Engine - Enterprise Edition (Termux Fixed)
+# Fixes: ImportError Blackbox (Renamed to BlackboxPro)
 
 import logging
 import asyncio
@@ -9,14 +9,10 @@ import time
 import random
 from typing import Dict, Optional, Callable
 
-# استدعاء العميل والمزودات المحترمة فقط
+# استدعاء العميل
 from g4f.client import AsyncClient
-from g4f.Provider import (
-    Blackbox,      # العمدة (بيقبل الشخصيات وسريع)
-    PollinationsAI, # ممتاز جدا في تقمص الأدوار
-    DarkAI,         # بديل قوي
-    ChatGptEs,      # بيدعم GPT-4 مجانا
-)
+# استدعاء المزودات كحزمة كاملة لتجنب اخطاء الاستيراد المباشر
+import g4f.Provider
 
 # ------------------------------------------------------------------
 # Logger
@@ -26,18 +22,37 @@ logger = logging.getLogger("AnnieX_AI")
 logging.basicConfig(level=logging.INFO)
 
 # ------------------------------------------------------------------
-# Constants & Config
+# Dynamic Provider Loader (Smart Logic)
 # ------------------------------------------------------------------
 
-# تم حذف DuckDuckGo لانه هو اللي كان بيبوظ الردود
-# الاعتماد الكلي على Blackbox و Pollinations لانهم بيسمعوا الكلام
+def get_provider_by_name(name_list):
+    """
+    دالة للبحث عن المزودات المتاحة وتجهيزها
+    """
+    available = []
+    for name in name_list:
+        if hasattr(g4f.Provider, name):
+            available.append(getattr(g4f.Provider, name))
+    return available
 
-FAST_PROVIDERS = [Blackbox, PollinationsAI]  # للوضع السريع
-SMART_PROVIDERS = [Blackbox, DarkAI, ChatGptEs] # للوضع التقيل
+# تحديد المزودات بناء على فحص تيرميكس الخاص بك
+# PollinationsAI: سريع جدا وممتاز للشخصيات (للوضع الخفيف)
+# BlackboxPro: الاسم الجديد لـ Blackbox وهو ذكي جدا (للوضع الثقيل)
+FAST_NAMES = ["PollinationsAI", "DeepInfra", "HuggingChat"]
+SMART_NAMES = ["BlackboxPro", "Blackbox", "PollinationsAI"]
+
+FAST_PROVIDERS = get_provider_by_name(FAST_NAMES)
+SMART_PROVIDERS = get_provider_by_name(SMART_NAMES)
+
+# التاكد من وجود مزودات لتجنب الاخطاء
+if not FAST_PROVIDERS and SMART_PROVIDERS:
+    FAST_PROVIDERS = SMART_PROVIDERS
+if not SMART_PROVIDERS and FAST_PROVIDERS:
+    SMART_PROVIDERS = FAST_PROVIDERS
 
 LIGHT_MODEL = "gpt-3.5-turbo" 
-HEAVY_MODEL = "gpt-4-turbo"   
-DEFAULT_MODEL = HEAVY_MODEL   # خلينا الديفولت التقيل عشان الجودة
+HEAVY_MODEL = "gpt-4"   
+DEFAULT_MODEL = HEAVY_MODEL
 
 # اعدادات الذاكرة
 USER_HISTORY: Dict[int, list] = {}
@@ -77,12 +92,9 @@ def _clean_memory_if_needed():
 def _build_messages(user_id: int, prompt: str, system_prompt: str) -> list:
     messages = []
     
-    # اجبار المزود على احترام الشخصية
-    # بعض المزودات بتحتاج الـ System Prompt يكون في الاول
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
     
-    # تنظيف الذاكرة القديمة جدا
     history = USER_HISTORY.get(user_id, [])
     recent_history = history[-6:] 
     
@@ -99,7 +111,7 @@ def _save_history(user_id: int, prompt: str, reply: str):
         USER_HISTORY[user_id] = history[-MAX_HISTORY:]
 
 # ------------------------------------------------------------------
-# Core Logic (Smart Throttling + Persona Fix)
+# Core Logic
 # ------------------------------------------------------------------
 
 async def ask_ollama_stream(
@@ -110,9 +122,7 @@ async def ask_ollama_stream(
     temperature: Optional[float] = None, 
     on_update: Optional[Callable[[str], None]] = None,
 ) -> str:
-    """
-    دالة ذكية تتفادى الردود الالية وتستخدم موديلات قوية فقط
-    """
+    
     if not AI.enabled:
         return "الذكاء الاصطناعي متوقف للصيانة."
 
@@ -124,30 +134,34 @@ async def ask_ollama_stream(
         return CACHE[cache_key]
 
     # 2. تحديد المزود (Provider)
-    # هنا التعديل: استخدمنا Blackbox و Pollinations في الحالتين
-    # لانهم الافضل في تقمص الشخصيات
     current_provider = None
-    if used_model == LIGHT_MODEL:
-        current_provider = random.choice(FAST_PROVIDERS)
-    else:
-        current_provider = random.choice(SMART_PROVIDERS)
-
+    
+    # اختيار القائمة المناسبة
+    target_list = FAST_PROVIDERS if used_model == LIGHT_MODEL else SMART_PROVIDERS
+    
+    if target_list:
+        current_provider = random.choice(target_list)
+    
     # بناء الرسائل
     messages = _build_messages(user_id, prompt, system_prompt)
     
     # اعداد العميل
-    client = AsyncClient(provider=current_provider)
+    if current_provider:
+        client = AsyncClient(provider=current_provider)
+    else:
+        # ترك الاختيار تلقائي اذا لم نجد المزودات
+        client = AsyncClient()
 
     full_reply = ""
     last_update_time = 0
     last_sent_text = ""
 
-    # محاولة الاتصال مع نظام اعادة المحاولة (Retry)
+    # محاولة الاتصال (Retry Logic)
     for attempt in range(2): 
         try:
+            # في المحاولة الثانية، نتركه يختار عشوائي بالكامل
             if attempt > 0:
-                # لو فشل، جرب Blackbox لانه الجوكر
-                client = AsyncClient(provider=Blackbox) 
+                client = AsyncClient()
             
             response = await client.chat.completions.create(
                 model=used_model,
@@ -166,7 +180,6 @@ async def ask_ollama_stream(
                     full_reply += content
                     
                     # Smart Throttling System
-                    # نفس نظام الحماية من التعليق اللي عجبك
                     current_time = time.time()
                     if on_update and (current_time - last_update_time > 1.5) and (full_reply != last_sent_text):
                         try:
@@ -174,28 +187,24 @@ async def ask_ollama_stream(
                             last_update_time = current_time
                             last_sent_text = full_reply 
                         except Exception as e:
-                            # تجاهل اخطاء التعديل لمنع التعليق
-                            if "MESSAGE_NOT_MODIFIED" in str(e):
-                                pass
-                            else:
-                                pass # تجاهل صامت
+                            # تجاهل اخطاء عدم تعديل الرسالة
+                            pass 
 
-            # لو الرد جه وكان مش فاضي ومش الرد الالي الغبي
+            # التحقق من الردود الفارغة او الالية
             if full_reply and "I am an AI" not in full_reply:
                 break 
             elif attempt == 0:
-                # لو رد الرد الالي، نعتبره فشل ونحاول تاني بمزود مختلف
                 full_reply = "" 
                 continue
 
         except Exception as e:
             logger.error(f"Attempt {attempt+1} failed: {e}")
             if attempt == 1: 
-                return "حدث خطأ في الاتصال بالسيرفرات، حاول مرة اخرى."
+                return "نواجه ضغطا حاليا، يرجى المحاولة لاحقا."
             await asyncio.sleep(1)
 
     if not full_reply:
-        return "السيرفر لم يرسل اي رد مفيد."
+        return "لم يتم استلام رد من السيرفر."
 
     # التحديث النهائي
     if on_update and full_reply != last_sent_text:
