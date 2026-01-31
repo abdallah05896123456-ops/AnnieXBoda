@@ -1,5 +1,5 @@
 # plugins/ai/handlers.py
-# Authored By Certified Coders © 2026
+# Authored By Certified Coders (c) 2026
 # AI Handlers - Stable / Fast / Settings Enabled
 
 import os
@@ -19,7 +19,7 @@ from pyrogram.types import (
 from AnnieXMedia import app
 from config import OWNER_ID
 
-# استيراد دوال المحرك الجديد (g4f)
+# Import new engine functions (g4f)
 from .engine import (
     AI,
     ask_ollama_stream,
@@ -27,7 +27,7 @@ from .engine import (
     clear_user_memory,
     set_light_model,
     set_heavy_model,
-    toggle_model, # دالة التبديل الجديدة
+    toggle_model, # New toggle function
     get_model,
 )
 
@@ -94,8 +94,8 @@ def owner_only_text() -> str:
 # Keyboards
 # -------------------------------------------------
 def build_control_keyboard() -> InlineKeyboardMarkup:
-    # تحديد حالة السرعة للعرض في الزرار
-    speed_icon = "⚡" if AI_STATE.speed == "light" else "🧠"
+    # Speed status for button
+    speed_icon = "(سريع)" if AI_STATE.speed == "light" else "(ذكي)"
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("اوامر المستخدمين", callback_data="ai_users")],
@@ -133,10 +133,10 @@ def build_settings_keyboard() -> InlineKeyboardMarkup:
 @app.on_message(filters.regex(r"^(اوامر الذكاء|كيب ذكاء|كيب الذكاء)$") & SUDO_FILTER)
 async def ai_control_panel(_, m: Message):
     text = (
-        "**🤖 لوحة تحكم الذكاء الاصطناعي (G4F Engine)**\n\n"
-        f"• **الحالة:** {'✅ مفعل' if AI_STATE.enabled else '❌ معطل'}\n"
+        "**لوحة تحكم الذكاء الاصطناعي (G4F Engine)**\n\n"
+        f"• **الحالة:** {'مفعل' if AI_STATE.enabled else 'معطل'}\n"
         f"• **الموديل:** `{get_model()}`\n"
-        f"• **الوضع:** {'⚡ سريع' if AI_STATE.speed == 'light' else '🧠 ذكي'}\n"
+        f"• **الوضع:** {'سريع' if AI_STATE.speed == 'light' else 'ذكي'}\n"
         f"• **المتصلين:** `{len(AI_STATE.permanent_users)}`\n"
     )
     await m.reply_text(text, reply_markup=build_control_keyboard())
@@ -177,7 +177,7 @@ async def ai_callbacks(_, q: CallbackQuery):
         )
         return
 
-    # تبديل مباشر للسرعة
+    # Direct speed toggle
     if data == "ai_speed":
         if uid not in SUDO_USERS:
             await q.answer(owner_only_text(), show_alert=True)
@@ -192,12 +192,12 @@ async def ai_callbacks(_, q: CallbackQuery):
             msg = "تم التفعيل: الوضع السريع (GPT-3.5)"
             
         await q.answer(msg, show_alert=True)
-        # تحديث اللوحة
+        # Refresh panel
         text = (
-            "**🤖 لوحة تحكم الذكاء الاصطناعي (G4F Engine)**\n\n"
-            f"• **الحالة:** {'✅ مفعل' if AI_STATE.enabled else '❌ معطل'}\n"
+            "**لوحة تحكم الذكاء الاصطناعي (G4F Engine)**\n\n"
+            f"• **الحالة:** {'مفعل' if AI_STATE.enabled else 'معطل'}\n"
             f"• **الموديل:** `{get_model()}`\n"
-            f"• **الوضع:** {'⚡ سريع' if AI_STATE.speed == 'light' else '🧠 ذكي'}\n"
+            f"• **الوضع:** {'سريع' if AI_STATE.speed == 'light' else 'ذكي'}\n"
             f"• **المتصلين:** `{len(AI_STATE.permanent_users)}`\n"
         )
         try:
@@ -220,10 +220,10 @@ async def ai_callbacks(_, q: CallbackQuery):
 
     if data == "ai_back":
         text = (
-            "**🤖 لوحة تحكم الذكاء الاصطناعي (G4F Engine)**\n\n"
-            f"• **الحالة:** {'✅ مفعل' if AI_STATE.enabled else '❌ معطل'}\n"
+            "**لوحة تحكم الذكاء الاصطناعي (G4F Engine)**\n\n"
+            f"• **الحالة:** {'مفعل' if AI_STATE.enabled else 'معطل'}\n"
             f"• **الموديل:** `{get_model()}`\n"
-            f"• **الوضع:** {'⚡ سريع' if AI_STATE.speed == 'light' else '🧠 ذكي'}\n"
+            f"• **الوضع:** {'سريع' if AI_STATE.speed == 'light' else 'ذكي'}\n"
             f"• **المتصلين:** `{len(AI_STATE.permanent_users)}`\n"
         )
         await q.message.edit_text(
@@ -239,12 +239,12 @@ async def ai_callbacks(_, q: CallbackQuery):
         AI_STATE.enabled = not AI_STATE.enabled
         AI.enabled = AI_STATE.enabled
         await q.answer("تم تحديث حالة الذكاء.", show_alert=True)
-        # تحديث شكل الزر
+        # Update button appearance
         text = (
-            "**🤖 لوحة تحكم الذكاء الاصطناعي (G4F Engine)**\n\n"
-            f"• **الحالة:** {'✅ مفعل' if AI_STATE.enabled else '❌ معطل'}\n"
+            "**لوحة تحكم الذكاء الاصطناعي (G4F Engine)**\n\n"
+            f"• **الحالة:** {'مفعل' if AI_STATE.enabled else 'معطل'}\n"
             f"• **الموديل:** `{get_model()}`\n"
-            f"• **الوضع:** {'⚡ سريع' if AI_STATE.speed == 'light' else '🧠 ذكي'}\n"
+            f"• **الوضع:** {'سريع' if AI_STATE.speed == 'light' else 'ذكي'}\n"
             f"• **المتصلين:** `{len(AI_STATE.permanent_users)}`\n"
         )
         try:
