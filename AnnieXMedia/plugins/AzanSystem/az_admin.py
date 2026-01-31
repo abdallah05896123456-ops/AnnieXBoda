@@ -143,15 +143,15 @@ async def azan_commands_panel(_, m):
         # لوحة المالك الكاملة
         text = "مرحباً بك في لوحة تحكم الأذان (وضع المالك).\nاختر القسم:"
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🛠 إعدادات المالك (النووية)", callback_data=f"cmd_owner_{chat_id}")],
-            [InlineKeyboardButton("⚙️ إعدادات المجموعة", callback_data=f"cmd_admin_{chat_id}")],
+            [InlineKeyboardButton("إعدادات المالك (النووية)", callback_data=f"cmd_owner_{chat_id}")],
+            [InlineKeyboardButton("إعدادات المجموعة", callback_data=f"cmd_admin_{chat_id}")],
             [InlineKeyboardButton("اغلاق", callback_data="cmd_close")]
         ])
     elif await check_rights(user_id, chat_id):
         # لوحة المشرف المحدودة
         text = "مرحباً بك في لوحة تحكم الأذان.\nيمكنك التحكم في الإعدادات الأساسية:"
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⚙️ إعدادات المجموعة", callback_data=f"cmd_admin_{chat_id}")],
+            [InlineKeyboardButton("إعدادات المجموعة", callback_data=f"cmd_admin_{chat_id}")],
             [InlineKeyboardButton("اغلاق", callback_data="cmd_close")]
         ])
     else:
@@ -180,12 +180,12 @@ async def show_panel(m, chat_id, is_dev):
     kb = []
     
     # 1. التحكم العام (للجميع)
-    st_main = "مفعل ✅" if doc.get("azan_active", True) else "معطل ❌"
+    st_main = "مفعل" if doc.get("azan_active", True) else "معطل"
     kb.append([InlineKeyboardButton(f"الاذان العام : {st_main}", callback_data=f"set_main_{chat_id}")])
     
     # 2. الأذكار (للجميع)
-    st_dua = "مفعل ✅" if doc.get("dua_active", True) else "معطل ❌"
-    st_ndua = "مفعل ✅" if doc.get("night_dua_active", True) else "معطل ❌"
+    st_dua = "مفعل" if doc.get("dua_active", True) else "معطل"
+    st_ndua = "مفعل" if doc.get("night_dua_active", True) else "معطل"
     kb.append([
         InlineKeyboardButton(f"الصباح : {st_dua}", callback_data=f"set_dua_{chat_id}"),
         InlineKeyboardButton(f"المساء : {st_ndua}", callback_data=f"set_ndua_{chat_id}")
@@ -196,13 +196,13 @@ async def show_panel(m, chat_id, is_dev):
         row = []
         for k, name in PRAYER_NAMES_AR.items():
             is_active = prayers.get(k, True)
-            pst = "✅" if is_active else "❌"
+            pst = "مفعل" if is_active else "معطل"
             row.append(InlineKeyboardButton(f"{name} : {pst}", callback_data=f"set_p_{k}_{chat_id}"))
             if len(row) == 2: kb.append(row); row = []
         if row: kb.append(row)
 
         # أزرار التجربة والتحكم للمالك
-        kb.append([InlineKeyboardButton("📢 تجربة الأذان (تست)", callback_data=f"test_azan_single_{chat_id}")])
+        kb.append([InlineKeyboardButton("تجربة الأذان (تست)", callback_data=f"test_azan_single_{chat_id}")])
     
     kb.append([InlineKeyboardButton("تحديث", callback_data=f"refresh_{chat_id}")])
     
@@ -238,14 +238,14 @@ async def cb_handler(_, q):
         
         active_count = await settings_db.count_documents({"azan_active": True})
         text = (
-            f"👑 **لوحة المالك**\n"
+            f"**لوحة المالك**\n"
             f"• المجموعات المفعلة: `{active_count}`\n\n"
             "التحكم الكامل في الملفات والصوتيات:"
         )
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔊 تغيير صوت الأذان (ملف/رابط)", callback_data="devset_menu_sound")],
-            [InlineKeyboardButton("🖼 تغيير الاستيكر", callback_data="devset_menu_sticker")],
-            [InlineKeyboardButton("📢 بث تجريبي هنا", callback_data=f"test_azan_single_{chat_id}")],
+            [InlineKeyboardButton("تغيير صوت الأذان (ملف/رابط)", callback_data="devset_menu_sound")],
+            [InlineKeyboardButton("تغيير الاستيكر", callback_data="devset_menu_sticker")],
+            [InlineKeyboardButton("بث تجريبي هنا", callback_data=f"test_azan_single_{chat_id}")],
             [InlineKeyboardButton("رجوع", callback_data="cmd_back_main")]
         ])
         return await q.edit_message_text(text, reply_markup=kb)
@@ -255,7 +255,7 @@ async def cb_handler(_, q):
         if not await check_rights(uid, chat_id): return await q.answer("للمشرفين فقط", show_alert=True)
         bot_user = (await app.get_me()).username
         url = f"https://t.me/{bot_user}?start=azset_{chat_id}"
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("⚙️ فتح الإعدادات", url=url)]])
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("فتح الإعدادات", url=url)]])
         return await q.edit_message_text("اضغط لفتح الإعدادات في الخاص:", reply_markup=kb)
 
     # --- الرجوع للقائمة الرئيسية ---
