@@ -1,4 +1,4 @@
-# Authored By Certified Coders © 2026
+# Authored By Certified Coders (c) 2026
 # System: Azan Maestro (Enterprise V14 - Full Automation)
 # Location: AnnieXMedia/plugins/AzanSystem/az_utils.py
 # Features:
@@ -6,6 +6,7 @@
 # - Smooth Stream Switching (No Restart)
 # - Graceful Error Handling (No Crash)
 # - Auto Leave After Azan
+# - Full Integration with YouTube.py
 
 import asyncio
 import aiohttp
@@ -159,19 +160,19 @@ async def load_resources():
 
 async def get_smart_assistant(chat_id):
     """
-    تحديد المساعد الأنسب:
+    تحديد المساعد الانسب:
     1. لو فيه مساعد بالفعل جوه الكول، نرجعه هو (عشان منقفلش الكول).
     2. لو مفيش، نرجع المساعد الافتراضي.
     """
     try:
-        # بنجرب أول مساعد في القائمة كـ Probe
+        # بنجرب اول مساعد في القائمة كـ Probe
         default_ub = await get_client(assistants[0])
         
         # محاولة معرفة من في الكول
         try:
             participants = await default_ub.get_group_call_participants(chat_id)
             for p in participants:
-                # فحص هل المشارك هو أحد مساعدينا
+                # فحص هل المشارك هو احد مساعدينا
                 for num in assistants:
                     ub = await get_client(num)
                     if p.source == ub.me.id:
@@ -244,30 +245,50 @@ async def start_azan_stream(chat_id: int, prayer_key: str, play_target: str = No
     async with stream_semaphore:
         res = CURRENT_RESOURCES.get(prayer_key)
         if not res: return
-        if not play_target: play_target = res.get("link")
+        
+        # التعديل الجديد: التاكد من تجهيز الرابط باستخدام YouTube.py القوي
+        # اذا لم يتم تمرير رابط جاهز (مثلا في التست اليدوي)
+        if not play_target:
+            raw_link = res.get("link")
+            if raw_link and ("youtube" in raw_link or "youtu.be" in raw_link):
+                try:
+                    # نستخدم YouTube.py الخاص بك للتحميل او استخراج الرابط المباشر
+                    play_target, _ = await YouTube.download(
+                        raw_link, 
+                        None, 
+                        video=False, 
+                        videoid=False
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to fetch YouTube link via Wrapper: {e}")
+                    play_target = raw_link # Fallback
+            else:
+                play_target = raw_link
+
+        if not play_target: return
 
         try:
-            # 1. إرسال الميديا (Sticker/Text)
+            # 1. ارسال الميديا (Sticker/Text)
             if res.get("sticker"):
                 try: await app.send_sticker(chat_id, res["sticker"])
                 except: pass
             
-            caption = f"<b>حان الآن موعد اذان {res.get('name','')}</b>\n<b>بالتوقيت المحلي لمدينة القاهره 🕌</b>"
+            caption = f"<b>حان الان موعد اذان {res.get('name','')}</b>\n<b>بالتوقيت المحلي لمدينة القاهره 🕌</b>"
             try: await app.send_message(chat_id, caption)
             except: pass
 
             # 2. اختيار المساعد الذكي
-            # assistant: الكلاينت، is_in_call: هل هو موجود حالياً في الصوت؟
+            # assistant: الكلاينت، is_in_call: هل هو موجود حاليا في الصوت؟
             assistant, is_in_call = await get_smart_assistant(chat_id)
             
             # 3. التجهيز (فقط لو مش موجود)
             if not is_in_call:
                 success = await prepare_call_environment(chat_id, assistant, is_in_call, force_log=force_test)
                 if not success and force_test:
-                    await app.send_message(chat_id, "فشل تجهيز المساعد (تأكد من الصلاحيات).")
-                    return # نخرج بصمت لو فشل التجهيز
+                    await app.send_message(chat_id, "فشل تجهيز المساعد (تاكد من الصلاحيات).")
+                    return 
 
-            # 4. تشغيل البث (محاط بـ Try/Except لمنع الكراش)
+            # 4. تشغيل البث
             try:
                 # دالة join_call هنا ذكية:
                 # - لو المساعد جوه: هتعمل "Switch Stream" (تغيير الصوت فقط).
@@ -278,21 +299,19 @@ async def start_azan_stream(chat_id: int, prayer_key: str, play_target: str = No
                     play_target, 
                     video=False
                 )
-                if force_test: await app.send_message(chat_id, "البث بدأ بنجاح.")
+                if force_test: await app.send_message(chat_id, "البث بدا بنجاح.")
 
                 # 5. جدولة الخروج
                 asyncio.create_task(stop_stream_after_delay(chat_id, AZAN_DURATION_SECONDS))
 
             except Exception as e:
-                # لو فشل (Timeout, Error) منتعبش نفسنا ومنوقعش البوت
-                # فقط نسجل الخطأ في اللوج ونكمل حياتنا
                 if force_test: 
                     await app.send_message(chat_id, f"خطأ التشغيل: {e}")
                 else:
                     logger.warning(f"Skipping Azan for {chat_id} due to stream error: {e}")
                 return 
 
-            # 6. تسجيل العملية في اللوج (فقط لو نجح التشغيل)
+            # 6. تسجيل العملية في اللوج
             if not force_test:
                 try:
                     now = datetime.now(CAIRO_TZ)
@@ -307,12 +326,11 @@ async def start_azan_stream(chat_id: int, prayer_key: str, play_target: str = No
                 except: pass
 
         except Exception as e:
-            # Catch-all لأي مصيبة تانية عشان البوت ميفصلش
             logger.error(f"Critical Stream Error {chat_id}: {e}")
 
 async def stop_stream_after_delay(chat_id: int, delay: int):
     """
-    وظيفة تنتظر انتهاء مدة الأذان ثم تخرج المساعد.
+    وظيفة تنتظر انتهاء مدة الاذان ثم تخرج المساعد.
     """
     await asyncio.sleep(delay)
     try:
@@ -331,13 +349,17 @@ async def broadcast_azan(prayer_key: str):
     
     logger.info(f"STARTING BROADCAST: {prayer_key}")
     
-    # 1. تجهيز الرابط
+    # 1. تجهيز الرابط مرة واحدة للكل
+    # هذا يقلل الحمل ويضمن استخدام YouTube.py القوي
+    play_target = None
     try:
-        if "youtube" in res["link"]:
-             play_target, _ = await YouTube.download(res["link"], None, video=False, videoid=False)
+        raw_link = res["link"]
+        if "youtube" in raw_link or "youtu.be" in raw_link:
+             play_target, _ = await YouTube.download(raw_link, None, video=False, videoid=False)
         else:
-             play_target = res["link"]
-        if not play_target: play_target = res["link"]
+             play_target = raw_link
+        
+        if not play_target: play_target = raw_link
     except:
         play_target = res["link"]
 
