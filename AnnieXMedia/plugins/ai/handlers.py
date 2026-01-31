@@ -20,7 +20,6 @@ from AnnieXMedia import app
 from config import OWNER_ID
 
 # استيراد دوال المحرك الجديد (g4f)
-# تم التعديل لاستخدام get_current_model بدلا من get_model
 from .engine import (
     AI,
     ask_ollama_stream,
@@ -75,16 +74,14 @@ def should_trigger_ai(message: Message, bot_id: Optional[int]) -> bool:
 
     uid = message.from_user.id
 
+    # 1. الذكاء الدائم
     if uid in AI_STATE.permanent_users:
         return True
 
-    if message.reply_to_message:
-        if (
-            message.reply_to_message.from_user
-            and message.reply_to_message.from_user.id == bot_id
-        ):
-            return True
+    # تم الغاء الرد عند الريبلاي على البوت بناء على طلبك
+    # لتجنب الردود العشوائية عند سحب الرسائل
 
+    # 2. الاستدعاء بالكلمات المفتاحية
     return bool(re.match(r"^(ذكاء|يا بوت|بوت|بقولك)", message.text or "", re.IGNORECASE))
 
 
