@@ -19,7 +19,7 @@ from pyrogram.types import (
 from AnnieXMedia import app
 from config import OWNER_ID
 
-# Import new engine functions (g4f)
+# استيراد دوال المحرك الجديد (g4f)
 from .engine import (
     AI,
     ask_ollama_stream,
@@ -27,8 +27,8 @@ from .engine import (
     clear_user_memory,
     set_light_model,
     set_heavy_model,
-    toggle_model, # New toggle function
-    get_model,
+    toggle_model, 
+    get_current_model, # تم تعديل الاسم ليتطابق مع Engine
 )
 
 from .prompts import build_system_prompt
@@ -94,8 +94,8 @@ def owner_only_text() -> str:
 # Keyboards
 # -------------------------------------------------
 def build_control_keyboard() -> InlineKeyboardMarkup:
-    # Speed status for button
-    speed_icon = "(سريع)" if AI_STATE.speed == "light" else "(ذكي)"
+    # تحديد حالة السرعة للعرض نصيا
+    speed_txt = "(سريع)" if AI_STATE.speed == "light" else "(ذكي)"
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("اوامر المستخدمين", callback_data="ai_users")],
@@ -108,7 +108,7 @@ def build_control_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton("تنظيف الذاكرة", callback_data="ai_clean"),
             ],
             [
-                InlineKeyboardButton(f"تبديل السرعة {speed_icon}", callback_data="ai_speed"),
+                InlineKeyboardButton(f"تبديل الوضع {speed_txt}", callback_data="ai_speed"),
                 InlineKeyboardButton("اعادة تشغيل", callback_data="ai_restart"),
             ],
             [InlineKeyboardButton("اغلاق", callback_data="ai_close")],
@@ -135,7 +135,7 @@ async def ai_control_panel(_, m: Message):
     text = (
         "**لوحة تحكم الذكاء الاصطناعي (G4F Engine)**\n\n"
         f"• **الحالة:** {'مفعل' if AI_STATE.enabled else 'معطل'}\n"
-        f"• **الموديل:** `{get_model()}`\n"
+        f"• **الموديل:** `{get_current_model()}`\n"
         f"• **الوضع:** {'سريع' if AI_STATE.speed == 'light' else 'ذكي'}\n"
         f"• **المتصلين:** `{len(AI_STATE.permanent_users)}`\n"
     )
@@ -177,7 +177,7 @@ async def ai_callbacks(_, q: CallbackQuery):
         )
         return
 
-    # Direct speed toggle
+    # تبديل مباشر للسرعة
     if data == "ai_speed":
         if uid not in SUDO_USERS:
             await q.answer(owner_only_text(), show_alert=True)
@@ -192,11 +192,11 @@ async def ai_callbacks(_, q: CallbackQuery):
             msg = "تم التفعيل: الوضع السريع (GPT-3.5)"
             
         await q.answer(msg, show_alert=True)
-        # Refresh panel
+        # تحديث اللوحة
         text = (
             "**لوحة تحكم الذكاء الاصطناعي (G4F Engine)**\n\n"
             f"• **الحالة:** {'مفعل' if AI_STATE.enabled else 'معطل'}\n"
-            f"• **الموديل:** `{get_model()}`\n"
+            f"• **الموديل:** `{get_current_model()}`\n"
             f"• **الوضع:** {'سريع' if AI_STATE.speed == 'light' else 'ذكي'}\n"
             f"• **المتصلين:** `{len(AI_STATE.permanent_users)}`\n"
         )
@@ -222,7 +222,7 @@ async def ai_callbacks(_, q: CallbackQuery):
         text = (
             "**لوحة تحكم الذكاء الاصطناعي (G4F Engine)**\n\n"
             f"• **الحالة:** {'مفعل' if AI_STATE.enabled else 'معطل'}\n"
-            f"• **الموديل:** `{get_model()}`\n"
+            f"• **الموديل:** `{get_current_model()}`\n"
             f"• **الوضع:** {'سريع' if AI_STATE.speed == 'light' else 'ذكي'}\n"
             f"• **المتصلين:** `{len(AI_STATE.permanent_users)}`\n"
         )
@@ -239,11 +239,11 @@ async def ai_callbacks(_, q: CallbackQuery):
         AI_STATE.enabled = not AI_STATE.enabled
         AI.enabled = AI_STATE.enabled
         await q.answer("تم تحديث حالة الذكاء.", show_alert=True)
-        # Update button appearance
+        # تحديث شكل الزر
         text = (
             "**لوحة تحكم الذكاء الاصطناعي (G4F Engine)**\n\n"
             f"• **الحالة:** {'مفعل' if AI_STATE.enabled else 'معطل'}\n"
-            f"• **الموديل:** `{get_model()}`\n"
+            f"• **الموديل:** `{get_current_model()}`\n"
             f"• **الوضع:** {'سريع' if AI_STATE.speed == 'light' else 'ذكي'}\n"
             f"• **المتصلين:** `{len(AI_STATE.permanent_users)}`\n"
         )
@@ -318,6 +318,7 @@ async def ai_handler(client, m: Message):
     async def on_update(text: str):
         nonlocal last_edit
         now = time.time()
+        # تقليل معدل التحديث لتجنب الحظر
         if now - last_edit < 1.2:
             return
         last_edit = now
