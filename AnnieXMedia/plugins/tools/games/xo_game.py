@@ -1,5 +1,5 @@
 # Authored By Certified Coders 2026
-# Module: XO Game Advanced System (Games) - Arabic & Points
+# Module: XO Game Advanced System (Games) - English Buttons & Open Lobby
 
 import asyncio
 import random
@@ -12,26 +12,26 @@ from pyrogram.errors import MessageNotModified
 from AnnieXMedia import app
 import config
 
-# ─── إعدادات اللعبة ───
+# ─── Game Settings ───
 
 GAME_IMAGE = "https://files.catbox.moe/gy85j3.jpg"
 
-# تخزين بيانات اللعبة النشطة
+# Active Games Storage
 active_games = {} 
 waiting_for_input = {} 
 
-# رموز اللعبة
+# Symbols
 SYM_X = "❌"
 SYM_O = "⭕"
 SYM_E = "◻️" 
 
 WINNING_COMBINATIONS = [
-    [0, 1, 2], [3, 4, 5], [6, 7, 8], # أفقي
-    [0, 3, 6], [1, 4, 7], [2, 5, 8], # عمودي
-    [0, 4, 8], [2, 4, 6]             # قطري
+    [0, 1, 2], [3, 4, 5], [6, 7, 8], # Horizontal
+    [0, 3, 6], [1, 4, 7], [2, 5, 8], # Vertical
+    [0, 4, 8], [2, 4, 6]             # Diagonal
 ]
 
-# ─── نظام النقاط (تخزين محلي) ───
+# ─── Points System ───
 
 POINTS_FILE = "xo_points.json"
 
@@ -63,48 +63,43 @@ class PointsManager:
         return self.points.get(str(user_id), 0)
 
     def get_leaderboard(self):
-        # ترتيب أعلى 5 لاعبين
         sorted_users = sorted(self.points.items(), key=lambda x: x[1], reverse=True)[:5]
         return sorted_users
 
 pm = PointsManager()
 
-# ─── منطق الذكاء الاصطناعي ───
+# ─── AI Logic ───
 
 def get_ai_move(board, difficulty):
-    # وضع الغش (من لوحة التحكم)
     if hasattr(config, "XO_CHEAT") and config.XO_CHEAT:
         empty_spots = [i for i, x in enumerate(board) if x == SYM_E]
         return random.choice(empty_spots) if empty_spots else None
 
-    # 1. صعب: يحاول الفوز، ثم يصد الخصم، ثم يسيطر على المركز
+    # 1. Hard
     if difficulty == "Hard":
-        # محاولة الفوز
         for combo in WINNING_COMBINATIONS:
             line = [board[i] for i in combo]
             if line.count(SYM_O) == 2 and line.count(SYM_E) == 1:
                 return combo[line.index(SYM_E)]
-        # صد الخصم
         for combo in WINNING_COMBINATIONS:
             line = [board[i] for i in combo]
             if line.count(SYM_X) == 2 and line.count(SYM_E) == 1:
                 return combo[line.index(SYM_E)]
-        # السيطرة على المنتصف
         if board[4] == SYM_E:
             return 4
 
-    # 2. متوسط: يحاول الفوز فقط
+    # 2. Medium
     if difficulty == "Medium":
         for combo in WINNING_COMBINATIONS:
             line = [board[i] for i in combo]
             if line.count(SYM_O) == 2 and line.count(SYM_E) == 1:
                 return combo[line.index(SYM_E)]
 
-    # 3. سهل (أو عشوائي)
+    # 3. Easy
     empty_spots = [i for i, x in enumerate(board) if x == SYM_E]
     return random.choice(empty_spots) if empty_spots else None
 
-# ─── دوال مساعدة ───
+# ─── Helpers ───
 
 def check_winner(board):
     for combo in WINNING_COMBINATIONS:
@@ -127,24 +122,25 @@ def build_keyboard(board, game_id):
 def format_name(user_id, first_name):
     return f"[{first_name}](tg://user?id={user_id})"
 
-# ─── بداية اللعبة ───
+# ─── Start Game Command ───
 
 @app.on_message(filters.command(["xo", "اكس او", "لعبة xo"], prefixes=["", "/", "!"]))
 async def start_xo(client, message):
     if hasattr(config, "XO_ENABLED") and not config.XO_ENABLED:
-        return await message.reply_text("تم تعطيل اللعبة حالياً من قبل المطور .")
+        return await message.reply_text("The game is currently disabled by the developer.")
 
     my_points = pm.get_points(message.from_user.id)
     text = (
-        f"**مرحباً بك في لعبة XO المطورة .**\n"
-        f"**نقاطك الحالية :** `{my_points}`\n"
-        f"**معرف اللعبة :** `{message.id}`"
+        f"**Welcome to Advanced XO Game.**\n"
+        f"**Your Points:** `{my_points}`\n"
+        f"**Game ID:** `{message.id}`"
     )
     
+    # القائمة الرئيسية (Play vs Friend تفتح قائمة فرعية)
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("لعب ضد بوت", callback_data=f"xo_pre_ai_{message.from_user.id}")],
-        [InlineKeyboardButton("تحدي لاعب", callback_data=f"xo_req_{message.from_user.id}")],
-        [InlineKeyboardButton("قائمة المتصدرين", callback_data=f"xo_top_{message.from_user.id}")]
+        [InlineKeyboardButton("Play vs AI", callback_data=f"xo_pre_ai_{message.from_user.id}")],
+        [InlineKeyboardButton("Play vs Friend", callback_data=f"xo_pre_pvp_{message.from_user.id}")],
+        [InlineKeyboardButton("Leaderboard", callback_data=f"xo_top_{message.from_user.id}")]
     ])
     
     await message.reply_photo(
@@ -153,61 +149,117 @@ async def start_xo(client, message):
         reply_markup=keyboard
     )
 
-# ─── معالجة القوائم ───
+# ─── Menu Handler ───
 
-@app.on_callback_query(filters.regex(r"^xo_(pre_ai|sel_ai|req|top)_"))
+@app.on_callback_query(filters.regex(r"^xo_(pre_ai|sel_ai|pre_pvp|make_open|req|top|join_lobby)_"))
 async def xo_menu_callback(client, callback_query: CallbackQuery):
     data_parts = callback_query.data.split("_")
     action = data_parts[1] 
     
-    if action == "sel": # xo_sel_ai_Diff_OwnerID
-        owner_id = int(data_parts[4])
-    else: # xo_pre_ai_OwnerID
-        owner_id = int(data_parts[-1])
-
     user = callback_query.from_user
     chat_id = callback_query.message.chat.id
     msg_id = callback_query.message.id
     game_key = f"{chat_id}_{msg_id}"
 
-    if user.id != owner_id:
-        return await callback_query.answer("هذه اللعبة ليست لك .", show_alert=True)
+    # --- [ JOIN LOGIC ] (للطرف الثاني) ---
+    if action == "join_lobby":
+        owner_id = int(data_parts[-1]) # xo_join_lobby_OwnerID
+        
+        # التأكد من أن اللاعب ليس هو المالك
+        if user.id == owner_id:
+            return await callback_query.answer("You created this game! Wait for a friend.", show_alert=True)
+            
+        # بدء اللعبة
+        p1_name = (await client.get_users(owner_id)).first_name
+        p2_name = user.first_name
+        
+        active_games[game_key] = {
+            "board": [SYM_E] * 9,
+            "turn": owner_id,
+            "p1": owner_id,
+            "p2": user.id,
+            "p1_name": p1_name,
+            "p2_name": p2_name,
+            "mode": "pvp"
+        }
+        await update_game_message(client, callback_query.message, game_key)
+        return
+    # -------------------------------------
 
-    # 1. قائمة المتصدرين
+    # التحقق من المالك لباقي الأزرار
+    if action == "sel": # xo_sel_ai_Diff_OwnerID
+        owner_id = int(data_parts[4])
+    else: # xo_pre_..._OwnerID
+        owner_id = int(data_parts[-1])
+
+    if user.id != owner_id:
+        return await callback_query.answer("This game is not yours.", show_alert=True)
+
+    # 1. Leaderboard
     if action == "top":
         top_list = pm.get_leaderboard()
-        txt = "**🏆 قائمة أفضل 5 لاعبين :**\n\n"
+        txt = "**🏆 Top 5 Players:**\n\n"
         if not top_list:
-            txt += "لا يوجد لاعبين حتى الآن ."
+            txt += "No players yet."
         else:
             for idx, (uid, pts) in enumerate(top_list, 1):
                 try:
                     u = await client.get_users(uid)
                     name = u.first_name
                 except:
-                    name = "لاعب غير معروف"
-                txt += f"{idx}. {name} : {pts} نقطة\n"
+                    name = "Unknown"
+                txt += f"{idx}. {name} : {pts} pts\n"
         
         await callback_query.edit_message_caption(
             caption=txt,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("رجوع", callback_data=f"xo_main_{owner_id}")]])
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data=f"xo_main_{owner_id}")]])
         )
 
-    # 2. اختيار الصعوبة (ضد البوت)
-    elif action == "pre": 
+    # 2. Difficulty Selection (AI)
+    elif action == "pre": # pre_ai
         keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("سهل", callback_data=f"xo_sel_ai_Easy_{owner_id}"),
-                InlineKeyboardButton("متوسط", callback_data=f"xo_sel_ai_Medium_{owner_id}"),
-                InlineKeyboardButton("صعب", callback_data=f"xo_sel_ai_Hard_{owner_id}")
-            ]
+            [InlineKeyboardButton("Easy", callback_data=f"xo_sel_ai_Easy_{owner_id}")],
+            [InlineKeyboardButton("Medium", callback_data=f"xo_sel_ai_Medium_{owner_id}")],
+            [InlineKeyboardButton("Hard", callback_data=f"xo_sel_ai_Hard_{owner_id}")],
+            [InlineKeyboardButton("Back", callback_data=f"xo_main_{owner_id}")]
         ])
         await callback_query.edit_message_caption(
-            caption="**اختر مستوى الصعوبة :**",
+            caption="**Select Difficulty:**",
             reply_markup=keyboard
         )
 
-    # 3. بدء اللعب ضد البوت
+    # 3. PVP Selection (القائمة الفرعية للعب مع صديق)
+    elif action == "pre": # pre_pvp (لاحظ التكرار في الاسم، سنصلحه بالمنطق)
+        pass 
+    
+    # إصلاح بسيط: الـ Regex يرجع pre_ai أو pre_pvp في action
+    # لكن الكود في الأعلى يستخدم split بشكل مختلف. لنعدل المنطق هنا:
+    
+    if "pre_pvp" in callback_query.data:
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Open Game (Invite Link)", callback_data=f"xo_make_open_{owner_id}")],
+            [InlineKeyboardButton("Challenge via ID/User", callback_data=f"xo_req_{owner_id}")],
+            [InlineKeyboardButton("Back", callback_data=f"xo_main_{owner_id}")]
+        ])
+        await callback_query.edit_message_caption(
+            caption="**Choose PVP Mode:**\n\n- **Open Game:** Anyone can click Join.\n- **Challenge:** Send specific User ID.",
+            reply_markup=keyboard
+        )
+
+    # 4. Make Open Game (إنشاء زر Join Game للطرف الثاني)
+    elif action == "make": # make_open
+        text = (
+            f"**Game Started by {user.first_name}!**\n"
+            f"**Waiting for opponent...**\n\n"
+            f"Click the button below to join."
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Join Game", callback_data=f"xo_join_lobby_{owner_id}")],
+            [InlineKeyboardButton("Cancel", callback_data=f"xo_main_{owner_id}")]
+        ])
+        await callback_query.edit_message_caption(caption=text, reply_markup=keyboard)
+
+    # 5. Start AI Game
     elif action == "sel": 
         difficulty = data_parts[3]
         active_games[game_key] = {
@@ -216,39 +268,46 @@ async def xo_menu_callback(client, callback_query: CallbackQuery):
             "p1": owner_id,
             "p2": "AI",
             "p1_name": user.first_name,
-            "p2_name": f"البوت ({difficulty})",
+            "p2_name": f"AI ({difficulty})",
             "mode": "ai",
             "diff": difficulty
         }
         await update_game_message(client, callback_query.message, game_key)
 
-    # 4. طلب تحدي لاعب
+    # 6. Request Player (بالآيدي)
     elif action == "req":
         waiting_for_input[user.id] = {"chat_id": chat_id, "msg_id": msg_id}
+        
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Reference", url="https://t.me/Devs_Annie"), InlineKeyboardButton("Cancel", callback_data=f"xo_cancel_{owner_id}")]
+        ])
+        
         await callback_query.edit_message_caption(
-            caption="**أرسل معرف (يوزر) اللاعب أو قم بالرد على رسالته لتبدأ التحدي .**",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("إلغاء", callback_data=f"xo_cancel_{owner_id}")]])
+            caption=(
+                "**- ارسل يوزر او ايدي من تريد دعوته الي مباراه .**\n"
+                "**- Send the User or ID of the player you want to challenge.**"
+            ),
+            reply_markup=keyboard
         )
 
 @app.on_callback_query(filters.regex(r"^xo_main_"))
 async def back_main(client, callback_query):
-    # إعادة القائمة الرئيسية
     message = callback_query.message
     my_points = pm.get_points(callback_query.from_user.id)
     text = (
-        f"**مرحباً بك في لعبة XO المطورة .**\n"
-        f"**نقاطك الحالية :** `{my_points}`\n"
-        f"**معرف اللعبة :** `{message.id}`"
+        f"**Welcome to Advanced XO Game.**\n"
+        f"**Your Points:** `{my_points}`\n"
+        f"**Game ID:** `{message.id}`"
     )
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("لعب ضد بوت", callback_data=f"xo_pre_ai_{callback_query.from_user.id}")],
-        [InlineKeyboardButton("تحدي لاعب", callback_data=f"xo_req_{callback_query.from_user.id}")],
-        [InlineKeyboardButton("قائمة المتصدرين", callback_data=f"xo_top_{callback_query.from_user.id}")]
+        [InlineKeyboardButton("Play vs AI", callback_data=f"xo_pre_ai_{callback_query.from_user.id}")],
+        [InlineKeyboardButton("Play vs Friend", callback_data=f"xo_pre_pvp_{callback_query.from_user.id}")],
+        [InlineKeyboardButton("Leaderboard", callback_data=f"xo_top_{callback_query.from_user.id}")]
     ])
     await callback_query.edit_message_caption(caption=text, reply_markup=keyboard)
 
 
-# ─── معالجة الدعوة للتحدي ───
+# ─── معالجة الدعوة بالآيدي (Challenge) ───
 
 @app.on_message(filters.text & ~filters.command("xo") & filters.group)
 async def handle_invite_input(client, message):
@@ -261,30 +320,27 @@ async def handle_invite_input(client, message):
         original_msg_id = data["msg_id"]
         
         target_user = None
-        # التحقق هل هو رد أم يوزر
         if message.reply_to_message:
             target_user = message.reply_to_message.from_user
         else:
             try:
                 target_user = await client.get_users(message.text)
             except:
-                await message.reply_text("لم يتم العثور على اللاعب .")
+                await message.reply_text("Player not found.")
                 return
 
         if target_user.id == user_id:
-             await message.reply_text("لا يمكنك تحدي نفسك .")
+             await message.reply_text("You cannot challenge yourself.")
              return
         if target_user.is_bot:
-             await message.reply_text("لا يمكنك تحدي البوتات .")
+             await message.reply_text("You cannot challenge bots.")
              return
 
-        text = f"**لقد تمت دعوتك لتحدي XO**\n**بواسطة :** {message.from_user.mention}"
+        text = f"**You have been challenged to XO by:** {message.from_user.mention}"
         
         keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("قبول", callback_data=f"xo_acc_{user_id}_{target_user.id}_{original_msg_id}"),
-                InlineKeyboardButton("رفض", callback_data=f"xo_dny_{user_id}_{target_user.id}_{original_msg_id}")
-            ]
+            [InlineKeyboardButton("Accept", callback_data=f"xo_acc_{user_id}_{target_user.id}_{original_msg_id}")],
+            [InlineKeyboardButton("Reject", callback_data=f"xo_dny_{user_id}_{target_user.id}_{original_msg_id}")]
         ])
         await message.reply_text(text, reply_markup=keyboard)
 
@@ -296,10 +352,10 @@ async def invite_response(client, callback_query):
     action, p1_id, p2_id, origin_msg_id = data[1], int(data[2]), int(data[3]), int(data[4])
     
     if callback_query.from_user.id != p2_id:
-        return await callback_query.answer("هذه الدعوة ليست لك .", show_alert=True)
+        return await callback_query.answer("This invite is not for you.", show_alert=True)
 
     if action == "dny":
-        await callback_query.message.edit_text("تم رفض الدعوة .")
+        await callback_query.message.edit_text("Challenge Rejected.")
     else:
         game_key = f"{callback_query.message.chat.id}_{origin_msg_id}"
         p1_name = (await client.get_users(p1_id)).first_name
@@ -320,13 +376,16 @@ async def invite_response(client, callback_query):
             origin_msg = await client.get_messages(callback_query.message.chat.id, origin_msg_id)
             await update_game_message(client, origin_msg, game_key)
         except:
-            await callback_query.message.reply_text("حدث خطأ في الوصول للرسالة الأصلية .")
+            await callback_query.message.reply_text("Error accessing original game message.")
 
 @app.on_callback_query(filters.regex(r"^xo_cancel_"))
 async def cancel_req(client, callback_query):
-    if callback_query.from_user.id == int(callback_query.data.split("_")[2]):
+    owner_id = int(callback_query.data.split("_")[2])
+    if callback_query.from_user.id == owner_id:
         waiting_for_input.pop(callback_query.from_user.id, None)
-        await callback_query.message.delete()
+        await back_main(client, callback_query)
+    else:
+        await callback_query.answer("Not your game.", show_alert=True)
 
 # ─── منطق اللعب (التحركات) ───
 
@@ -337,30 +396,26 @@ async def play_move(client, callback_query):
         pos = int(data[-1])
         game_key = "_".join(data[2:-1])
     except:
-        return await callback_query.answer("خطأ في البيانات .")
+        return await callback_query.answer("Data Error.")
 
     game = active_games.get(game_key)
     if not game:
-        return await callback_query.answer("انتهت صلاحية الجلسة .", show_alert=True)
+        return await callback_query.answer("Game session expired.", show_alert=True)
 
     user_id = callback_query.from_user.id
 
-    # التحقق من الدور
     if user_id != game["turn"]:
         if user_id in [game["p1"], game["p2"]] or (game["p2"] == "AI" and user_id == game["p1"]):
-             return await callback_query.answer("هذا ليس دورك .", show_alert=True)
+             return await callback_query.answer("Not your turn.", show_alert=True)
         else:
-            return await callback_query.answer("أنت لست مشاركاً في هذه اللعبة .", show_alert=True)
+            return await callback_query.answer("You are not in this game.", show_alert=True)
 
-    # التحقق من المكان الفارغ
     if game["board"][pos] != SYM_E:
-        return await callback_query.answer("المكان مشغول !", show_alert=True)
+        return await callback_query.answer("Spot taken!", show_alert=True)
 
-    # تنفيذ الحركة
     symbol = SYM_X if user_id == game["p1"] else SYM_O
     game["board"][pos] = symbol
     
-    # فحص الفوز
     winner = check_winner(game["board"])
     if winner:
         await end_game(client, callback_query.message, game, winner)
@@ -373,7 +428,6 @@ async def play_move(client, callback_query):
         await update_game_message(client, callback_query.message, game_key)
         
     elif game["mode"] == "ai":
-        # دور البوت
         ai_pos = get_ai_move(game["board"], game.get("diff", "Easy"))
         if ai_pos is not None:
             game["board"][ai_pos] = SYM_O
@@ -397,9 +451,9 @@ async def update_game_message(client, message, game_key):
     p2_link = game['p2_name'] if game['p2'] == "AI" else format_name(game['p2'], game['p2_name'])
     
     text = (
-        f"**المباراة : {SYM_X} ضد {SYM_O} .**\n\n"
-        f"**اللاعبين : {p1_link} ضد {p2_link} .**\n\n"
-        f"**الدور : {turn_name} ({sym_turn})**"
+        f"**Match: {SYM_X} vs {SYM_O}**\n\n"
+        f"**Players: {p1_link} vs {p2_link}**\n\n"
+        f"**Turn: {turn_name} ({sym_turn})**"
     )
     
     try:
@@ -411,50 +465,44 @@ async def update_game_message(client, message, game_key):
         pass
 
 async def end_game(client, message, game, winner):
-    winner_name = ""
     points_msg = ""
     
     if winner == "Draw":
-        result_text = "**انتهت المباراة : تعادل .**"
-        # نقاط التعادل
+        result_text = "**Match Ended: Draw.**"
         pm.add_points(game['p1'], 5)
         if game['mode'] == 'pvp':
             pm.add_points(game['p2'], 5)
-        points_msg = "\n(تم إضافة 5 نقاط لكل لاعب)"
+        points_msg = "\n(+5 points each)"
     else:
         is_p1_winner = (winner == SYM_X)
         win_id = game["p1"] if is_p1_winner else game["p2"]
         win_name_text = game["p1_name"] if is_p1_winner else game["p2_name"]
         
-        # تنسيق اسم الفائز المطلوب
         if game['mode'] == 'ai' and not is_p1_winner:
-            winner_name = f"البوت"
+            winner_name = f"Bot"
         else:
             winner_name = format_name(win_id, win_name_text)
             
-        result_text = f"**الفائز في المباراه : {winner_name} !**"
+        result_text = f"**Winner: {winner_name} !**"
         
-        # إضافة النقاط للفائز
         if game['mode'] == 'pvp':
-            pm.add_points(win_id, 20) # 20 نقطة للفوز على لاعب
-            points_msg = "\n(تم إضافة 20 نقطة للفائز)"
+            pm.add_points(win_id, 20) 
+            points_msg = "\n(+20 points for winner)"
         elif game['mode'] == 'ai' and is_p1_winner:
-            # نقاط حسب الصعوبة
             diff_points = {"Easy": 5, "Medium": 10, "Hard": 15}
             pts = diff_points.get(game.get("diff"), 5)
             pm.add_points(win_id, pts)
-            points_msg = f"\n(تم إضافة {pts} نقاط للفوز)"
+            points_msg = f"\n(+{pts} points)"
 
     p1_link = format_name(game['p1'], game['p1_name'])
     p2_link = game['p2_name'] if game['p2'] == "AI" else format_name(game['p2'], game['p2_name'])
 
     final_text = (
-        f"**المباراة : {SYM_X} ضد {SYM_O} .**\n\n"
-        f"**اللاعبين : {p1_link} ضد {p2_link} .**\n\n"
+        f"**Match: {SYM_X} vs {SYM_O}**\n\n"
+        f"**Players: {p1_link} vs {p2_link}**\n\n"
         f"{result_text}{points_msg}"
     )
     
-    # إزالة الأزرار التفاعلية
     buttons = []
     row = []
     for cell in game["board"]:
