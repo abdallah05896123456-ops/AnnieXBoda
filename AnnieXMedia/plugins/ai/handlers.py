@@ -20,6 +20,7 @@ from AnnieXMedia import app
 from config import OWNER_ID
 
 # استيراد دوال المحرك الجديد (g4f)
+# تم التعديل لاستخدام get_current_model بدلا من get_model
 from .engine import (
     AI,
     ask_ollama_stream,
@@ -28,7 +29,7 @@ from .engine import (
     set_light_model,
     set_heavy_model,
     toggle_model, 
-    get_current_model, # تم تعديل الاسم ليتطابق مع Engine
+    get_current_model, 
 )
 
 from .prompts import build_system_prompt
@@ -94,7 +95,7 @@ def owner_only_text() -> str:
 # Keyboards
 # -------------------------------------------------
 def build_control_keyboard() -> InlineKeyboardMarkup:
-    # تحديد حالة السرعة للعرض نصيا
+    # تحديد حالة السرعة للعرض نصيا بدون ايموجي
     speed_txt = "(سريع)" if AI_STATE.speed == "light" else "(ذكي)"
     return InlineKeyboardMarkup(
         [
