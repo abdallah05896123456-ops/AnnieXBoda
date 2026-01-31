@@ -1,17 +1,18 @@
 # plugins/ai/engine.py
 # Authored By Certified Coders (c) 2026
-# Local AI Engine - Enterprise Edition (Termux Fixed)
-# Fixes: ImportError Blackbox (Renamed to BlackboxPro)
+# Local AI Engine - Enterprise Edition (Async Fix + Crash Proof)
+# Fixes: async_generator error, ImportError, and Throttling
 
 import logging
 import asyncio
 import time
 import random
+import inspect 
 from typing import Dict, Optional, Callable
 
 # استدعاء العميل
 from g4f.client import AsyncClient
-# استدعاء المزودات كحزمة كاملة لتجنب اخطاء الاستيراد المباشر
+# استدعاء المزودات كحزمة كاملة
 import g4f.Provider
 
 # ------------------------------------------------------------------
@@ -22,12 +23,12 @@ logger = logging.getLogger("AnnieX_AI")
 logging.basicConfig(level=logging.INFO)
 
 # ------------------------------------------------------------------
-# Dynamic Provider Loader (Smart Logic)
+# Dynamic Provider Loader
 # ------------------------------------------------------------------
 
 def get_provider_by_name(name_list):
     """
-    دالة للبحث عن المزودات المتاحة وتجهيزها
+    فحص وتحميل المزودات المتاحة فقط لتجنب انهيار البوت
     """
     available = []
     for name in name_list:
@@ -35,16 +36,15 @@ def get_provider_by_name(name_list):
             available.append(getattr(g4f.Provider, name))
     return available
 
-# تحديد المزودات بناء على فحص تيرميكس الخاص بك
-# PollinationsAI: سريع جدا وممتاز للشخصيات (للوضع الخفيف)
-# BlackboxPro: الاسم الجديد لـ Blackbox وهو ذكي جدا (للوضع الثقيل)
-FAST_NAMES = ["PollinationsAI", "DeepInfra", "HuggingChat"]
+# قوائم المزودات المحسنة
+# تم استبدال Blackbox بـ BlackboxPro لتوافق التحديثات
+FAST_NAMES = ["PollinationsAI", "DeepInfra", "HuggingChat", "DuckDuckGo"]
 SMART_NAMES = ["BlackboxPro", "Blackbox", "PollinationsAI"]
 
 FAST_PROVIDERS = get_provider_by_name(FAST_NAMES)
 SMART_PROVIDERS = get_provider_by_name(SMART_NAMES)
 
-# التاكد من وجود مزودات لتجنب الاخطاء
+# منطق التبديل التلقائي في حال عدم توفر مزودات
 if not FAST_PROVIDERS and SMART_PROVIDERS:
     FAST_PROVIDERS = SMART_PROVIDERS
 if not SMART_PROVIDERS and FAST_PROVIDERS:
@@ -91,7 +91,6 @@ def _clean_memory_if_needed():
 
 def _build_messages(user_id: int, prompt: str, system_prompt: str) -> list:
     messages = []
-    
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
     
@@ -111,7 +110,7 @@ def _save_history(user_id: int, prompt: str, reply: str):
         USER_HISTORY[user_id] = history[-MAX_HISTORY:]
 
 # ------------------------------------------------------------------
-# Core Logic
+# Core Logic (Fixed for async_generator)
 # ------------------------------------------------------------------
 
 async def ask_ollama_stream(
@@ -133,44 +132,48 @@ async def ask_ollama_stream(
     if cache_key in CACHE:
         return CACHE[cache_key]
 
-    # 2. تحديد المزود (Provider)
-    current_provider = None
-    
-    # اختيار القائمة المناسبة
+    # 2. تحديد المزود
     target_list = FAST_PROVIDERS if used_model == LIGHT_MODEL else SMART_PROVIDERS
+    current_provider = random.choice(target_list) if target_list else None
     
-    if target_list:
-        current_provider = random.choice(target_list)
-    
-    # بناء الرسائل
+    # 3. بناء الرسائل
     messages = _build_messages(user_id, prompt, system_prompt)
     
-    # اعداد العميل
+    # 4. اعداد العميل
     if current_provider:
         client = AsyncClient(provider=current_provider)
     else:
-        # ترك الاختيار تلقائي اذا لم نجد المزودات
         client = AsyncClient()
 
     full_reply = ""
     last_update_time = 0
     last_sent_text = ""
 
-    # محاولة الاتصال (Retry Logic)
+    # 5. محاولة الاتصال
     for attempt in range(2): 
         try:
-            # في المحاولة الثانية، نتركه يختار عشوائي بالكامل
             if attempt > 0:
+                # في المحاولة الثانية نستخدم الوضع التلقائي
                 client = AsyncClient()
             
-            response = await client.chat.completions.create(
+            # انشاء الطلب (بدون await مبدئيا)
+            response_obj = client.chat.completions.create(
                 model=used_model,
                 messages=messages,
                 stream=True
             )
             
+            # --- الاصلاح الجذري لمشكلة async_generator ---
+            # نفحص ما اذا كانت النتيجة تحتاج لانتظار (Coroutine) ام انها جاهزة (Generator)
+            if inspect.iscoroutine(response_obj):
+                response = await response_obj
+            else:
+                response = response_obj
+            
+            # الان يمكننا الدوران بامان
             async for chunk in response:
                 content = ""
+                # محاولات استخراج النص بصيغ مختلفة
                 if hasattr(chunk.choices[0].delta, "content"):
                     content = chunk.choices[0].delta.content
                 elif hasattr(chunk, "content"):
@@ -179,18 +182,18 @@ async def ask_ollama_stream(
                 if content:
                     full_reply += content
                     
-                    # Smart Throttling System
-                    current_time = time.time()
-                    if on_update and (current_time - last_update_time > 1.5) and (full_reply != last_sent_text):
+                    # استدعاء دالة التحديث
+                    # نترك التحكم في التوقيت (FloodWait) للهاندلر الخارجي
+                    # ولكن نقوم بفحص بسيط لتخفيف الحمل
+                    if on_update and full_reply != last_sent_text:
                         try:
                             await on_update(full_reply)
-                            last_update_time = current_time
                             last_sent_text = full_reply 
-                        except Exception as e:
-                            # تجاهل اخطاء عدم تعديل الرسالة
+                        except Exception:
+                            # تجاهل اي خطا اثناء التحديث لضمان استمرار التوليد
                             pass 
 
-            # التحقق من الردود الفارغة او الالية
+            # التحقق من صحة الرد
             if full_reply and "I am an AI" not in full_reply:
                 break 
             elif attempt == 0:
@@ -200,11 +203,11 @@ async def ask_ollama_stream(
         except Exception as e:
             logger.error(f"Attempt {attempt+1} failed: {e}")
             if attempt == 1: 
-                return "نواجه ضغطا حاليا، يرجى المحاولة لاحقا."
+                return "نواجه مشكلة تقنية في الاتصال بالخادم، حاول لاحقا."
             await asyncio.sleep(1)
 
     if not full_reply:
-        return "لم يتم استلام رد من السيرفر."
+        return "لم يتم استلام اي رد."
 
     # التحديث النهائي
     if on_update and full_reply != last_sent_text:
