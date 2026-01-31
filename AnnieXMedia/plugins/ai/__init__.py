@@ -1,5 +1,5 @@
 # plugins/ai/__init__.py
-# Authored By Certified Coders © 2026
+# Authored By Certified Coders (c) 2026
 # AI Plugin Package Initializer
 
 """
@@ -14,10 +14,10 @@ Importing this package automatically
 registers all AI handlers.
 """
 
-# تحميل البرومبتات أولا
+# تحميل البرومبتات اولا
 from . import prompts  # noqa: F401
 
-# تحميل محرك الذكاء (الـ API اللي باقي المشروع بيستخدمه)
+# تحميل محرك الذكاء
 from .engine import (
     AI,
     ENGINE,
@@ -27,11 +27,10 @@ from .engine import (
     toggle_model,
     set_light_model,
     set_heavy_model,
-    get_model,
-    get_current_model,
+    get_current_model, # تم حذف get_model لانه لم يعد موجودا
 )  # noqa: F401
 
-# تحميل الهاندلرز (بيسجل الأوامر والكولباكس)
+# تحميل الهاندلرز
 from . import handlers  # noqa: F401
 
 __all__ = [
@@ -44,7 +43,6 @@ __all__ = [
     "toggle_model",
     "set_light_model",
     "set_heavy_model",
-    "get_model",
     "get_current_model",
     "handlers",
 ]
