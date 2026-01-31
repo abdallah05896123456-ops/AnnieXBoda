@@ -204,6 +204,7 @@ class YTProcessorAPI:
 
         return await loop.run_in_executor(self.pool, _run_download)
 
+    # ✅ الدالة المحسنة لدمج سرعة اليكسا وحل مشكلة الغلاف
     async def upload_alexa_style(self, client, mystic_msg, file_path, is_video, title, duration, user_name, vidid=None):
         if not file_path or not os.path.exists(file_path):
             return False
@@ -211,25 +212,32 @@ class YTProcessorAPI:
         caption = f"**الـعـنـوان:** {title}\n**طـلـب:** {user_name}"
         chat_id = mystic_msg.chat.id
         
-        # --- استراتيجية الغلاف ---
+        # 1. محاولة استخدام الصورة الموجودة في الرسالة (الأسرع والأضمن)
         thumb_path = None
-        base_name = os.path.splitext(file_path)[0]
+        if mystic_msg.photo:
+            try:
+                thumb_path = await mystic_msg.download()
+            except:
+                pass
         
-        # البحث عن صور بنفس اسم الملف
-        for ext in [".webp", ".jpg", ".jpeg", ".png"]:
-            if os.path.exists(f"{base_name}{ext}"):
-                thumb_path = f"{base_name}{ext}"
-                break
-        
-        # محاولة احتياطية
-        if not thumb_path and vidid:
-             possible_files = glob.glob(os.path.join(Config.DOWNLOAD_PATH, f"*{vidid}*"))
-             for f in possible_files:
-                if f.endswith((".webp", ".jpg", ".jpeg", ".png")) and not f.endswith((".mp3", ".mp4", ".m4a")):
-                    thumb_path = f
+        # 2. إذا لم تكن موجودة، البحث محلياً (الطريقة القديمة)
+        if not thumb_path:
+            base_name = os.path.splitext(file_path)[0]
+            for ext in [".webp", ".jpg", ".jpeg", ".png"]:
+                if os.path.exists(f"{base_name}{ext}"):
+                    thumb_path = f"{base_name}{ext}"
                     break
+            
+            # محاولة احتياطية بالـ ID
+            if not thumb_path and vidid:
+                 possible_files = glob.glob(os.path.join(Config.DOWNLOAD_PATH, f"*{vidid}*"))
+                 for f in possible_files:
+                    if f.endswith((".webp", ".jpg", ".jpeg", ".png")) and not f.endswith((".mp3", ".mp4", ".m4a")):
+                        thumb_path = f
+                        break
 
         try:
+            # استخدام edit_media للسرعة (مثل اليكسا)
             if is_video:
                 media = InputMediaVideo(media=file_path, thumb=thumb_path, caption=caption, duration=duration, supports_streaming=True)
             else:
@@ -239,6 +247,7 @@ class YTProcessorAPI:
             
         except (MessageIdInvalid, MessageNotModified):
             try:
+                # إذا فشل التعديل، نحذف ونرسل من جديد (Fallback)
                 try: await mystic_msg.delete()
                 except: pass
                 
@@ -249,6 +258,7 @@ class YTProcessorAPI:
             except:
                 return False
         except Exception:
+            # محاولة أخيرة بدون غلاف
             try:
                 if is_video:
                     await client.send_video(chat_id, video=file_path, caption=caption, duration=duration)
@@ -257,6 +267,11 @@ class YTProcessorAPI:
             except:
                 return False
         
+        # تنظيف الغلاف إذا تم تنزيله
+        if thumb_path and os.path.exists(thumb_path):
+            try: os.remove(thumb_path)
+            except: pass
+            
         return True
 
     async def download_playlist(self, client, mystic_msg, playlist_url, is_video, user_name, limit=30):
