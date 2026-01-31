@@ -1,11 +1,12 @@
 # Authored By Certified Coders © 2026
-# RACE MODE: Android/iOS Spoofing + No-Check Flags + IPv4 Force
-# FIXED: Removed deprecated arguments
+# RACE MODE: Android/iOS Spoofing + Cookies Auth + IPv4 Force
+# FIXED: Removed deprecated arguments (no-call-home) & Added Auto-Cookies
 
 import asyncio
 import logging
 import re
 import shlex
+import os  # مهم جداً عشان البحث عن ملف الكوكيز
 from typing import Optional
 from typing import Tuple
 
@@ -56,13 +57,30 @@ class YtDlp:
             # --- تخطي الفحوصات (Skip Checks) ---
             '--no-playlist',              
             '--no-check-formats',         # سرعة صاروخية (يأخذ أول صيغة تقابله)
-            # '--no-remote-subtitles',    # ❌ تم الحذف: هذا الأمر يسبب توقف البوت
             '--no-write-subs',
             '--no-warnings',
             '--ignore-errors',
-            '--no-call-home',             # منع التحديثات
             '--no-cache-dir',             # عدم القراءة/الكتابة على الهارد
+            
+            # ❌ (تم الحذف) الأوامر التي تسبب الكراش في النسخ الحديثة:
+            # --no-call-home  <-- كان السبب في المشكلة
+            # --no-remote-subtitles
         ]
+
+        # ✅ إضافة الكوكيز تلقائياً (Auto-Detect Cookies)
+        # يبحث عن الملف في المسارات المحتملة ويستخدمه إذا وجد
+        possible_cookies = [
+            '/app/cookies.txt',           # مسار الدوكر الرسمي
+            'cookies.txt',                # المسار الحالي
+            'AnnieXMedia/cookies.txt',    # مسار داخل السورس
+            'assets/cookies.txt'
+        ]
+
+        for path in possible_cookies:
+            if os.path.exists(path):
+                commands.extend(['--cookies', path])
+                # py_logger.debug(f"🍪 Using cookies from: {path}") 
+                break
 
         if add_commands:
             commands += shlex.split(add_commands)
@@ -81,22 +99,27 @@ class YtDlp:
             )
             try:
                 # المهلة الزمنية للسباق (Race Timeout)
+                # رفعناها لـ 15 ثانية لتغطية وقت قراءة الكوكيز وفك التشفير
                 stdout, stderr = await asyncio.wait_for(
                     proc.communicate(),
-                    timeout=12, # 12 ثانية كحد أقصى للعملية بالكامل
+                    timeout=15, 
                 )
             except asyncio.TimeoutError:
                 try:
-                    proc.kill() # Kill أسرع من Terminate في الحالات الحرجة
+                    proc.kill() # Kill أسرع من Terminate
                 except:
                     pass
-                raise YtDlpError('yt-dlp process timeout (Race Lost)')
+                raise YtDlpError('yt-dlp process timeout (Race Lost or Slow Proxy)')
             
             if not stdout and stderr:
+                err_msg = stderr.decode()
+                # لو الخطأ بسبب الحظر (رغم وجود الكوكيز أحياناً)، نوضحه
+                if "Sign in" in err_msg:
+                    raise YtDlpError("YouTube Blocked: Check cookies.txt validation.")
+                
                 # أحياناً yt-dlp يرمي تحذيرات في stderr بس بيجيب الرابط في stdout
-                # هنتأكد الأول إن مفيش داتا رجعت
                 if not stdout:
-                    raise YtDlpError(stderr.decode())
+                    raise YtDlpError(err_msg)
             
             data = stdout.decode().strip().split('\n')
             if data:
