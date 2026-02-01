@@ -258,12 +258,11 @@ class YTProcessorAPI:
             await mystic_msg.edit_media(media=media)
             
         except (MessageIdInvalid, MessageNotModified):
-            # تم إصلاح الخطأ هنا (فصل الأسطر)
             try:
                 await mystic_msg.delete()
             except:
                 pass
-                
+            
             try:
                 if is_video:
                     await client.send_video(mystic_msg.chat.id, video=file_path, caption=caption, thumb=thumb_path, duration=int(duration) if duration else 0)
