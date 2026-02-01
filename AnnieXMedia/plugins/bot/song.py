@@ -205,12 +205,24 @@ async def direct_yot_audio(client, message: Message):
         await mystic.edit_text(f"خطأ: {e}")
         
     finally:
-        if 'final_path' in locals() and os.path.exists(final_path): try: os.remove(final_path)
-        except: pass
-        if 'stream_path' in locals() and os.path.exists(stream_path): try: os.remove(stream_path)
-        except: pass
-        if 'thumb_path' in locals() and os.path.exists(thumb_path): try: os.remove(thumb_path)
-        except: pass
+        # إصلاح الخطأ: فصل الأسطر لـ try/except
+        if 'final_path' in locals() and os.path.exists(final_path): 
+            try: 
+                os.remove(final_path)
+            except: 
+                pass
+        
+        if 'stream_path' in locals() and os.path.exists(stream_path): 
+            try: 
+                os.remove(stream_path)
+            except: 
+                pass
+        
+        if 'thumb_path' in locals() and os.path.exists(thumb_path): 
+            try: 
+                os.remove(thumb_path)
+            except: 
+                pass
 
 # ==========================================================
 # محرك البحث الرئيسي
@@ -420,16 +432,24 @@ async def song_download_callback(client, CallbackQuery):
         await mystic.edit_text(f"خطأ: {e}")
         
     finally:
-        # تنظيف الملفات (سواء كانت أنبوب أو ملف عادي)
+        # إصلاح الخطأ: فصل الأسطر لـ try/except
         if 'final_path' in locals() and os.path.exists(final_path): 
-            try: os.remove(final_path)
-            except: pass
+            try: 
+                os.remove(final_path)
+            except: 
+                pass
+        
         if 'stream_path' in locals() and os.path.exists(stream_path): 
-            try: os.remove(stream_path)
-            except: pass
+            try: 
+                os.remove(stream_path)
+            except: 
+                pass
+        
         if 'thumb_path' in locals() and os.path.exists(thumb_path): 
-            try: os.remove(thumb_path)
-            except: pass
+            try: 
+                os.remove(thumb_path)
+            except: 
+                pass
 
 @app.on_callback_query(filters.regex("close"))
 async def close_cb(_, query):
