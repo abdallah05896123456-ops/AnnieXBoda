@@ -1,5 +1,5 @@
-يعني من الاخر نعدل الملف د ولا لاء عشان منلعبش في البث المباشر بتاع المكالمة الصوتية والتنزيل في الرام عشان ملف YT بينزل بس الملف د ليه دعوه بس بالبث المباشر والتنزيل في الرام عشان لو المستخدم طلب نفس الطلب
-# Authored By Certified Coders © 2025
+
+# Authored By Certified 
 # Fixed for platforms/Youtube.py
 # NUCLEAR EDITION: 16-Core Aria2c Download + Instant Direct Stream + RAM Disk
 
