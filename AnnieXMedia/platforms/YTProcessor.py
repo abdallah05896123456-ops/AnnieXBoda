@@ -94,9 +94,7 @@ class YTProcessorAPI:
         return None
 
     async def get_quality_buttons(self, vidid, stype):
-        # ... (نفس كود الأزرار السابق للحفاظ على التناسق) ...
         # اختصاراً للكود هنا، يمكنك استخدام نفس الدالة من الكود القديم
-        # أو الاعتماد على song.py الذي يستخدم YouTube.formats الأسرع
         return []
 
     # ⚡ الدالة الهجينة: تختار بين Piping (للسرعة) و Aria2c (للقوة)
@@ -260,7 +258,12 @@ class YTProcessorAPI:
             await mystic_msg.edit_media(media=media)
             
         except (MessageIdInvalid, MessageNotModified):
-            try: await mystic_msg.delete(); except: pass
+            # تم إصلاح الخطأ هنا (فصل الأسطر)
+            try:
+                await mystic_msg.delete()
+            except:
+                pass
+                
             try:
                 if is_video:
                     await client.send_video(mystic_msg.chat.id, video=file_path, caption=caption, thumb=thumb_path, duration=int(duration) if duration else 0)
