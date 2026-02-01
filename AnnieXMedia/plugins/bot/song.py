@@ -1,4 +1,5 @@
-
+  
+ 
 # Authored By Certified Coders © 2026
 # System: Song Plugin | Playlist Support | MongoDB Fixed | Pyromod
 # Optimized for AnnieXMedia Bot Folder Structure
@@ -271,3 +272,4 @@ async def song_back_callback(client, CallbackQuery):
     stype, vidid = CallbackQuery.data.split(None, 1)[1].split("|")
     buttons = song_markup(None, vidid)
     await CallbackQuery.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(buttons))
+ا
