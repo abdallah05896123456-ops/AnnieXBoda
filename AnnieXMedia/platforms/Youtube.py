@@ -1,3 +1,4 @@
+يعني من الاخر نعدل الملف د ولا لاء عشان منلعبش في البث المباشر بتاع المكالمة الصوتية والتنزيل في الرام عشان ملف YT بينزل بس الملف د ليه دعوه بس بالبث المباشر والتنزيل في الرام عشان لو المستخدم طلب نفس الطلب
 # Authored By Certified Coders © 2025
 # Fixed for platforms/Youtube.py
 # NUCLEAR EDITION: 16-Core Aria2c Download + Instant Direct Stream + RAM Disk
@@ -23,12 +24,14 @@ except ImportError:
     def time_to_seconds(t): return 0
 
 class Config:
+    # بما أن الرام 88 جيجا، سنستخدم الرام للتخزين المؤقت للحصول على سرعة قراءة وكتابة خرافية
     if os.path.exists("/dev/shm"):
         DOWNLOAD_PATH = "/dev/shm/AnnieDownloads"
     else:
         DOWNLOAD_PATH = os.path.abspath("downloads")
     
     COOKIE_PATH = "AnnieXMedia/assets/cookies.txt"
+    # استغلال الـ 16 كور بالكامل
     MAX_WORKERS = 16
 
 if not os.path.exists(Config.DOWNLOAD_PATH):
@@ -128,13 +131,18 @@ class YouTubeAPI:
         d, _ = await self.track(link, videoid)
         return d.get("thumb")
 
+    # 🔥 التحميل الخلفي باستخدام Aria2c لاستغلال سرعة الـ 3 جيجا 🔥
     def _background_download(self, link, final_path, is_video):
         try:
+            # استخدام 16 اتصال متوازي للتحميل بسرعة الضوء
             aria2_args = [
                 "-x", "16", "-s", "16", "-j", "16", "-k", "1M",
-                "--file-allocation=none", "--disable-ipv6=true"
+                "--file-allocation=none",
+                "--disable-ipv6=true" # IPv4 أسرع غالباً في السيرفرات
             ]
+            
             fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]" if is_video else "bestaudio[ext=m4a]/bestaudio/best"
+            
             ydl_opts = {
                 "format": fmt,
                 "outtmpl": final_path,
@@ -171,21 +179,27 @@ class YouTubeAPI:
             else: vid_id = str(int(time.time()))
         except: vid_id = str(int(time.time()))
 
+        # تحديد المسار في الرام
         ext = "mp4" if video else "m4a"
         ram_path = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id}.{ext}")
 
+        # 1. فحص الكاش (RAM Cache Check)
         if os.path.exists(ram_path) and os.path.getsize(ram_path) > 1024:
             print(f"⚡ RAM Cache Hit: {vid_id}", flush=True)
             return ram_path, False
 
+        # 2. جلب الرابط المباشر (Direct Stream Fetch)
         print(f"🚀 Fetching Direct Link for: {vid_id}", flush=True)
         
         try:
             cmd = ["yt-dlp", "-g", "--cookies", get_cookie_file() or ""]
+            
+            # رفع الجودة لأن النت عندك قوي (720p بدلاً من 480p)
             if video:
                 cmd.extend(["-f", "best[height<=720]"])
             else:
                 cmd.extend(["-f", "bestaudio[ext=m4a]/bestaudio"])
+            
             cmd.append(link)
 
             process = await asyncio.create_subprocess_exec(
@@ -195,13 +209,18 @@ class YouTubeAPI:
 
             if stdout:
                 direct_link = stdout.decode().split("\n")[0].strip()
+                
+                # 3. تشغيل التحميل في الخلفية (Background Cache)
                 loop.run_in_executor(self.pool, self._background_download, link, ram_path, video)
+
+                # 4. إرجاع الرابط المباشر فوراً
                 return direct_link, True
             else:
                 print(f"❌ Direct Link Failed", flush=True)
         except Exception as e:
             print(f"❌ Error fetching direct link: {e}", flush=True)
 
+        # Fallback
         def _fallback_download():
             try:
                 fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]" if video else "bestaudio[ext=m4a]"
@@ -220,6 +239,7 @@ class YouTubeAPI:
         downloaded_file = await loop.run_in_executor(self.pool, _fallback_download)
         if downloaded_file:
             return downloaded_file, False
+        
         return None, False
 
     async def playlist(self, link, limit, user_id, videoid: Union[bool, str] = None):
@@ -263,27 +283,5 @@ class YouTubeAPI:
             r = res["result"][query_type] if query_type < len(res["result"]) else res["result"][0]
             return r["title"], r["duration"], r["thumbnails"][0]["url"].split("?")[0], r["id"]
         except: return "Error", "0", "", "error"
-
-    # ==================================================
-    # [NEW] دالة البث المباشر (للرفع السريع فقط)
-    # هذه الدالة تستخدم لاستخراج الرابط الخام بدون تحميل
-    # ==================================================
-    async def get_direct_stream_link(self, link: str, is_video: bool = False):
-        cmd = ["yt-dlp", "-g", "--cookies", get_cookie_file() or "", link]
-        if is_video:
-            cmd.extend(["-f", "best[height<=720]"])
-        else:
-            cmd.extend(["-f", "bestaudio[ext=m4a]/bestaudio"])
-
-        try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await process.communicate()
-            if stdout:
-                return stdout.decode().split("\n")[0].strip()
-        except:
-            pass
-        return None
 
 YouTube = YouTubeAPI()
