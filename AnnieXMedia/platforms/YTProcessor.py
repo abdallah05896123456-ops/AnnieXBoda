@@ -51,14 +51,18 @@ class YTProcessorAPI:
             pass
 
     def get_cookie_file(self):
+        # تحديث المسارات حسب طلبك
         possible_paths = [
-            "cookies.txt", "AnnieXMedia/cookies.txt",
-            "assets/cookies.txt", "AnnieXMedia/assets/cookies.txt",
-            "platforms/cookies.txt", "/app/cookies.txt"
+            "cookies.txt",                       # المسار الرئيسي
+            "AnnieXMedia/assets/cookies.txt",    # المسار داخل assets
+            "assets/cookies.txt",                # احتياطي
+            "AnnieXMedia/cookies.txt"            # احتياطي
         ]
+        
         for path in possible_paths:
             if os.path.exists(path) and os.path.getsize(path) > 0:
-                return path
+                # إرجاع المسار الكامل (Absolute Path) لتجنب الأخطاء
+                return os.path.abspath(path)
         return None
 
     # دالة تحميل الصورة بـ aiohttp (بديل wget)
@@ -262,7 +266,7 @@ class YTProcessorAPI:
                 await mystic_msg.delete()
             except:
                 pass
-            
+                
             try:
                 if is_video:
                     await client.send_video(mystic_msg.chat.id, video=file_path, caption=caption, thumb=thumb_path, duration=int(duration) if duration else 0)
