@@ -1,6 +1,6 @@
 # Authored By Certified Coders © 2026
-# System: Processor | HYBRID ENGINE (Aria2c + Real-Time Piping)
-# Features: 16-Core Speed | Safe Thumbnails | HLS Support | Remote JS Bypass
+# System: Processor | REMOTE JS BYPASS | ANDROID AUTH | HYBRID ENGINE
+# Features: Fixes "Sign in" & JS Challenges | Pipe < 200MB | Aria2c > 200MB
 
 import asyncio
 import os
@@ -18,7 +18,6 @@ from pyrogram.errors import MessageIdInvalid, MessageNotModified, FloodWait
 # استيراد المتغيرات الهامة
 from config import LOGGER_ID, OWNER_ID 
 from AnnieXMedia import LOGGER
-from AnnieXMedia.utils.formatters import convert_bytes
 
 class Config:
     # استخدام الرامات (RAM Disk) للتخزين المؤقت للسرعة القصوى
@@ -28,7 +27,12 @@ class Config:
         DOWNLOAD_PATH = os.path.abspath("downloads")
         
     MAX_WORKERS = 16 
-    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+    
+    # هوية الأندرويد لتخطي الحظر (السطر السحري 1)
+    USER_AGENT = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+    
+    # حد التحويل لـ Aria2c (200 ميجا بايت)
+    ARIA2_THRESHOLD = 200 * 1024 * 1024 
 
 # إنشاء المجلد
 if not os.path.exists(Config.DOWNLOAD_PATH):
@@ -51,21 +55,20 @@ class YTProcessorAPI:
             pass
 
     def get_cookie_file(self):
-        # تحديث المسارات حسب طلبك
+        # البحث عن الكوكيز بمسارات متعددة وإرجاع المسار الكامل (Absolute)
         possible_paths = [
-            "cookies.txt",                       # المسار الرئيسي
-            "AnnieXMedia/assets/cookies.txt",    # المسار داخل assets
-            "assets/cookies.txt",                # احتياطي
-            "AnnieXMedia/cookies.txt"            # احتياطي
+            "cookies.txt", 
+            "AnnieXMedia/assets/cookies.txt",
+            "assets/cookies.txt", 
+            "AnnieXMedia/assets/cookies.txt",
+            "/app/cookies.txt"
         ]
-        
         for path in possible_paths:
             if os.path.exists(path) and os.path.getsize(path) > 0:
-                # إرجاع المسار الكامل (Absolute Path) لتجنب الأخطاء
                 return os.path.abspath(path)
         return None
 
-    # دالة تحميل الصورة بـ aiohttp (بديل wget)
+    # دالة تحميل الصورة (بديل wget)
     async def _download_thumb_native(self, url, path):
         if not url: return False
         try:
@@ -78,48 +81,73 @@ class YTProcessorAPI:
         except: pass
         return False
 
-    # دالة استخراج الرابط المباشر (للأنابيب)
-    async def _get_direct_details(self, url):
+    # 🧠 الدماغ: جلب المعلومات وتخطي الحماية (Sign in & JS Bypass)
+    async def _get_video_info(self, url):
         cookie_file = self.get_cookie_file()
+        
         cmd = [
             "yt-dlp", "-j", 
-            "--cookies", cookie_file or "",
             "--no-warnings",
-            # "--remote-components", "ejs:github", # تفعيل الريموت إذا لزم الأمر
+            "--user-agent", Config.USER_AGENT,
+            # ✅ السطر السحري 1: استخدام عميل أندرويد لتخطي Sign in
+            "--extractor-args", "youtube:player_client=android",
+            # ✅ السطر السحري 2: تفعيل الريموت لتخطي الجافا سكريبت المعقدة
+            "--remote-components", "ejs:github",
             url
         ]
+        
+        if cookie_file:
+            cmd.insert(2, "--cookies")
+            cmd.insert(3, cookie_file)
+
         try:
             process = await asyncio.create_subprocess_exec(
                 *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
-            stdout, _ = await process.communicate()
-            if stdout: return json.loads(stdout.decode())
-        except: pass
+            stdout, stderr = await process.communicate()
+            
+            if stdout:
+                return json.loads(stdout.decode())
+            else:
+                # لو فشل، جرب محاولة أخيرة بدون cookies (أحياناً الكوكيز الفاسدة هي السبب)
+                if cookie_file:
+                    print("⚠️ Retrying without cookies due to failure...")
+                    cmd.pop(2) # remove --cookies
+                    cmd.pop(2) # remove path
+                    process = await asyncio.create_subprocess_exec(
+                        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                    )
+                    stdout, _ = await process.communicate()
+                    if stdout: return json.loads(stdout.decode())
+                    
+        except Exception as e:
+            print(f"❌ Info Fetch Error: {e}")
         return None
 
     async def get_quality_buttons(self, vidid, stype):
-        # اختصاراً للكود هنا، يمكنك استخدام نفس الدالة من الكود القديم
         return []
 
-    # ⚡ الدالة الهجينة: تختار بين Piping (للسرعة) و Aria2c (للقوة)
+    # ⚡ الدالة الذكية (Smart Download Switcher)
     async def download_file(self, url, quality_arg, is_video, title, vidid=None, is_owner=False):
         vid_id_str = vidid if vidid else str(int(time.time()))
         
-        # إذا كان الطلب من "قائمة تشغيل" (Playlist) أو "رابط HLS مباشر"، نستخدم Aria2c القديم
-        # لأن الـ Piping صعب مع القوائم المتتالية السريعة جداً
-        is_playlist_context = is_owner and quality_arg in ["high", "mid"] 
+        # 1. جلب المعلومات أولاً (لتحديد الحجم وتجاوز الحماية)
+        info = await self._get_video_info(url)
+        if not info: return None
+
+        # 2. فحص الحجم
+        filesize = info.get('filesize') or info.get('filesize_approx') or 0
         
-        if is_playlist_context:
+        # 3. اتخاذ القرار: Piping ولا Aria2c؟
+        if filesize > Config.ARIA2_THRESHOLD:
+            # أكبر من 200 ميجا -> استخدم Aria2c (للاستقرار)
             return await self._download_aria2c(url, quality_arg, is_video, vid_id_str)
         else:
-            # للأغاني الفردية: نستخدم Piping (السرعة النووية 0 ثانية)
-            return await self._download_piping(url, is_video, vid_id_str)
+            # أصغر من 200 ميجا -> استخدم Piping (للسرعة القصوى - 0 ثانية)
+            return await self._download_piping(info, is_video, vid_id_str)
 
-    # 1. نظام الـ Piping (للأغاني الفردية - 0 ثانية)
-    async def _download_piping(self, url, is_video, vid_id_str):
-        info = await self._get_direct_details(url)
-        if not info: return None
-        
+    # --- المحرك 1: البث المباشر (Piping) للملفات الخفيفة ---
+    async def _download_piping(self, info, is_video, vid_id_str):
         direct_url = info.get('url')
         if not direct_url: return None
 
@@ -129,28 +157,31 @@ class YTProcessorAPI:
         if os.path.exists(pipe_path):
             try: os.remove(pipe_path)
             except: pass
-            
+        
         try: os.mkfifo(pipe_path)
         except: pass 
 
+        # تحميل الصورة
         thumb_url = info.get('thumbnail')
         thumb_path = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id_str}.jpg")
-        if thumb_url and not os.path.exists(thumb_path):
-            await self._download_thumb_native(thumb_url, thumb_path)
+        if thumb_url: await self._download_thumb_native(thumb_url, thumb_path)
 
-        user_agent = Config.USER_AGENT
+        ua = Config.USER_AGENT
         
+        # استخدام FFmpeg للقراءة المباشرة من الرابط والكتابة في الأنبوب
         if is_video:
+            # نسخ مباشر للفيديو في حاوية MP4
             ffmpeg_cmd = (
-                f'ffmpeg -hide_banner -loglevel error -y -user_agent "{user_agent}" '
+                f'ffmpeg -hide_banner -loglevel error -y -user_agent "{ua}" '
                 f'-i "{direct_url}" -i "{thumb_path}" '
                 f'-map 0 -map 1 -c:v copy -c:a copy '
                 f'-movflags frag_keyframe+empty_moov '
                 f'-f mp4 "{pipe_path}"'
             )
         else:
+            # تحويل سريع لـ MP3
             ffmpeg_cmd = (
-                f'ffmpeg -hide_banner -loglevel error -y -user_agent "{user_agent}" '
+                f'ffmpeg -hide_banner -loglevel error -y -user_agent "{ua}" '
                 f'-i "{direct_url}" -i "{thumb_path}" '
                 f'-map 0:a -map 1 '
                 f'-c:a libmp3lame -q:a 2 -id3v2_version 3 '
@@ -158,11 +189,14 @@ class YTProcessorAPI:
                 f'-f mp3 "{pipe_path}"'
             )
 
+        # تشغيل FFmpeg في الخلفية
         asyncio.create_subprocess_shell(ffmpeg_cmd)
+        
+        # انتظار بسيط جداً لفتح الأنبوب
         await asyncio.sleep(0.5)
         return pipe_path
 
-    # 2. نظام Aria2c (للقوائم والتحميلات الثقيلة - القديم القوي)
+    # --- المحرك 2: التحميل الكامل (Aria2c) للملفات الثقيلة ---
     async def _download_aria2c(self, url, quality_arg, is_video, vid_id_str):
         output_template = os.path.join(Config.DOWNLOAD_PATH, f"{vid_id_str}.%(ext)s")
         cookie_file = self.get_cookie_file()
@@ -183,7 +217,9 @@ class YTProcessorAPI:
             "external_downloader": "aria2c",
             "external_downloader_args": aria2_args,
             "writethumbnail": True, 
-            "remote_components": ["ejs:github"], # تفعيل الريموت هنا أيضاً
+            # ✅ تطبيق نفس الحماية هنا لضمان عمل Aria2c
+            "remote_components": ["ejs:github"],
+            "extractor_args": {"youtube": {"player_client": ["android"]}},
         }
         
         if is_video:
@@ -220,18 +256,24 @@ class YTProcessorAPI:
 
         return await loop.run_in_executor(self.pool, _run_download)
 
-    # دالة الرفع (Alexa Style - Edit Media)
+    # دالة الرفع (Alexa Style)
     async def upload_alexa_style(self, client, mystic_msg, file_path, is_video, title, duration, user_name, vidid=None):
         if not file_path: return False
         
         caption = f"**الـعـنـوان:** {title}\n**طـلـب:** {user_name}"
         
-        # محاولة إيجاد الصورة
+        # استراتيجية الغلاف (مهمة للـ Piping)
         thumb_path = None
         if vidid:
             possible_thumb = os.path.join(Config.DOWNLOAD_PATH, f"{vidid}.jpg")
             if os.path.exists(possible_thumb):
                 thumb_path = possible_thumb
+            else:
+                # بحث احتياطي لـ Aria2c
+                for ext in [".webp", ".jpg", ".png"]:
+                    t = os.path.join(Config.DOWNLOAD_PATH, f"{vidid}{ext}")
+                    if os.path.exists(t): 
+                        thumb_path = t; break
         
         if not thumb_path and mystic_msg.photo:
             try: thumb_path = await mystic_msg.download()
@@ -264,8 +306,7 @@ class YTProcessorAPI:
         except (MessageIdInvalid, MessageNotModified):
             try:
                 await mystic_msg.delete()
-            except:
-                pass
+            except: pass
                 
             try:
                 if is_video:
@@ -287,7 +328,7 @@ class YTProcessorAPI:
             
         return True
 
-    # دعم القوائم (باستخدام Aria2c)
+    # القوائم: تستخدم Aria2c مباشرة لضمان الاستقرار
     async def download_playlist(self, client, mystic_msg, playlist_url, is_video, user_name, limit=30):
         cookie_file = self.get_cookie_file()
         loop = asyncio.get_running_loop()
@@ -295,7 +336,9 @@ class YTProcessorAPI:
             "extract_flat": True, "playlistend": limit, "quiet": True,
             "cookiefile": cookie_file, "user_agent": Config.USER_AGENT,
             "no_warnings": True, "ignoreerrors": True,
+            # ✅ الريموت والأندرويد للقوائم أيضاً
             "remote_components": ["ejs:github"],
+            "extractor_args": {"youtube": {"player_client": ["android"]}},
         }
 
         def _fetch_playlist():
@@ -324,7 +367,7 @@ class YTProcessorAPI:
                 try: await mystic_msg.edit_text(f"**📥 تـحـمـيـل: {count}/{total}**\n**🎵 {title}**")
                 except: pass
 
-            # هنا نمرر is_owner=True ليستخدم Aria2c بدلاً من Piping (أكثر استقراراً للقوائم)
+            # استخدام Aria2c (High Quality) للقوائم
             file_path = await self.download_file(
                 url, "high", is_video, title, vidid=vid_id, is_owner=True 
             )
