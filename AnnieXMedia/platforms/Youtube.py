@@ -10,6 +10,7 @@ import re
 import time
 import logging
 import shutil
+import subprocess
 from typing import Dict, List, Tuple, Optional, Union
 from concurrent.futures import ThreadPoolExecutor
 
@@ -17,7 +18,8 @@ import yt_dlp
 from youtubesearchpython.aio import VideosSearch
 
 logger = logging.getLogger("AnnieXMedia.YouTube")
-logging.basicConfig(level=logging.INFO)
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO)
 
 # ---- config ----
 YTDLP_TIMEOUT = 30
@@ -50,6 +52,7 @@ _cache_lock = asyncio.Lock()
 _formats_cache: Dict[str, Tuple[float, List[Dict], str]] = {}
 _formats_lock = asyncio.Lock()
 
+
 def get_cookie_file() -> Optional[str]:
     for p in POSSIBLE_COOKIE_PATHS:
         try:
@@ -59,6 +62,7 @@ def get_cookie_file() -> Optional[str]:
             continue
     return None
 
+
 async def _exec_proc_with_timeout(*args: str, timeout: int = YTDLP_TIMEOUT) -> Tuple[bytes, bytes]:
     proc = await asyncio.create_subprocess_exec(*args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     try:
@@ -67,6 +71,7 @@ async def _exec_proc_with_timeout(*args: str, timeout: int = YTDLP_TIMEOUT) -> T
         with contextlib.suppress(Exception):
             proc.kill()
         return b"", b"timeout"
+
 
 class YouTubeAPI:
     def __init__(self):
@@ -241,55 +246,48 @@ class YouTubeAPI:
                 "external_downloader": "aria2c",
                 "external_downloader_args": ARIA2_ARGS,
                 "prefer_ffmpeg": True,
-                "postprocessors": [
-                    # keep minimal: user code can run ffmpeg embed if needed
-                ],
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([link])
+        except Exception:
+            logger.debug("background download failed", exc_info=True)
 
-            # Attempt to find thumbnail & embed if possible
+        # try postprocessing (thumbnail embedding) in its own safe block
+        try:
+            # search for the most-recent file in DOWNLOAD_PATH (best-effort)
+            files = sorted(
+                (os.path.join(DOWNLOAD_PATH, p) for p in os.listdir(DOWNLOAD_PATH) if os.path.isfile(os.path.join(DOWNLOAD_PATH, p))),
+                key=lambda p: os.path.getmtime(p),
+                reverse=True
+            )
+            if not files:
+                return
+            download_file = files[0]
+            # attempt to download thumbnail via yt-dlp writethumbnail (best-effort)
             try:
-                # find downloaded file (by id)
-                # yt-dlp's prepare_filename could be complex; fallback: find newest file in DOWNLOAD_PATH
-                files = sorted(
-                    (os.path.join(DOWNLOAD_PATH, p) for p in os.listdir(DOWNLOAD_PATH)),
-                    key=lambda p: os.path.getmtime(p),
-                    reverse=True
-                )
-                if files:
-                    download_file = files[0]
-                    # try to get thumbnail separately
-                    thumb_dest = os.path.join(DOWNLOAD_PATH, f"thumb_{int(time.time())}.jpg")
-                    # use yt-dlp to write thumbnail
-                    tf_opts = {"skip_download": True, "writethumbnail": True, "outtmpl": thumb_dest}
-                    try:
-                        with yt_dlp.YoutubeDL({"quiet": True, "cookiefile": get_cookie_file(), "writethumbnail": True, "skip_download": True}) as ydl2:
-                            ydl2.download([link])
-                        # find thumb in DOWNLOAD_PATH
-                        thumbs = [os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH) if f.lower().endswith((".jpg", ".jpeg", ".png"))]
-                        if thumbs:
-                            thumb_file = thumbs[0]
-                            # embed thumbnail using ffmpeg (if file is mp4/m4a)
-                            out_file = download_file + ".thumbed"
-                            cmd = [
-                                "ffmpeg", "-y", "-i", download_file, "-i", thumb_file,
-                                "-map", "0", "-map", "1", "-c", "copy",
-                                "-disposition:v:0", "attached_pic", out_file
-                            ]
-                            with contextlib.suppress(Exception):
-                                subprocess_proc = shutil.which("ffmpeg")
-                                if subprocess_proc:
-                                    import subprocess
-                                    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-                                    # replace file if succeeded
-                                    if os.path.exists(out_file):
-                                        os.replace(out_file, download_file)
+                with yt_dlp.YoutubeDL({"quiet": True, "cookiefile": get_cookie_file(), "skip_download": True, "writethumbnail": True, "outtmpl": os.path.join(DOWNLOAD_PATH, "thumb.%(ext)s")}) as ydl2:
+                    ydl2.download([link])
+                thumbs = [os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH) if f.lower().startswith("thumb.") and f.lower().endswith((".jpg", ".jpeg", ".png"))]
+                if thumbs:
+                    thumb_file = thumbs[0]
+                    out_file = download_file + ".thumbed"
+                    ffmpeg_bin = shutil.which("ffmpeg")
+                    if ffmpeg_bin:
+                        cmd = [
+                            ffmpeg_bin, "-y", "-i", download_file, "-i", thumb_file,
+                            "-map", "0", "-map", "1", "-c", "copy",
+                            "-disposition:v:0", "attached_pic", out_file
+                        ]
+                        try:
+                            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                            if os.path.exists(out_file):
+                                os.replace(out_file, download_file)
+                        except Exception:
+                            logger.debug("ffmpeg embed failed", exc_info=True)
             except Exception:
-                logger.debug("postprocessing (thumb embed) failed", exc_info=True)
-
-        except Exception as e:
-            logger.debug("background download failed: %s", e, exc_info=True)
+                logger.debug("thumbnail write attempt failed", exc_info=True)
+        except Exception:
+            logger.debug("postprocessing final block failed", exc_info=True)
 
     # ---- download unified ----
     async def download(
@@ -342,6 +340,7 @@ class YouTubeAPI:
 
         # fallback: synchronous download in threadpool (blocking)
         loop = asyncio.get_running_loop()
+
         def _sync_dl():
             try:
                 fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]" if video else "bestaudio[ext=m4a]/bestaudio/best"
@@ -359,9 +358,10 @@ class YouTubeAPI:
                     info = ydl.extract_info(link, download=True)
                     filename = ydl.prepare_filename(info)
                     return filename
-            except Exception as e:
-                logger.exception("sync download failed: %s", e)
+            except Exception:
+                logger.exception("sync download failed", exc_info=True)
                 return None
+
         downloaded = await loop.run_in_executor(self.pool, _sync_dl)
         if downloaded:
             return downloaded, False
@@ -372,8 +372,7 @@ class YouTubeAPI:
         if videoid:
             link = self.listbase + str(link)
         link = self._prepare_link(link)
-        cmd = ["yt-dlp", "-i", "--compat-options", "no-youtube-unavailable-videos", "--get-id", "--flat-playlist", "--playlist-end", str(limit), "--skip-download", link]
-        stdout, stderr = await _exec_proc_with_timeout(*cmd, timeout=60)
+        stdout, stderr = await _exec_proc_with_timeout("yt-dlp", "-i", "--compat-options", "no-youtube-unavailable-videos", "--get-id", "--flat-playlist", "--playlist-end", str(limit), "--skip-download", link, timeout=60)
         if stdout:
             return [s for s in stdout.decode().splitlines() if s]
         return []
@@ -389,6 +388,7 @@ class YouTubeAPI:
             return s
         except Exception:
             return 0
+
 
 # exported instance
 YouTube = YouTubeAPI()
