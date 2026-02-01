@@ -3,26 +3,21 @@
 # Assumes Processor (YTProcessor) exists and provides:
 #   - download_playlist(client, mystic_msg, playlist_url, is_video, user_name)
 #   - download_file(yturl, quality_arg, is_video, title, vidid=..., is_owner=...)
+#       -> must return (file_path_or_direct_url, direct_flag)
 #   - upload_alexa_style(client, mystic, file_path, is_video, title, duration_sec, user_name, vidid=...)
 #   - get_quality_buttons(vidid, stype)
-# Keep your Processor as-is; this plugin will call it.
 
 import asyncio
 import os
 import re
 import time
-from pyrogram import filters, enums
-from pyrogram.types import (
-    InlineKeyboardMarkup,
-    Message,
-)
+from pyrogram import filters
+from pyrogram.types import InlineKeyboardMarkup, Message
 from motor.motor_asyncio import AsyncIOMotorClient
 
 # استيراد الإعدادات وكائن البوت الرئيسي
 from config import (
     BANNED_USERS,
-    SONG_DOWNLOAD_DURATION,
-    SONG_DOWNLOAD_DURATION_LIMIT,
     OWNER_ID,
     MONGO_DB_URI,
 )
@@ -57,29 +52,29 @@ async def set_config(key, value):
 @app.on_message(filters.command(["قفل البحث", "تعطيل البحث"], prefixes=["", "/"]) & filters.user(SUDO_USERS))
 async def lock_whole_section(client, message):
     await set_config("search_locked", True)
-    await message.reply_text("**تـم قـفـل قـسـم الـبـحـث والـتـحـمـيـل نـهـائـياً.**")
+    await message.reply_text("**تم قفل قسم البحث والتحميل نهائياً.**")
 
 @app.on_message(filters.command(["فتح البحث", "تفعيل البحث"], prefixes=["", "/"]) & filters.user(SUDO_USERS))
 async def unlock_whole_section(client, message):
     await set_config("search_locked", False)
-    await message.reply_text("**تـم فـتـح قـسـم الـبـحـث والـتـحـمـيـل.**")
+    await message.reply_text("**تم فتح قسم البحث والتحميل.**")
 
 @app.on_message(filters.command(["قفل انلاين البحث", "قفل انلاين بحث"], prefixes=["", "/"]) & filters.user(SUDO_USERS))
 async def lock_inline_search(client, message):
     await set_config("inline_locked", True)
-    await message.reply_text("**تـم قـفـل بـحـث الانـلايـن.**")
+    await message.reply_text("**تم قفل بحث الانلاين.**")
 
 @app.on_message(filters.command(["فتح انلاين البحث", "فتح انلاين بحث"], prefixes=["", "/"]) & filters.user(SUDO_USERS))
 async def unlock_inline_search(client, message):
     await set_config("inline_locked", False)
-    await message.reply_text("**تـم فـتـح بـحـث الانـلايـن.**")
+    await message.reply_text("**تم فتح بحث الانلاين.**")
 
 # ==========================================================
 @app.on_message(filters.regex(r"^/?(اغنية|اغنيه|هات|هاتلي|ابعتلي|song|video|تحميل|يوتيوب)(?:\s+(فيد|فيديو|video))?(?:\s+(.+))?$") & ~BANNED_USERS, group=5)
 async def unified_song_processor(client, message: Message):
     is_search_locked = await get_config("search_locked")
     if is_search_locked and message.from_user.id not in SUDO_USERS:
-        return await message.reply_text("**عـذراً، الـقـسـم مـغـلـق.**")
+        return await message.reply_text("**عذراً، القسم مغلق.**")
 
     match = re.match(r"^/?(اغنية|اغنيه|هات|هاتلي|ابعتلي|song|video|تحميل|يوتيوب)(?:\s+(فيد|فيديو|video))?(?:\s+(.+))?$", message.text or "")
     if not match:
@@ -92,7 +87,7 @@ async def unified_song_processor(client, message: Message):
     is_video_request = command_trigger in ["video", "/video", "فيديو"] or bool(video_trigger)
 
     if not query:
-        prompt = await message.reply_text("**ارسـل اسـم المقطع أو رابط اليوتيوب الآن...**")
+        prompt = await message.reply_text("**ارسل اسم المقطع او رابط اليوتيوب الآن...**")
         try:
             response = await client.listen(chat_id=message.chat.id, user_id=message.from_user.id, timeout=20)
             if response and (response.text or response.reply_to_message):
@@ -103,7 +98,7 @@ async def unified_song_processor(client, message: Message):
         except Exception:
             return await prompt.edit_text("**حصل خطأ في الاستماع.**")
 
-    mystic = await message.reply_text("**جـارٍ البحث...**")
+    mystic = await message.reply_text("**جاري البحث...**")
 
     # playlist detection
     if "list=" in str(query) and ("youtube.com" in query or "youtu.be" in query):
@@ -131,13 +126,13 @@ async def unified_song_processor(client, message: Message):
         is_inline_locked = await get_config("inline_locked")
 
         if is_inline_locked:
-            await mystic.edit_text("**جـارٍ التحميل الفوري...**")
+            await mystic.edit_text("**جاري التحميل الفوري...**")
             yturl = f"https://www.youtube.com/watch?v={vidid}"
             quality_arg = "high" if message.from_user.id in SUDO_USERS else "mid"
             file_path, direct = await Processor.download_file(yturl, quality_arg, is_video_request, title, vidid=vidid, is_owner=(message.from_user.id in SUDO_USERS))
             if not file_path:
                 return await mystic.edit_text("**فشل التحميل.**")
-            await mystic.edit_text("**جـارٍ الرفع إلى تليجرام...**")
+            await mystic.edit_text("**جاري الرفع إلى تليجرام...**")
             await Processor.upload_alexa_style(client, mystic, file_path, is_video_request, title, duration_sec, message.from_user.first_name, vidid=vidid)
         else:
             buttons = song_markup(None, vidid)
@@ -150,10 +145,10 @@ async def unified_song_processor(client, message: Message):
     except Exception:
         is_inline_locked = await get_config("inline_locked")
         if is_inline_locked or is_video_request:
-            await mystic.edit_text("**جـارٍ البحث والتحميل...**")
+            await mystic.edit_text("**جاري البحث والتحميل...**")
             file_path, direct = await Processor.download_file(query, "mid", is_video_request, query, is_owner=(message.from_user.id in SUDO_USERS))
             if file_path:
-                await mystic.edit_text("**جـارٍ الرفع...**")
+                await mystic.edit_text("**جاري الرفع...**")
                 await Processor.upload_alexa_style(client, mystic, file_path, is_video_request, query, 0, message.from_user.first_name)
             else:
                 await mystic.edit_text("**لم يتم العثور على نتائج.**")
@@ -168,7 +163,7 @@ async def yut_direct_audio(client, message: Message):
     if len(message.command) < 2:
         return await message.reply_text("**اكتب رابط اليوتيوب بجانب الأمر.**")
     query = message.text.split(None, 1)[1]
-    mystic = await message.reply_text("**جـارٍ التحميل...**")
+    mystic = await message.reply_text("**جاري التحميل...**")
     if "list=" in query:
         return await Processor.download_playlist(client, mystic, query, False, message.from_user.first_name)
     try:
@@ -176,7 +171,9 @@ async def yut_direct_audio(client, message: Message):
         yturl = f"https://www.youtube.com/watch?v={vidid}"
         quality_arg = "high" if message.from_user.id in SUDO_USERS else "mid"
         file_path, direct = await Processor.download_file(yturl, quality_arg, False, title, vidid=vidid, is_owner=(message.from_user.id in SUDO_USERS))
-        await mystic.edit_text("**جـارٍ الرفع...**")
+        if not file_path:
+            return await mystic.edit_text("**فشل التحميل.**")
+        await mystic.edit_text("**جاري الرفع...**")
         await Processor.upload_alexa_style(client, mystic, file_path, False, title, duration_sec, message.from_user.first_name, vidid=vidid)
     except Exception as e:
         await mystic.edit_text(f"**حدث خطأ:** {e}")
@@ -188,7 +185,7 @@ async def yut_direct_video(client, message: Message):
     if len(message.command) < 3:
         return await message.reply_text("**اكتب رابط الفيديو بعد الأمر.**")
     query = message.text.split(None, 2)[2]
-    mystic = await message.reply_text("**جـارٍ التحميل...**")
+    mystic = await message.reply_text("**جاري التحميل...**")
     if "list=" in query:
         return await Processor.download_playlist(client, mystic, query, True, message.from_user.first_name)
     try:
@@ -196,7 +193,9 @@ async def yut_direct_video(client, message: Message):
         yturl = f"https://www.youtube.com/watch?v={vidid}"
         quality_arg = "high" if message.from_user.id in SUDO_USERS else "mid"
         file_path, direct = await Processor.download_file(yturl, quality_arg, True, title, vidid=vidid, is_owner=(message.from_user.id in SUDO_USERS))
-        await mystic.edit_text("**جـارٍ الرفع...**")
+        if not file_path:
+            return await mystic.edit_text("**فشل التحميل.**")
+        await mystic.edit_text("**جاري الرفع...**")
         await Processor.upload_alexa_style(client, mystic, file_path, True, title, duration_sec, message.from_user.first_name, vidid=vidid)
     except Exception as e:
         await mystic.edit_text(f"**حدث خطأ:** {e}")
@@ -204,13 +203,12 @@ async def yut_direct_video(client, message: Message):
 # ===== callback handlers =====
 @app.on_callback_query(filters.regex(pattern=r"song_download") & ~BANNED_USERS)
 async def song_download_callback(client, query):
-    # expected format: "song_download video|mid|<vidid>" or "song_download audio|high|<vidid>"
     if await get_config("search_locked") and query.from_user.id not in SUDO_USERS:
         return await query.answer("القسم مغلق.", show_alert=True)
     if await get_config("inline_locked") and query.from_user.id not in SUDO_USERS:
         return await query.answer("الميزة معطلة مؤقتاً.", show_alert=True)
 
-    data = query.data  # entire callback data
+    data = query.data
     try:
         payload = data.split(None, 1)[1] if " " in data else data.replace("song_download", "").lstrip("_ ").lstrip()
         parts = payload.split("|")
@@ -220,19 +218,19 @@ async def song_download_callback(client, query):
     except Exception:
         return await query.answer("خطأ في البيانات.", show_alert=True)
 
-    await query.answer("جـارٍ بدء التحميل...")
+    await query.answer("جاري بدء التحميل...")
     try:
         try:
-            mystic = await query.message.edit_text("**جـارٍ التحميل من يوتيوب...**")
+            mystic = await query.message.edit_text("**جارٍ التحميل من يوتيوب...**")
         except Exception:
-            mystic = await client.send_message(query.message.chat.id, "**جـارٍ التحميل...**")
+            mystic = await client.send_message(query.message.chat.id, "**جارٍ التحميل...**")
         is_video = (stype == "video")
         yturl = f"https://www.youtube.com/watch?v={vidid}"
         title, _, duration_sec, _, _ = await YouTube.details(vidid)
         file_path, direct = await Processor.download_file(yturl, quality_arg, is_video, title, vidid=vidid, is_owner=(query.from_user.id in SUDO_USERS))
         if not file_path:
             return await mystic.edit_text("**فشل التحميل، حاول مرة أخرى.**")
-        await mystic.edit_text("**جـارٍ الرفع...**")
+        await mystic.edit_text("**جاري الرفع...**")
         await Processor.upload_alexa_style(client, mystic, file_path, is_video, title, duration_sec, query.from_user.first_name, vidid=vidid)
     except Exception:
         await mystic.edit_text("**فشل التحميل، حاول لاحقاً.**")
