@@ -1,4 +1,4 @@
-﻿# Authored By Certified Coders © 2025
+# Authored By Certified Coders © 2025
 import asyncio
 import random
 import string
@@ -7,9 +7,10 @@ from pyrogram import filters
 from pyrogram.errors import FloodWait, RandomIdDuplicate
 from pyrogram.types import InlineKeyboardMarkup, InputMediaPhoto, Message
 from pytgcalls.exceptions import NoActiveGroupCall
+from motor.motor_asyncio import AsyncIOMotorClient
 
 import config
-from config import AYU, BANNED_USERS, lyrical
+from config import AYU, BANNED_USERS, lyrical, MONGO_DB_URI, OWNER_ID
 from AnnieXMedia import Apple, Resso, SoundCloud, Spotify, Telegram, YouTube, app
 from AnnieXMedia.core.call import StreamController
 from AnnieXMedia.utils import seconds_to_min, time_to_seconds
@@ -28,19 +29,53 @@ from AnnieXMedia.utils.inline import (
 from AnnieXMedia.utils.logger import play_logs
 from AnnieXMedia.utils.stream.stream import stream
 
+# ==========================================================
+# إعدادات قاعدة البيانات (مشتركة مع ملف song.py)
+# ==========================================================
+
+SUDO_USERS = OWNER_ID if isinstance(OWNER_ID, list) else [OWNER_ID]
+_mongo_client_ = AsyncIOMotorClient(MONGO_DB_URI)
+mongodb = _mongo_client_.Annie
+# نستخدم نفس الكولكشن المستخدم في ملف song.py لتوحيد القفل
+songdb = mongodb.song_settings
+
+async def get_search_state():
+    try:
+        data = await songdb.find_one({"_id": "song_config"})
+        if not data: return False
+        return data.get("search_locked", False)
+    except: return False
+
+async def set_search_state(locked: bool):
+    try:
+        await songdb.update_one({"_id": "song_config"}, {"$set": { "search_locked": locked }}, upsert=True)
+    except: pass
+
+# ==========================================================
+# أوامر قفل وفتح البحث (بدون سلاش)
+# ==========================================================
+
+@app.on_message(filters.command(["قفل البحث", "تعطيل البحث"], prefixes=["", "/"]) & filters.user(SUDO_USERS))
+async def lock_search_cmd(client, message):
+    await set_search_state(True)
+    await message.reply_text("**تم قفل البحث بنجاح .**")
+
+@app.on_message(filters.command(["فتح البحث", "تفعيل البحث"], prefixes=["", "/"]) & filters.user(SUDO_USERS))
+async def unlock_search_cmd(client, message):
+    await set_search_state(False)
+    await message.reply_text("**تم فتح البحث بنجاح .**")
+
+# ==========================================================
+# كود التشغيل الرئيسي
+# ==========================================================
 
 @app.on_message(
     filters.command(
         [
-            "play",
-            "vplay",
-            "cplay",
-            "cvplay",
-            "playforce",
-            "vplayforce",
-            "cplayforce",
-            "cvplayforce",
-        ]
+            "play", "vplay", "cplay", "cvplay", "playforce", "vplayforce", "cplayforce", "cvplayforce",
+            "تشغيل", "شغل", "فيد", "فيديو"
+        ],
+        prefixes=["", "/", "!", "#"] # تم تفعيل "" ليعمل بدون سلاش
     )
     & filters.group
     & ~BANNED_USERS
@@ -58,26 +93,33 @@ async def play_command(
     url,
     fplay,
 ):
+    # التحقق من حالة قفل البحث
+    is_locked = await get_search_state()
+    if is_locked and message.from_user.id not in SUDO_USERS:
+        return await message.reply_text("- البحـث مغلـق .")
+
+    # تحديد نوع الطلب من النص العربي
+    command = message.command[0] if message.command else ""
+    if command in ["فيد", "فيديو"]:
+        video = True
+    
+    # رسالة الانتظار
+    wait_text = _["play_2"].format(channel) if channel else random.choice(AYU)
+    
     try:
-        mystic = await message.reply_text(
-            _["play_2"].format(channel) if channel else random.choice(AYU)
-        )
+        mystic = await message.reply_text(wait_text)
     except FloodWait as e:
         await asyncio.sleep(e.value)
-        mystic = await message.reply_text(
-            _["play_2"].format(channel) if channel else random.choice(AYU)
-        )
+        mystic = await message.reply_text(wait_text)
     except RandomIdDuplicate:
-        mystic = await app.send_message(
-            message.chat.id,
-            _["play_2"].format(channel) if channel else random.choice(AYU),
-        )
+        mystic = await app.send_message(message.chat.id, wait_text)
 
     plist_id, plist_type, spotify, slider = None, None, None, None
     internal_type, log_label = None, None
     user_id = message.from_user.id
     user_name = message.from_user.first_name
 
+    # التعامل مع الملفات المرفقة (رد)
     audio_telegram = (
         (message.reply_to_message.audio or message.reply_to_message.voice)
         if message.reply_to_message
@@ -88,7 +130,6 @@ async def play_command(
         if audio_telegram.file_size > config.TG_AUDIO_FILESIZE_LIMIT:
             return await mystic.edit_text(_["play_5"])
 
-        duration_min = seconds_to_min(audio_telegram.duration)
         if audio_telegram.duration > config.DURATION_LIMIT:
             return await mystic.edit_text(
                 _["play_6"].format(config.DURATION_LIMIT_MIN, app.mention)
@@ -224,7 +265,7 @@ async def play_command(
                 cap = _["play_10"].format(details["title"], details["duration_min"])
                 u = url.lower()
                 internal_type = "youtube"
-                log_label = "Youtube shorts" if "youtube.com/shorts/" in u else "Youtube Track"
+                log_label = "Youtube shorts" if "shorts" in u else "Youtube Track"
 
         elif await Spotify.valid(url):
             spotify = True
