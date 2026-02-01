@@ -1,5 +1,4 @@
 # file: AnnieXMedia/platforms/Youtube.py
-# YouTube helper: metadata, url extraction, direct links, is_live
 import asyncio
 import contextlib
 import json
@@ -12,8 +11,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 import yt_dlp
 from youtubesearchpython.aio import VideosSearch
-
-# Pyrogram types for url extraction
 from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
 
@@ -21,13 +18,11 @@ logger = logging.getLogger("AnnieXMedia.YouTube")
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO)
 
-# CONFIG
 YTDLP_TIMEOUT = 30
 YOUTUBE_META_TTL = 3600
 YOUTUBE_META_MAX = 400
 MAX_WORKERS = 12
 
-# USE RAM if possible
 if os.path.exists("/dev/shm"):
     DOWNLOAD_PATH = "/dev/shm/AnnieDownloads"
 else:
@@ -50,7 +45,6 @@ _cache_lock = asyncio.Lock()
 _formats_cache: Dict[str, Tuple[float, List[Dict], str]] = {}
 _formats_lock = asyncio.Lock()
 
-
 def get_cookie_file() -> Optional[str]:
     for p in POSSIBLE_COOKIE_PATHS:
         try:
@@ -60,7 +54,6 @@ def get_cookie_file() -> Optional[str]:
             continue
     return None
 
-
 async def _exec_proc(*args: str, timeout: int = YTDLP_TIMEOUT) -> Tuple[bytes, bytes]:
     proc = await asyncio.create_subprocess_exec(*args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     try:
@@ -69,7 +62,6 @@ async def _exec_proc(*args: str, timeout: int = YTDLP_TIMEOUT) -> Tuple[bytes, b
         with contextlib.suppress(Exception):
             proc.kill()
         return b"", b"timeout"
-
 
 class YouTubeAPI:
     def __init__(self):
@@ -91,7 +83,6 @@ class YouTubeAPI:
     async def exists(self, link: str, videoid: Union[str, bool, None] = None) -> bool:
         return bool(self._url_pattern.search(self._prepare_link(link, videoid)))
 
-    # extract url from Message (works for reply and entities)
     async def url(self, message: Message) -> Optional[str]:
         if not message:
             return None
@@ -111,7 +102,6 @@ class YouTubeAPI:
                     continue
         return None
 
-    # use youtubesearchpython cache-first, fallback to yt-dlp
     async def _fetch_video_info(self, query: str, *, use_cache: bool = True) -> Optional[Dict]:
         q = self._prepare_link(query)
         if use_cache and q and not q.startswith("http"):
@@ -132,8 +122,6 @@ class YouTubeAPI:
             async with _cache_lock:
                 _cache[f"q:{q}"] = (time.time(), (result[0], result[0].get("id", "")))
             return result[0]
-
-        # fallback: yt-dlp dump-json
         cookie = get_cookie_file()
         cmd = ["yt-dlp"]
         if cookie:
@@ -174,6 +162,43 @@ class YouTubeAPI:
         thumb = (info.get("thumbnail") or info.get("thumbnails", [{}])[-1].get("url", "")).split("?")[0]
         return info.get("title", ""), dt, ds, thumb, info.get("id", "")
 
+    # new: track method (returns details dict, id) — compatible with older code
+    async def track(self, link: str, videoid: Union[str, bool, None] = None) -> Tuple[Dict, str]:
+        prepared = self._prepare_link(link, videoid)
+        info = await self._fetch_video_info(prepared)
+        if info:
+            thumb = (info.get("thumbnail") or info.get("thumbnails", [{}])[-1].get("url", "")).split("?")[0]
+            details = {
+                "title": info.get("title", ""),
+                "link": info.get("webpage_url", prepared),
+                "vidid": info.get("id", ""),
+                "duration_min": info.get("duration") if isinstance(info.get("duration"), str) else None,
+                "thumb": thumb,
+            }
+            return details, info.get("id", "")
+        # fallback to yt-dlp dump-json
+        cookie = get_cookie_file()
+        cmd = ["yt-dlp"]
+        if cookie:
+            cmd += ["--cookies", cookie]
+        cmd += ["--dump-json", prepared]
+        stdout, stderr = await _exec_proc(*cmd, timeout=20)
+        if stdout:
+            try:
+                info2 = json.loads(stdout.decode(errors="ignore"))
+                thumb = (info2.get("thumbnail") or info2.get("thumbnails", [{}])[-1].get("url", "")).split("?")[0]
+                details = {
+                    "title": info2.get("title", ""),
+                    "link": info2.get("webpage_url", prepared),
+                    "vidid": info2.get("id", ""),
+                    "duration_min": info2.get("duration") if isinstance(info2.get("duration"), str) else None,
+                    "thumb": thumb,
+                }
+                return details, info2.get("id", "")
+            except Exception:
+                pass
+        return {"title": "Unknown", "link": prepared, "vidid": "", "duration_min": None, "thumb": ""}, ""
+
     async def title(self, link: str, videoid: Union[str, bool, None] = None) -> str:
         info = await self._fetch_video_info(self._prepare_link(link, videoid))
         return info.get("title", "") if info else ""
@@ -186,7 +211,6 @@ class YouTubeAPI:
         info = await self._fetch_video_info(self._prepare_link(link, videoid))
         return (info.get("thumbnail") or info.get("thumbnails", [{}])[-1].get("url", "")).split("?")[0] if info else ""
 
-    # try direct link via yt-dlp -g (fast)
     async def direct_link(self, link: str, videoid: Union[str, bool, None] = None, *, prefer_audio=False) -> Optional[str]:
         link = self._prepare_link(link, videoid)
         cookie = get_cookie_file()
@@ -197,7 +221,7 @@ class YouTubeAPI:
         if prefer_audio:
             cmd += ["-g", "-f", "bestaudio[ext=m4a]/bestaudio"]
         else:
-            cmd += ["-g", "-f", "best[height<=720]"]
+            cmd += ["-g", "-f", "best[height<=720]/best"]
         cmd.append(link)
         stdout, stderr = await _exec_proc(*cmd, timeout=15)
         if stdout:
@@ -250,6 +274,4 @@ class YouTubeAPI:
         except Exception:
             return 0
 
-
-# exported instance
 YouTube = YouTubeAPI()
