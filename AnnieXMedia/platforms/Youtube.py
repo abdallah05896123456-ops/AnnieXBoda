@@ -17,6 +17,10 @@ from concurrent.futures import ThreadPoolExecutor
 import yt_dlp
 from youtubesearchpython.aio import VideosSearch
 
+# Pyrogram types for url extraction
+from pyrogram.enums import MessageEntityType
+from pyrogram.types import Message
+
 logger = logging.getLogger("AnnieXMedia.YouTube")
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO)
@@ -83,7 +87,7 @@ class YouTubeAPI:
     def _prepare_link(self, link: str, videoid: Union[str, bool, None] = None) -> str:
         if isinstance(videoid, str) and videoid.strip():
             link = self.base + videoid.strip()
-        link = link.strip()
+        link = (link or "").strip()
         if "youtu.be" in link:
             link = self.base + link.split("/")[-1].split("?")[0]
         elif "youtube.com/shorts/" in link or "youtube.com/live/" in link:
@@ -93,10 +97,38 @@ class YouTubeAPI:
     async def exists(self, link: str, videoid: Union[str, bool, None] = None) -> bool:
         return bool(self._url_pattern.search(self._prepare_link(link, videoid)))
 
+    # ---------------------------
+    # New: extract url from Message (compatible with old interface)
+    # ---------------------------
+    async def url(self, message: Message) -> Optional[str]:
+        """
+        Extract URL from a pyrogram Message or its reply (entities/text_link).
+        Returns the first found URL (str) or None.
+        """
+        if not message:
+            return None
+        msgs = [message]
+        if getattr(message, "reply_to_message", None):
+            msgs.append(message.reply_to_message)
+        for msg in msgs:
+            text = getattr(msg, "text", None) or getattr(msg, "caption", None) or ""
+            entities = (getattr(msg, "entities", None) or []) + (getattr(msg, "caption_entities", None) or [])
+            for ent in entities:
+                try:
+                    if ent.type == MessageEntityType.URL:
+                        # entity offset/length safe slicing
+                        return text[ent.offset: ent.offset + ent.length].split("&si")[0]
+                    if ent.type == MessageEntityType.TEXT_LINK:
+                        return ent.url.split("&si")[0]
+                except Exception:
+                    # skip malformed entities
+                    continue
+        return None
+
     # ----- metadata fetch with cache -----
     async def _fetch_video_info_vsp(self, query: str, *, use_cache: bool = True) -> Optional[Dict]:
         q = self._prepare_link(query)
-        if use_cache and not q.startswith("http"):
+        if use_cache and q and not q.startswith("http"):
             key = f"q:{q}"
             now = time.time()
             async with _cache_lock:
@@ -106,7 +138,7 @@ class YouTubeAPI:
                         return val
                     _cache.pop(key, None)
         try:
-            res = await VideosSearch(q, limit=1).next()
+            res = await VideosSearch(q or query, limit=1).next()
             result = res.get("result", [])
         except Exception:
             result = []
