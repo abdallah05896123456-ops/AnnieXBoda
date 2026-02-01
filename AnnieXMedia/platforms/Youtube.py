@@ -98,13 +98,9 @@ class YouTubeAPI:
         return bool(self._url_pattern.search(self._prepare_link(link, videoid)))
 
     # ---------------------------
-    # New: extract url from Message (compatible with old interface)
+    # Extract URL from Message (compatible with legacy interface)
     # ---------------------------
     async def url(self, message: Message) -> Optional[str]:
-        """
-        Extract URL from a pyrogram Message or its reply (entities/text_link).
-        Returns the first found URL (str) or None.
-        """
         if not message:
             return None
         msgs = [message]
@@ -116,12 +112,10 @@ class YouTubeAPI:
             for ent in entities:
                 try:
                     if ent.type == MessageEntityType.URL:
-                        # entity offset/length safe slicing
                         return text[ent.offset: ent.offset + ent.length].split("&si")[0]
                     if ent.type == MessageEntityType.TEXT_LINK:
                         return ent.url.split("&si")[0]
                 except Exception:
-                    # skip malformed entities
                     continue
         return None
 
@@ -349,26 +343,49 @@ class YouTubeAPI:
         except Exception:
             logger.debug("is_live check failed", exc_info=True)
 
-        # attempt fast-path direct link
+        # attempt fast-path direct link (via yt_dlp extract_info)
         cookie = get_cookie_file()
-        cmd = ["yt-dlp"]
+        ytdl_opts = {"quiet": True}
         if cookie:
-            cmd += ["--cookies", cookie]
-        cmd += ["--compat-options", "no-youtube-unavailable-videos"]
-        if video:
-            cmd += ["-g", "-f", "best[height<=720]"]
-        else:
-            cmd += ["-g", "-f", "bestaudio[ext=m4a]/bestaudio"]
-        cmd.append(link)
-
-        stdout, stderr = await _exec_proc_with_timeout(*cmd)
-        if stdout:
-            direct = stdout.decode().splitlines()[0].strip()
-            # start background cache
+            ytdl_opts["cookiefile"] = cookie
+        # prefer web/android clients and avoid interactive
+        ytdl_opts["extractor_args"] = {'youtube': {'player_client': ['web', 'android']}}
+        try:
             loop = asyncio.get_running_loop()
-            final_path = os.path.join(DOWNLOAD_PATH, f"{int(time.time())}.{ 'mp4' if video else 'm4a'}")
-            loop.run_in_executor(self.pool, self._background_download, link, final_path, bool(video))
-            return direct, True
+
+            def _try_direct():
+                try:
+                    opts = ytdl_opts.copy()
+                    opts["skip_download"] = True
+                    # choose format
+                    if video:
+                        opts["format"] = "best[height<=720]"
+                    else:
+                        opts["format"] = "bestaudio[ext=m4a]/bestaudio"
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        info = ydl.extract_info(link, download=False)
+                    # look for a usable format URL
+                    fmts = info.get("formats", []) if info else []
+                    for f in reversed(fmts):  # prefer higher qualities at end
+                        urlf = f.get("url")
+                        if not urlf:
+                            continue
+                        # skip dash/fragmented entries where url is not direct
+                        fmt_name = str(f.get("format", "")).lower()
+                        if "dash" in fmt_name:
+                            continue
+                        return urlf
+                except Exception:
+                    return None
+
+            direct_url = await loop.run_in_executor(self.pool, _try_direct)
+            if direct_url:
+                # schedule background cache/download
+                final_path = os.path.join(DOWNLOAD_PATH, f"{int(time.time())}.{ 'mp4' if video else 'm4a'}")
+                self.pool.submit(self._background_download, link, final_path, bool(video))
+                return direct_url, True
+        except Exception:
+            logger.debug("direct link attempt failed", exc_info=True)
 
         # fallback: synchronous download in threadpool (blocking)
         loop = asyncio.get_running_loop()
@@ -376,7 +393,7 @@ class YouTubeAPI:
         def _sync_dl():
             try:
                 fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]" if video else "bestaudio[ext=m4a]/bestaudio/best"
-                ydl_opts = {
+                ydl_opts_local = {
                     "format": fmt,
                     "outtmpl": os.path.join(DOWNLOAD_PATH, "%(id)s.%(ext)s"),
                     "cookiefile": get_cookie_file(),
@@ -385,11 +402,26 @@ class YouTubeAPI:
                     "external_downloader": "aria2c",
                     "external_downloader_args": ARIA2_ARGS,
                     "prefer_ffmpeg": True,
+                    # metadata + parse options
+                    "writethumbnail": True,
+                    "addmetadata": True,
+                    "parse_metadata": {
+                        "title": "%(artist)s - %(title)s",
+                        "artist": "%(uploader)s",
+                        "album": "%(channel)s",
+                    },
+                    "extractor_args": {'youtube': {'player_client': ['web', 'android']}},
                 }
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                with yt_dlp.YoutubeDL(ydl_opts_local) as ydl:
                     info = ydl.extract_info(link, download=True)
                     filename = ydl.prepare_filename(info)
-                    return filename
+                    # find file (in case extension changed)
+                    base = os.path.splitext(filename)[0]
+                    for ext in (".mp4", ".m4a", ".mp3", ".webm", ".mkv", ".ts"):
+                        cand = base + ext
+                        if os.path.exists(cand):
+                            return cand
+                    return filename if os.path.exists(filename) else None
             except Exception:
                 logger.exception("sync download failed", exc_info=True)
                 return None
