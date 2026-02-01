@@ -1,4 +1,4 @@
-# Authored By Certified Coders © 2025
+# Authored By Certified Coders © 2026
 import asyncio
 import os
 import traceback
