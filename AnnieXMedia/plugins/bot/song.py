@@ -1,11 +1,6 @@
 # file: song.py
 # Plugin: Song handling for AnnieXMedia (uses AnnieXMedia.platforms.Youtube.YouTube)
-# Assumes Processor (YTProcessor) exists and provides:
-#   - download_playlist(client, mystic_msg, playlist_url, is_video, user_name)
-#   - download_file(yturl, quality_arg, is_video, title, vidid=..., is_owner=...)
-#       -> must return (file_path_or_direct_url, direct_flag)
-#   - upload_alexa_style(client, mystic, file_path, is_video, title, duration_sec, user_name, vidid=...)
-#   - get_quality_buttons(vidid, stype)
+# Expects Processor.download_file -> (path_or_url, direct_flag)
 
 import asyncio
 import os
@@ -15,7 +10,6 @@ from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, Message
 from motor.motor_asyncio import AsyncIOMotorClient
 
-# استيراد الإعدادات وكائن البوت الرئيسي
 from config import (
     BANNED_USERS,
     OWNER_ID,
@@ -26,7 +20,6 @@ from AnnieXMedia.platforms.Youtube import YouTube
 from AnnieXMedia.platforms.YTProcessor import Processor
 from AnnieXMedia.utils.inline.song import song_markup
 
-# ==========================================================
 SUDO_USERS = OWNER_ID if isinstance(OWNER_ID, list) else [OWNER_ID]
 
 _mongo_client_ = AsyncIOMotorClient(MONGO_DB_URI)
@@ -48,7 +41,24 @@ async def set_config(key, value):
     except Exception:
         pass
 
-# ==========================================================
+def _normalize_download_result(res):
+    """
+    Normalize Processor.download_file returns to (path_or_url, direct_bool)
+    """
+    if res is None:
+        return None, False
+    if isinstance(res, tuple) or isinstance(res, list):
+        if len(res) >= 2:
+            return res[0], bool(res[1])
+        if len(res) == 1:
+            return res[0], False
+        return None, False
+    if isinstance(res, str):
+        return res, False
+    return None, False
+
+# ---------------- Command handlers (same as before, using normalized returns) ----------------
+
 @app.on_message(filters.command(["قفل البحث", "تعطيل البحث"], prefixes=["", "/"]) & filters.user(SUDO_USERS))
 async def lock_whole_section(client, message):
     await set_config("search_locked", True)
@@ -69,7 +79,6 @@ async def unlock_inline_search(client, message):
     await set_config("inline_locked", False)
     await message.reply_text("**تم فتح بحث الانلاين.**")
 
-# ==========================================================
 @app.on_message(filters.regex(r"^/?(اغنية|اغنيه|هات|هاتلي|ابعتلي|song|video|تحميل|يوتيوب)(?:\s+(فيد|فيديو|video))?(?:\s+(.+))?$") & ~BANNED_USERS, group=5)
 async def unified_song_processor(client, message: Message):
     is_search_locked = await get_config("search_locked")
@@ -129,7 +138,8 @@ async def unified_song_processor(client, message: Message):
             await mystic.edit_text("**جاري التحميل الفوري...**")
             yturl = f"https://www.youtube.com/watch?v={vidid}"
             quality_arg = "high" if message.from_user.id in SUDO_USERS else "mid"
-            file_path, direct = await Processor.download_file(yturl, quality_arg, is_video_request, title, vidid=vidid, is_owner=(message.from_user.id in SUDO_USERS))
+            res = await Processor.download_file(yturl, quality_arg, is_video_request, title, vidid=vidid, is_owner=(message.from_user.id in SUDO_USERS))
+            file_path, direct = _normalize_download_result(res)
             if not file_path:
                 return await mystic.edit_text("**فشل التحميل.**")
             await mystic.edit_text("**جاري الرفع إلى تليجرام...**")
@@ -146,7 +156,8 @@ async def unified_song_processor(client, message: Message):
         is_inline_locked = await get_config("inline_locked")
         if is_inline_locked or is_video_request:
             await mystic.edit_text("**جاري البحث والتحميل...**")
-            file_path, direct = await Processor.download_file(query, "mid", is_video_request, query, is_owner=(message.from_user.id in SUDO_USERS))
+            res = await Processor.download_file(query, "mid", is_video_request, query, is_owner=(message.from_user.id in SUDO_USERS))
+            file_path, direct = _normalize_download_result(res)
             if file_path:
                 await mystic.edit_text("**جاري الرفع...**")
                 await Processor.upload_alexa_style(client, mystic, file_path, is_video_request, query, 0, message.from_user.first_name)
@@ -155,7 +166,6 @@ async def unified_song_processor(client, message: Message):
         else:
             await mystic.edit_text("**لم يتم العثور على نتائج.**")
 
-# ===== direct commands =====
 @app.on_message(filters.command(["يوت"], prefixes=["", "/"]) & ~BANNED_USERS)
 async def yut_direct_audio(client, message: Message):
     if await get_config("search_locked") and message.from_user.id not in SUDO_USERS:
@@ -170,7 +180,8 @@ async def yut_direct_audio(client, message: Message):
         title, _, duration_sec, _, vidid = await YouTube.details(query)
         yturl = f"https://www.youtube.com/watch?v={vidid}"
         quality_arg = "high" if message.from_user.id in SUDO_USERS else "mid"
-        file_path, direct = await Processor.download_file(yturl, quality_arg, False, title, vidid=vidid, is_owner=(message.from_user.id in SUDO_USERS))
+        res = await Processor.download_file(yturl, quality_arg, False, title, vidid=vidid, is_owner=(message.from_user.id in SUDO_USERS))
+        file_path, direct = _normalize_download_result(res)
         if not file_path:
             return await mystic.edit_text("**فشل التحميل.**")
         await mystic.edit_text("**جاري الرفع...**")
@@ -192,7 +203,8 @@ async def yut_direct_video(client, message: Message):
         title, _, duration_sec, _, vidid = await YouTube.details(query)
         yturl = f"https://www.youtube.com/watch?v={vidid}"
         quality_arg = "high" if message.from_user.id in SUDO_USERS else "mid"
-        file_path, direct = await Processor.download_file(yturl, quality_arg, True, title, vidid=vidid, is_owner=(message.from_user.id in SUDO_USERS))
+        res = await Processor.download_file(yturl, quality_arg, True, title, vidid=vidid, is_owner=(message.from_user.id in SUDO_USERS))
+        file_path, direct = _normalize_download_result(res)
         if not file_path:
             return await mystic.edit_text("**فشل التحميل.**")
         await mystic.edit_text("**جاري الرفع...**")
@@ -200,7 +212,6 @@ async def yut_direct_video(client, message: Message):
     except Exception as e:
         await mystic.edit_text(f"**حدث خطأ:** {e}")
 
-# ===== callback handlers =====
 @app.on_callback_query(filters.regex(pattern=r"song_download") & ~BANNED_USERS)
 async def song_download_callback(client, query):
     if await get_config("search_locked") and query.from_user.id not in SUDO_USERS:
@@ -227,7 +238,8 @@ async def song_download_callback(client, query):
         is_video = (stype == "video")
         yturl = f"https://www.youtube.com/watch?v={vidid}"
         title, _, duration_sec, _, _ = await YouTube.details(vidid)
-        file_path, direct = await Processor.download_file(yturl, quality_arg, is_video, title, vidid=vidid, is_owner=(query.from_user.id in SUDO_USERS))
+        res = await Processor.download_file(yturl, quality_arg, is_video, title, vidid=vidid, is_owner=(query.from_user.id in SUDO_USERS))
+        file_path, direct = _normalize_download_result(res)
         if not file_path:
             return await mystic.edit_text("**فشل التحميل، حاول مرة أخرى.**")
         await mystic.edit_text("**جاري الرفع...**")
